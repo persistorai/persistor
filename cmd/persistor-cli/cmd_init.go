@@ -106,7 +106,7 @@ func runInit(url, apiKey string, nonInteractive bool) error {
 		fmt.Println()
 		fmt.Println("  Next steps:")
 		fmt.Println("    persistor doctor     # Full diagnostic check")
-		fmt.Println("    persistor stats      # View your graph")
+		fmt.Println("    persistor admin stats # View your graph")
 		fmt.Println("    persistor --help     # See all commands")
 		fmt.Println()
 	}
