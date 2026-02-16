@@ -38,6 +38,7 @@ type RouterDeps struct {
 	CORSOrigins      []string
 	Version          string
 	OllamaURL        string
+	EmbeddingModel   string
 	EnablePlayground bool
 }
 
@@ -74,7 +75,7 @@ func setupMiddleware(ctx context.Context, r *gin.Engine, deps *RouterDeps) {
 func registerRoutes(ctx context.Context, api *gin.RouterGroup, deps *RouterDeps) {
 	log := deps.Log
 
-	health := NewHealthHandler(deps.Pool, deps.Hub, log, deps.Version, deps.OllamaURL)
+	health := NewHealthHandler(deps.Pool, deps.Hub, log, deps.Version, deps.OllamaURL, deps.EmbeddingModel)
 	nodes := NewNodeHandler(deps.Nodes, log)
 	edges := NewEdgeHandler(deps.Edges, log)
 	search := NewSearchHandler(deps.Search, log)

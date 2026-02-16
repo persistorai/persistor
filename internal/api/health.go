@@ -16,25 +16,27 @@ import (
 
 // HealthHandler serves health check endpoints.
 type HealthHandler struct {
-	pool       *dbpool.Pool
-	hub        *ws.Hub
-	log        *logrus.Logger
-	httpClient *http.Client
-	version    string
-	startTime  time.Time
-	ollamaURL  string
+	pool           *dbpool.Pool
+	hub            *ws.Hub
+	log            *logrus.Logger
+	httpClient     *http.Client
+	version        string
+	startTime      time.Time
+	ollamaURL      string
+	embeddingModel string
 }
 
 // NewHealthHandler creates a HealthHandler with the given dependencies.
-func NewHealthHandler(pool *dbpool.Pool, hub *ws.Hub, log *logrus.Logger, version, ollamaURL string) *HealthHandler {
+func NewHealthHandler(pool *dbpool.Pool, hub *ws.Hub, log *logrus.Logger, version, ollamaURL, embeddingModel string) *HealthHandler {
 	return &HealthHandler{
-		pool:       pool,
-		hub:        hub,
-		log:        log,
-		httpClient: &http.Client{Timeout: 2 * time.Second},
-		version:    version,
-		startTime:  time.Now(),
-		ollamaURL:  ollamaURL,
+		pool:           pool,
+		hub:            hub,
+		log:            log,
+		httpClient:     &http.Client{Timeout: 2 * time.Second},
+		version:        version,
+		startTime:      time.Now(),
+		ollamaURL:      ollamaURL,
+		embeddingModel: embeddingModel,
 	}
 }
 
@@ -44,9 +46,43 @@ type readinessResponse struct {
 	Checks map[string]string `json:"checks"`
 }
 
-// Liveness handles GET /api/health — always returns ok for liveness probes.
+// healthResponse is the JSON payload returned by the health/liveness endpoint.
+type healthResponse struct {
+	Status        string  `json:"status"`
+	Version       string  `json:"version"`
+	Database      string  `json:"database"`
+	Embeddings    string  `json:"embeddings"`
+	UptimeSeconds float64 `json:"uptime_seconds"`
+}
+
+// Liveness handles GET /api/health — returns status with db, embeddings, and uptime info.
 func (h *HealthHandler) Liveness(c *gin.Context) {
-	c.JSON(http.StatusOK, gin.H{"status": "ok", "version": h.version})
+	resp := healthResponse{
+		Status:        "ok",
+		Version:       h.version,
+		Database:      "connected",
+		Embeddings:    "unavailable",
+		UptimeSeconds: time.Since(h.startTime).Seconds(),
+	}
+
+	// Best-effort database ping (non-fatal for liveness).
+	if h.pool != nil {
+		ctx, cancel := context.WithTimeout(c.Request.Context(), 2*time.Second)
+		defer cancel()
+
+		if err := h.pool.HealthCheck(ctx); err != nil {
+			resp.Database = "disconnected"
+		}
+	} else {
+		resp.Database = "not_configured"
+	}
+
+	// Report embedding availability.
+	if h.embeddingModel != "" {
+		resp.Embeddings = h.embeddingModel
+	}
+
+	c.JSON(http.StatusOK, resp)
 }
 
 // Readiness handles GET /api/ready — checks DB, schema, and Ollama.
