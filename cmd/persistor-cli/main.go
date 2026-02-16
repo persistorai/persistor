@@ -19,6 +19,15 @@ var (
 )
 
 type configFile struct {
+	// Flat format (legacy)
+	URL    string `yaml:"url"`
+	APIKey string `yaml:"api_key"`
+	// Profile format
+	Profiles      map[string]configProfile `yaml:"profiles"`
+	ActiveProfile string                   `yaml:"active_profile"`
+}
+
+type configProfile struct {
 	URL    string `yaml:"url"`
 	APIKey string `yaml:"api_key"`
 }
@@ -88,11 +97,28 @@ func resolveConfig() {
 	if err := yaml.Unmarshal(data, &cfg); err != nil {
 		return
 	}
-	if flagURL == "http://localhost:3030" && cfg.URL != "" {
-		flagURL = cfg.URL
+	// Resolve from profiles if available, fall back to flat format
+	resolvedURL := cfg.URL
+	resolvedKey := cfg.APIKey
+	if cfg.Profiles != nil {
+		profileName := cfg.ActiveProfile
+		if profileName == "" {
+			profileName = "default"
+		}
+		if p, ok := cfg.Profiles[profileName]; ok {
+			if p.URL != "" {
+				resolvedURL = p.URL
+			}
+			if p.APIKey != "" {
+				resolvedKey = p.APIKey
+			}
+		}
 	}
-	if flagKey == "" && cfg.APIKey != "" {
-		flagKey = cfg.APIKey
+	if flagURL == "http://localhost:3030" && resolvedURL != "" {
+		flagURL = resolvedURL
+	}
+	if flagKey == "" && resolvedKey != "" {
+		flagKey = resolvedKey
 	}
 }
 
