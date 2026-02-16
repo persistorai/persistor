@@ -1,0 +1,102 @@
+type Node {
+  id: ID!
+  type: String!
+  label: String!
+  properties: JSON
+  accessCount: Int!
+  salienceScore: Float!
+  userBoosted: Boolean!
+  createdAt: String!
+  updatedAt: String!
+  edges(relation: String, limit: Int): [Edge!]!
+  neighbors(limit: Int): [Node!]!
+}
+
+type Edge {
+  source: String!
+  target: String!
+  relation: String!
+  properties: JSON
+  weight: Float!
+  accessCount: Int!
+  salienceScore: Float!
+  userBoosted: Boolean!
+  createdAt: String!
+  updatedAt: String!
+  sourceNode: Node
+  targetNode: Node
+}
+
+type NodeConnection {
+  nodes: [Node!]!
+  hasMore: Boolean!
+}
+
+type EdgeConnection {
+  edges: [Edge!]!
+  hasMore: Boolean!
+}
+
+type NeighborResult {
+  nodes: [Node!]!
+  edges: [Edge!]!
+}
+
+type TraverseResult {
+  nodes: [Node!]!
+  edges: [Edge!]!
+}
+
+type ContextResult {
+  node: Node!
+  neighbors: [Node!]!
+  edges: [Edge!]!
+}
+
+type AuditConnection {
+  entries: [AuditEntry!]!
+  hasMore: Boolean!
+}
+
+type AuditEntry {
+  id: ID!
+  action: String!
+  entityType: String!
+  entityID: String!
+  actor: String
+  detail: JSON
+  createdAt: String!
+}
+
+input CreateNodeInput {
+  id: String
+  type: String!
+  label: String!
+  properties: JSON
+}
+
+input UpdateNodeInput {
+  type: String
+  label: String
+  properties: JSON
+}
+
+input CreateEdgeInput {
+  source: String!
+  target: String!
+  relation: String!
+  properties: JSON
+  weight: Float
+}
+
+input UpdateEdgeInput {
+  properties: JSON
+  weight: Float
+}
+
+type SearchResult {
+  node: Node!
+  score: Float!
+}
+
+scalar JSON

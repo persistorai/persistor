@@ -1,0 +1,39 @@
+[Unit]
+Description=Persistor - Knowledge Graph Memory Service
+After=network.target postgresql.service
+Wants=postgresql.service
+
+[Service]
+Type=simple
+# Configure: create a dedicated system user, e.g.: sudo useradd -r -s /usr/sbin/nologin persistor
+User=persistor
+# Configure: set to the directory where persistor is installed
+WorkingDirectory=/opt/persistor
+ExecStart=/usr/local/bin/persistor-server
+# Configure: create this file with your environment variables (chmod 600, owned by root)
+EnvironmentFile=/etc/persistor.env
+Restart=on-failure
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+# Hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=read-only
+PrivateTmp=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+RestrictNamespaces=true
+RestrictRealtime=true
+MemoryDenyWriteExecute=true
+LockPersonality=true
+# Configure: adjust if the service needs to write to specific directories
+ReadWritePaths=/opt/persistor
+SystemCallFilter=@system-service
+SystemCallArchitectures=native
+
+[Install]
+WantedBy=multi-user.target

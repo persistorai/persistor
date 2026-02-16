@@ -1,0 +1,33 @@
+schema:
+  - schema.graphql
+  - types.graphql
+
+exec:
+  filename: generated.go
+  package: graphql
+
+model:
+  filename: models_gen.go
+  package: graphql
+
+resolver:
+  layout: follow-schema
+  dir: .
+  package: graphql
+  filename_template: "{name}.resolvers.go"
+
+models:
+  JSON:
+    model: github.com/99designs/gqlgen/graphql.Map
+  Node:
+    fields:
+      edges:
+        resolver: true
+      neighbors:
+        resolver: true
+  Edge:
+    fields:
+      sourceNode:
+        resolver: true
+      targetNode:
+        resolver: true

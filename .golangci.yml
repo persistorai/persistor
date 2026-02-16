@@ -1,0 +1,150 @@
+run:
+  timeout: 5m
+  modules-download-mode: readonly
+
+linters:
+  enable:
+    # Code Quality
+    - gofmt
+    - goimports
+    - gocritic
+    - revive
+    - stylecheck
+    - unconvert
+    - unparam
+    - unused
+    - wastedassign
+    - whitespace
+    - predeclared
+    - prealloc
+    - nakedret
+    - misspell
+    - makezero
+    - importas
+    - grouper
+    - forcetypeassert
+    - durationcheck
+    - dupword
+    - dogsled
+    - decorder
+    - copyloopvar
+
+    # Bug Detection
+    - errcheck
+    - bodyclose
+    - nilerr
+    - noctx
+    - sqlclosecheck
+    - rowserrcheck
+    - exhaustive
+    - errorlint
+    - errname
+
+    # Security
+    - gosec
+
+    # Complexity
+    - cyclop
+    - gocyclo
+    - gocognit
+    - funlen
+    - nestif
+
+    # Documentation
+    - godot
+    - godox
+
+    # Testing
+    - testifylint
+    - testpackage
+    - tparallel
+
+    # Import Ordering
+    - gci
+
+linters-settings:
+  cyclop:
+    max-complexity: 15
+
+  gocyclo:
+    min-complexity: 15
+
+  gocognit:
+    min-complexity: 20
+
+  funlen:
+    lines: 100
+    statements: 50
+
+  nestif:
+    min-complexity: 4
+
+  goimports:
+    local-prefixes: github.com/persistorai/persistor
+
+  gci:
+    sections:
+      - standard
+      - default
+      - prefix(github.com/persistorai/persistor)
+
+  gocritic:
+    enabled-tags:
+      - diagnostic
+      - style
+      - performance
+      - opinionated
+
+  revive:
+    rules:
+      - name: exported
+        arguments:
+          - "checkPrivateReceivers"
+      - name: blank-imports
+      - name: context-as-argument
+      - name: context-keys-type
+      - name: error-return
+      - name: error-strings
+      - name: error-naming
+      - name: increment-decrement
+      - name: var-naming
+      - name: package-comments
+      - name: range
+      - name: receiver-naming
+      - name: time-naming
+      - name: unexported-return
+      - name: indent-error-flow
+      - name: errorf
+
+  godot:
+    scope: declarations
+    capital: false
+
+  nakedret:
+    max-func-lines: 30
+
+  gosec:
+    excludes:
+      - G104 # Duplicates errcheck
+
+  errcheck:
+    check-type-assertions: true
+    check-blank: true
+
+  errorlint:
+    errorf: true
+    asserts: true
+    comparison: true
+
+issues:
+  max-issues-per-linter: 50
+  max-same-issues: 5
+  exclude-rules:
+    - path: _test\.go
+      linters:
+        - funlen
+        - gocyclo
+        - cyclop
+        - gocognit
+        - errcheck
+        - gosec

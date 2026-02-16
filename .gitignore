@@ -1,0 +1,65 @@
+# =============================================================================
+# Go gitignore
+# =============================================================================
+
+# ----- Binaries -----
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# ----- Test Binary -----
+*.test
+
+# ----- Output of go coverage -----
+*.out
+coverage.out
+coverage.html
+coverage/
+
+# ----- Go Workspace -----
+go.work
+go.work.sum
+
+# ----- Dependency Directories -----
+vendor/
+
+# ----- Build Cache -----
+.cache/
+
+# ----- Debug Files -----
+__debug_bin
+__debug_bin*
+
+# ----- Tool-specific -----
+# Air (live reload)
+tmp/
+
+# Delve debugger
+debug
+
+# GoReleaser
+dist/
+
+# ----- Project Build Output -----
+bin/
+
+# ----- Environment -----
+.env
+.env.local
+
+# ----- Backups -----
+*.dump
+*.dump.age
+*.sha256
+migrate-from-sqlite
+
+scripts/migrate/migrate
+
+AGENT_TASK*.md
+CODE_REVIEW_*.md
+server
+persistor.env
+persistor-server
+persistor-cli

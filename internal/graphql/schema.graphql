@@ -1,0 +1,31 @@
+type Query {
+  node(id: ID!): Node
+  nodes(type: String, minSalience: Float, limit: Int, offset: Int): NodeConnection!
+
+  edges(source: String, target: String, relation: String, limit: Int, offset: Int): EdgeConnection!
+
+  search(query: String!, limit: Int): [SearchResult!]!
+  searchSemantic(query: String!, limit: Int): [SearchResult!]!
+  searchHybrid(query: String!, limit: Int): [SearchResult!]!
+
+  neighbors(id: ID!, limit: Int): NeighborResult!
+  traverse(id: ID!, maxHops: Int): TraverseResult!
+  context(id: ID!): ContextResult!
+  path(from: ID!, to: ID!): [Node!]!
+
+  audit(entityType: String, entityID: String, action: String, since: String, limit: Int, offset: Int): AuditConnection!
+}
+
+type Mutation {
+  createNode(input: CreateNodeInput!): Node!
+  updateNode(id: ID!, input: UpdateNodeInput!): Node!
+  deleteNode(id: ID!): Boolean!
+
+  createEdge(input: CreateEdgeInput!): Edge!
+  updateEdge(source: String!, target: String!, relation: String!, input: UpdateEdgeInput!): Edge!
+  deleteEdge(source: String!, target: String!, relation: String!): Boolean!
+
+  boostNode(id: ID!): Node!
+  supersedeNode(oldID: ID!, newID: ID!): Boolean!
+  recalculateSalience: Int!
+}
