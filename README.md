@@ -155,4 +155,4 @@ The service fetches the encryption key from Vault at startup, avoiding plaintext
 
 ## License
 
-Proprietary
+This project is licensed under AGPL-3.0. See [LICENSE](LICENSE) for details. The Go SDK (`client/`) is licensed under Apache-2.0 to allow unrestricted client integration.
