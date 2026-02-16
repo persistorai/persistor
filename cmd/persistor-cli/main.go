@@ -43,6 +43,13 @@ func main() {
 	rootCmd.PersistentFlags().StringVar(&flagKey, "api-key", "", "API key (env: PERSISTOR_API_KEY)")
 	rootCmd.PersistentFlags().StringVar(&flagFmt, "format", "json", "Output format: json|table|quiet")
 
+	initCmd := newInitCmd()
+	initCmd.PersistentPreRun = func(cmd *cobra.Command, args []string) {} // skip client setup
+	doctorCmd := newDoctorCmd()
+	doctorCmd.PersistentPreRun = func(cmd *cobra.Command, args []string) {} // skip client setup
+
+	rootCmd.AddCommand(initCmd)
+	rootCmd.AddCommand(doctorCmd)
 	rootCmd.AddCommand(newNodeCmd())
 	rootCmd.AddCommand(newEdgeCmd())
 	rootCmd.AddCommand(newSearchCmd())
