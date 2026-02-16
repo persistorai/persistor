@@ -62,4 +62,4 @@ CODE_REVIEW_*.md
 server
 persistor.env
 persistor-server
-persistor-cli
+/persistor-cli
