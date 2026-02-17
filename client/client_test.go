@@ -279,23 +279,34 @@ func TestSalience(t *testing.T) {
 func TestBulk(t *testing.T) {
 	_, c := newTestServer(t, map[string]http.HandlerFunc{
 		"POST /api/v1/bulk/nodes": func(w http.ResponseWriter, _ *http.Request) {
-			jsonResponse(w, 200, map[string]int{"upserted": 5})
+			jsonResponse(w, 200, map[string]any{
+				"upserted": 2,
+				"nodes": []map[string]any{
+					{"id": "n1", "type": "t", "label": "l1"},
+					{"id": "n2", "type": "t", "label": "l2"},
+				},
+			})
 		},
 		"POST /api/v1/bulk/edges": func(w http.ResponseWriter, _ *http.Request) {
-			jsonResponse(w, 200, map[string]int{"upserted": 3})
+			jsonResponse(w, 200, map[string]any{
+				"upserted": 1,
+				"edges": []map[string]any{
+					{"source": "a", "target": "b", "relation": "r"},
+				},
+			})
 		},
 	})
 
 	ctx := context.Background()
 
-	n, err := c.Bulk.UpsertNodes(ctx, []CreateNodeRequest{{Type: "t", Label: "l"}})
-	if err != nil || n != 5 {
-		t.Fatalf("UpsertNodes: err=%v, n=%d", err, n)
+	nodes, err := c.Bulk.UpsertNodes(ctx, []CreateNodeRequest{{Type: "t", Label: "l"}})
+	if err != nil || len(nodes) != 2 {
+		t.Fatalf("UpsertNodes: err=%v, len=%d", err, len(nodes))
 	}
 
-	n, err = c.Bulk.UpsertEdges(ctx, []CreateEdgeRequest{{Source: "a", Target: "b", Relation: "r"}})
-	if err != nil || n != 3 {
-		t.Fatalf("UpsertEdges: err=%v, n=%d", err, n)
+	edges, err := c.Bulk.UpsertEdges(ctx, []CreateEdgeRequest{{Source: "a", Target: "b", Relation: "r"}})
+	if err != nil || len(edges) != 1 {
+		t.Fatalf("UpsertEdges: err=%v, len=%d", err, len(edges))
 	}
 }
 

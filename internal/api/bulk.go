@@ -49,7 +49,7 @@ func (h *BulkHandler) BulkNodes(c *gin.Context) {
 		return
 	}
 
-	count, err := h.repo.BulkUpsertNodes(c.Request.Context(), tenantID, reqs)
+	nodes, err := h.repo.BulkUpsertNodes(c.Request.Context(), tenantID, reqs)
 	if err != nil {
 		h.log.WithError(err).Error("bulk upserting nodes")
 		respondError(c, http.StatusInternalServerError, ErrCodeInternalError, "internal server error")
@@ -57,9 +57,9 @@ func (h *BulkHandler) BulkNodes(c *gin.Context) {
 		return
 	}
 
-	h.log.WithFields(logrus.Fields{"action": "bulk.nodes", "tenant_id": tenantID, "upserted": count}).Info("audit")
+	h.log.WithFields(logrus.Fields{"action": "bulk.nodes", "tenant_id": tenantID, "upserted": len(nodes)}).Info("audit")
 
-	c.JSON(http.StatusOK, gin.H{"upserted": count})
+	c.JSON(http.StatusOK, gin.H{"upserted": len(nodes), "nodes": nodes})
 }
 
 // BulkEdges handles POST /api/bulk/edges.
@@ -90,7 +90,7 @@ func (h *BulkHandler) BulkEdges(c *gin.Context) {
 		return
 	}
 
-	count, err := h.repo.BulkUpsertEdges(c.Request.Context(), tenantID, reqs)
+	edges, err := h.repo.BulkUpsertEdges(c.Request.Context(), tenantID, reqs)
 	if err != nil {
 		h.log.WithError(err).Error("bulk upserting edges")
 		respondError(c, http.StatusInternalServerError, ErrCodeInternalError, "internal server error")
@@ -98,7 +98,7 @@ func (h *BulkHandler) BulkEdges(c *gin.Context) {
 		return
 	}
 
-	h.log.WithFields(logrus.Fields{"action": "bulk.edges", "tenant_id": tenantID, "upserted": count}).Info("audit")
+	h.log.WithFields(logrus.Fields{"action": "bulk.edges", "tenant_id": tenantID, "upserted": len(edges)}).Info("audit")
 
-	c.JSON(http.StatusOK, gin.H{"upserted": count})
+	c.JSON(http.StatusOK, gin.H{"upserted": len(edges), "edges": edges})
 }

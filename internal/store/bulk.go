@@ -25,14 +25,14 @@ func NewBulkStore(base Base) *BulkStore {
 }
 
 // BulkUpsertNodes inserts or updates multiple nodes in a single transaction
-// using multi-row INSERT ... ON CONFLICT. Returns the number of upserted rows.
+// using multi-row INSERT ... ON CONFLICT. Returns the upserted nodes.
 func (s *BulkStore) BulkUpsertNodes( //nolint:gocognit,gocyclo,cyclop,funlen // complexity from batch building + history tracking.
 	ctx context.Context,
 	tenantID string,
 	nodes []models.CreateNodeRequest,
-) (int, error) {
+) ([]models.Node, error) {
 	if len(nodes) == 0 {
-		return 0, nil
+		return nil, nil
 	}
 
 	ctx, cancel := withTimeout(ctx)
@@ -48,7 +48,7 @@ func (s *BulkStore) BulkUpsertNodes( //nolint:gocognit,gocyclo,cyclop,funlen // 
 
 		propsJSON, err := s.encryptProperties(ctx, tenantID, props)
 		if err != nil {
-			return 0, fmt.Errorf("preparing node %s properties: %w", node.ID, err)
+			return nil, fmt.Errorf("preparing node %s properties: %w", node.ID, err)
 		}
 
 		encryptedProps[i] = propsJSON
@@ -56,7 +56,7 @@ func (s *BulkStore) BulkUpsertNodes( //nolint:gocognit,gocyclo,cyclop,funlen // 
 
 	tx, err := s.beginTx(ctx, tenantID)
 	if err != nil {
-		return 0, fmt.Errorf("bulk upsert nodes: %w", err)
+		return nil, fmt.Errorf("bulk upsert nodes: %w", err)
 	}
 
 	defer tx.Rollback(ctx) //nolint:errcheck // best-effort rollback after commit.
@@ -69,10 +69,10 @@ func (s *BulkStore) BulkUpsertNodes( //nolint:gocognit,gocyclo,cyclop,funlen // 
 
 	oldPropsMap, err := s.fetchExistingProperties(ctx, tx, tenantID, existingNodeIDs)
 	if err != nil {
-		return 0, fmt.Errorf("fetching existing properties for history: %w", err)
+		return nil, fmt.Errorf("fetching existing properties for history: %w", err)
 	}
 
-	total := 0
+	result := make([]models.Node, 0, len(nodes))
 
 	// Process in batches to stay within parameter limits.
 	for i := 0; i < len(nodes); i += maxBulkBatchSize {
@@ -102,14 +102,22 @@ func (s *BulkStore) BulkUpsertNodes( //nolint:gocognit,gocyclo,cyclop,funlen // 
 			SET type = EXCLUDED.type,
 				label = EXCLUDED.label,
 				properties = EXCLUDED.properties,
-				updated_at = NOW()`
+				updated_at = NOW()
+			RETURNING ` + nodeColumns
 
-		tag, err := tx.Exec(ctx, sql, args...)
+		rows, err := tx.Query(ctx, sql, args...)
 		if err != nil {
-			return 0, fmt.Errorf("bulk upserting nodes batch: %w", err)
+			return nil, fmt.Errorf("bulk upserting nodes batch: %w", err)
 		}
 
-		total += int(tag.RowsAffected())
+		batchNodes, err := collectNodes(rows)
+		rows.Close()
+
+		if err != nil {
+			return nil, fmt.Errorf("scanning bulk upserted nodes: %w", err)
+		}
+
+		result = append(result, batchNodes...)
 	}
 
 	// Record property history for nodes that existed before the upsert.
@@ -125,12 +133,17 @@ func (s *BulkStore) BulkUpsertNodes( //nolint:gocognit,gocyclo,cyclop,funlen // 
 		}
 
 		if err := RecordPropertyChanges(ctx, tx, tenantID, node.ID, oldProps, newProps, "bulk_upsert"); err != nil {
-			return 0, fmt.Errorf("recording property history for %s: %w", node.ID, err)
+			return nil, fmt.Errorf("recording property history for %s: %w", node.ID, err)
 		}
 	}
 
 	if err := tx.Commit(ctx); err != nil {
-		return 0, fmt.Errorf("committing bulk upsert nodes: %w", err)
+		return nil, fmt.Errorf("committing bulk upsert nodes: %w", err)
+	}
+
+	// Decrypt properties on returned nodes.
+	if err := s.decryptNodes(ctx, tenantID, result); err != nil {
+		return nil, fmt.Errorf("decrypting bulk upserted nodes: %w", err)
 	}
 
 	// Send aggregate notification (best-effort) using a fresh context.
@@ -140,7 +153,7 @@ func (s *BulkStore) BulkUpsertNodes( //nolint:gocognit,gocyclo,cyclop,funlen // 
 	payload, _ := json.Marshal(map[string]any{ //nolint:errcheck // static keys, cannot fail.
 		"table":     "kg_nodes",
 		"op":        "BULK",
-		"count":     total,
+		"count":     len(result),
 		"tenant_id": tenantID,
 	})
 
@@ -148,18 +161,18 @@ func (s *BulkStore) BulkUpsertNodes( //nolint:gocognit,gocyclo,cyclop,funlen // 
 		s.Log.WithError(err).Warn("failed to send bulk node notification")
 	}
 
-	return total, nil
+	return result, nil
 }
 
 // BulkUpsertEdges inserts or updates multiple edges in a single transaction
-// using multi-row INSERT ... ON CONFLICT. Returns the number of upserted rows.
+// using multi-row INSERT ... ON CONFLICT. Returns the upserted edges.
 func (s *BulkStore) BulkUpsertEdges( //nolint:gocognit,gocyclo,cyclop,funlen // complexity from batch building + node existence validation.
 	ctx context.Context,
 	tenantID string,
 	edges []models.CreateEdgeRequest,
-) (int, error) {
+) ([]models.Edge, error) {
 	if len(edges) == 0 {
-		return 0, nil
+		return nil, nil
 	}
 
 	ctx, cancel := withTimeout(ctx)
@@ -175,7 +188,7 @@ func (s *BulkStore) BulkUpsertEdges( //nolint:gocognit,gocyclo,cyclop,funlen // 
 
 		propsJSON, err := s.encryptProperties(ctx, tenantID, props)
 		if err != nil {
-			return 0, fmt.Errorf("preparing edge %s->%s properties: %w", edge.Source, edge.Target, err)
+			return nil, fmt.Errorf("preparing edge %s->%s properties: %w", edge.Source, edge.Target, err)
 		}
 
 		encryptedProps[i] = propsJSON
@@ -183,7 +196,7 @@ func (s *BulkStore) BulkUpsertEdges( //nolint:gocognit,gocyclo,cyclop,funlen // 
 
 	tx, err := s.beginTx(ctx, tenantID)
 	if err != nil {
-		return 0, fmt.Errorf("bulk upsert edges: %w", err)
+		return nil, fmt.Errorf("bulk upsert edges: %w", err)
 	}
 
 	defer tx.Rollback(ctx) //nolint:errcheck // best-effort rollback after commit.
@@ -204,7 +217,7 @@ func (s *BulkStore) BulkUpsertEdges( //nolint:gocognit,gocyclo,cyclop,funlen // 
 		`SELECT id FROM kg_nodes WHERE tenant_id = $1 AND id = ANY($2)`,
 		tenantID, expectedIDs)
 	if err != nil {
-		return 0, fmt.Errorf("verifying node existence: %w", err)
+		return nil, fmt.Errorf("verifying node existence: %w", err)
 	}
 
 	foundIDs := make(map[string]struct{})
@@ -213,7 +226,7 @@ func (s *BulkStore) BulkUpsertEdges( //nolint:gocognit,gocyclo,cyclop,funlen // 
 		var id string
 		if err := rows.Scan(&id); err != nil {
 			rows.Close()
-			return 0, fmt.Errorf("scanning node ID: %w", err)
+			return nil, fmt.Errorf("scanning node ID: %w", err)
 		}
 
 		foundIDs[id] = struct{}{}
@@ -222,7 +235,7 @@ func (s *BulkStore) BulkUpsertEdges( //nolint:gocognit,gocyclo,cyclop,funlen // 
 	rows.Close()
 
 	if err := rows.Err(); err != nil {
-		return 0, fmt.Errorf("iterating node IDs: %w", err)
+		return nil, fmt.Errorf("iterating node IDs: %w", err)
 	}
 
 	if len(foundIDs) != len(nodeIDSet) {
@@ -233,10 +246,10 @@ func (s *BulkStore) BulkUpsertEdges( //nolint:gocognit,gocyclo,cyclop,funlen // 
 			}
 		}
 
-		return 0, fmt.Errorf("missing node IDs referenced by edges: %v", missing)
+		return nil, fmt.Errorf("missing node IDs referenced by edges: %v", missing)
 	}
 
-	total := 0
+	result := make([]models.Edge, 0, len(edges))
 
 	for i := 0; i < len(edges); i += maxBulkBatchSize {
 		end := i + maxBulkBatchSize
@@ -269,18 +282,31 @@ func (s *BulkStore) BulkUpsertEdges( //nolint:gocognit,gocyclo,cyclop,funlen // 
 			ON CONFLICT (tenant_id, source, target, relation) DO UPDATE
 			SET properties = EXCLUDED.properties,
 				weight = EXCLUDED.weight,
-				updated_at = NOW()`
+				updated_at = NOW()
+			RETURNING ` + edgeColumns
 
-		tag, err := tx.Exec(ctx, sql, args...)
+		rows, err := tx.Query(ctx, sql, args...)
 		if err != nil {
-			return 0, fmt.Errorf("bulk upserting edges batch: %w", err)
+			return nil, fmt.Errorf("bulk upserting edges batch: %w", err)
 		}
 
-		total += int(tag.RowsAffected())
+		batchEdges, err := collectEdges(rows)
+		rows.Close()
+
+		if err != nil {
+			return nil, fmt.Errorf("scanning bulk upserted edges: %w", err)
+		}
+
+		result = append(result, batchEdges...)
 	}
 
 	if err := tx.Commit(ctx); err != nil {
-		return 0, fmt.Errorf("committing bulk upsert edges: %w", err)
+		return nil, fmt.Errorf("committing bulk upsert edges: %w", err)
+	}
+
+	// Decrypt properties on returned edges.
+	if err := s.decryptEdges(ctx, tenantID, result); err != nil {
+		return nil, fmt.Errorf("decrypting bulk upserted edges: %w", err)
 	}
 
 	// Send aggregate notification (best-effort) using a fresh context.
@@ -290,7 +316,7 @@ func (s *BulkStore) BulkUpsertEdges( //nolint:gocognit,gocyclo,cyclop,funlen // 
 	payload, _ := json.Marshal(map[string]any{ //nolint:errcheck // static keys, cannot fail.
 		"table":     "kg_edges",
 		"op":        "BULK",
-		"count":     total,
+		"count":     len(result),
 		"tenant_id": tenantID,
 	})
 
@@ -298,5 +324,5 @@ func (s *BulkStore) BulkUpsertEdges( //nolint:gocognit,gocyclo,cyclop,funlen // 
 		s.Log.WithError(err).Warn("failed to send bulk edge notification")
 	}
 
-	return total, nil
+	return result, nil
 }

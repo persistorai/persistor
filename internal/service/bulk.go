@@ -10,8 +10,8 @@ import (
 
 // BulkStore defines the data access methods BulkService depends on.
 type BulkStore interface {
-	BulkUpsertNodes(ctx context.Context, tenantID string, nodes []models.CreateNodeRequest) (int, error)
-	BulkUpsertEdges(ctx context.Context, tenantID string, edges []models.CreateEdgeRequest) (int, error)
+	BulkUpsertNodes(ctx context.Context, tenantID string, nodes []models.CreateNodeRequest) ([]models.Node, error)
+	BulkUpsertEdges(ctx context.Context, tenantID string, edges []models.CreateEdgeRequest) ([]models.Edge, error)
 }
 
 // BulkService wraps BulkStore with embedding enqueue logic for bulk node upserts.
@@ -30,10 +30,10 @@ func NewBulkService(store BulkStore, embedWorker EmbedEnqueuer, auditWorker Audi
 // BulkUpsertNodes upserts nodes and enqueues embedding jobs for each.
 func (s *BulkService) BulkUpsertNodes(
 	ctx context.Context, tenantID string, nodes []models.CreateNodeRequest,
-) (int, error) {
-	count, err := s.store.BulkUpsertNodes(ctx, tenantID, nodes)
+) ([]models.Node, error) {
+	result, err := s.store.BulkUpsertNodes(ctx, tenantID, nodes)
 	if err != nil {
-		return 0, err
+		return nil, err
 	}
 
 	if s.embedWorker != nil {
@@ -49,28 +49,28 @@ func (s *BulkService) BulkUpsertNodes(
 	if s.auditWorker != nil {
 		s.auditWorker.Enqueue(&AuditJob{
 			TenantID: tenantID, Action: "bulk.nodes", EntityType: "node",
-			Detail: map[string]any{"count": count},
+			Detail: map[string]any{"count": len(result)},
 		})
 	}
 
-	return count, nil
+	return result, nil
 }
 
 // BulkUpsertEdges upserts edges (pass-through).
 func (s *BulkService) BulkUpsertEdges(
 	ctx context.Context, tenantID string, edges []models.CreateEdgeRequest,
-) (int, error) {
-	count, err := s.store.BulkUpsertEdges(ctx, tenantID, edges)
+) ([]models.Edge, error) {
+	result, err := s.store.BulkUpsertEdges(ctx, tenantID, edges)
 	if err != nil {
-		return 0, err
+		return nil, err
 	}
 
 	if s.auditWorker != nil {
 		s.auditWorker.Enqueue(&AuditJob{
 			TenantID: tenantID, Action: "bulk.edges", EntityType: "edge",
-			Detail: map[string]any{"count": count},
+			Detail: map[string]any{"count": len(result)},
 		})
 	}
 
-	return count, nil
+	return result, nil
 }

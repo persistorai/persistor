@@ -196,11 +196,11 @@ func runImportOpenClaw(dbPath string, skipEmbeddings, dryRun bool, batchSize int
 			end = len(nodeReqs)
 		}
 		batch := nodeReqs[i:end]
-		upserted, err := apiClient.Bulk.UpsertNodes(ctx, batch)
+		nodes, err := apiClient.Bulk.UpsertNodes(ctx, batch)
 		if err != nil {
 			return fmt.Errorf("bulk upsert nodes (batch %d-%d): %w", i, end-1, err)
 		}
-		totalNodes += upserted
+		totalNodes += len(nodes)
 		fmt.Fprintf(os.Stderr, "  nodes: %d/%d\r", totalNodes, len(nodeReqs))
 	}
 	fmt.Fprintf(os.Stderr, "  nodes: %d/%d ✓\n", totalNodes, len(nodeReqs))
@@ -213,11 +213,11 @@ func runImportOpenClaw(dbPath string, skipEmbeddings, dryRun bool, batchSize int
 			end = len(edgeReqs)
 		}
 		batch := edgeReqs[i:end]
-		upserted, err := apiClient.Bulk.UpsertEdges(ctx, batch)
+		edges, err := apiClient.Bulk.UpsertEdges(ctx, batch)
 		if err != nil {
 			return fmt.Errorf("bulk upsert edges (batch %d-%d): %w", i, end-1, err)
 		}
-		totalEdges += upserted
+		totalEdges += len(edges)
 		fmt.Fprintf(os.Stderr, "  edges: %d/%d\r", totalEdges, len(edgeReqs))
 	}
 	if len(edgeReqs) > 0 {

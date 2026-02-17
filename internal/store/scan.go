@@ -96,6 +96,26 @@ func scanEdge(scan func(dest ...any) error) (*models.Edge, error) {
 	return &e, nil
 }
 
+// collectEdges scans all rows into an edge slice.
+func collectEdges(rows pgx.Rows) ([]models.Edge, error) {
+	edges := make([]models.Edge, 0, 16)
+
+	for rows.Next() {
+		e, err := scanEdge(rows.Scan)
+		if err != nil {
+			return nil, fmt.Errorf("scanning edge row: %w", err)
+		}
+
+		edges = append(edges, *e)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterating edge rows: %w", err)
+	}
+
+	return edges, nil
+}
+
 // collectNodes scans all rows into a node slice.
 func collectNodes(rows pgx.Rows) ([]models.Node, error) {
 	nodes := make([]models.Node, 0, 16)

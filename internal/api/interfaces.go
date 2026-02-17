@@ -51,8 +51,8 @@ type SalienceRepository interface {
 
 // BulkRepository defines bulk operations used by BulkHandler.
 type BulkRepository interface {
-	BulkUpsertNodes(ctx context.Context, tenantID string, nodes []models.CreateNodeRequest) (int, error)
-	BulkUpsertEdges(ctx context.Context, tenantID string, edges []models.CreateEdgeRequest) (int, error)
+	BulkUpsertNodes(ctx context.Context, tenantID string, nodes []models.CreateNodeRequest) ([]models.Node, error)
+	BulkUpsertEdges(ctx context.Context, tenantID string, edges []models.CreateEdgeRequest) ([]models.Edge, error)
 }
 
 // AuditRepository defines audit log operations used by AuditHandler.
