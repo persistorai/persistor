@@ -77,6 +77,12 @@ func edgeListCmd() *cobra.Command {
 				formatTable(headers, rows)
 				return
 			}
+			if flagFmt == "quiet" {
+				for _, e := range edges {
+					fmt.Printf("%s->%s:%s\n", e.Source, e.Target, e.Relation)
+				}
+				return
+			}
 			output(edges, "")
 		},
 	}

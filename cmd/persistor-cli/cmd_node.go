@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 
 	"github.com/persistorai/persistor/client"
 	"github.com/spf13/cobra"
@@ -119,6 +120,14 @@ func nodeListCmd() *cobra.Command {
 		Use:   "list",
 		Short: "List nodes",
 		Run: func(cmd *cobra.Command, args []string) {
+			if limit < 0 {
+				fmt.Fprintf(os.Stderr, "Error: --limit must be non-negative\n")
+				os.Exit(1)
+			}
+			if offset < 0 {
+				fmt.Fprintf(os.Stderr, "Error: --offset must be non-negative\n")
+				os.Exit(1)
+			}
 			opts := &client.NodeListOptions{
 				Type:   nodeType,
 				Limit:  limit,
@@ -135,6 +144,12 @@ func nodeListCmd() *cobra.Command {
 					rows = append(rows, []string{n.ID, n.Type, n.Label, fmt.Sprintf("%.2f", n.Salience)})
 				}
 				formatTable(headers, rows)
+				return
+			}
+			if flagFmt == "quiet" {
+				for _, n := range nodes {
+					fmt.Println(n.ID)
+				}
 				return
 			}
 			output(nodes, "")
