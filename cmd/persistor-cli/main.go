@@ -66,6 +66,7 @@ func main() {
 	rootCmd.AddCommand(newSalienceCmd())
 	rootCmd.AddCommand(newAdminCmd())
 	rootCmd.AddCommand(newAuditCmd())
+	rootCmd.AddCommand(newImportCmd())
 
 	if err := rootCmd.Execute(); err != nil {
 		os.Exit(1)
