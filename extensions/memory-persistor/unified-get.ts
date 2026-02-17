@@ -1,6 +1,6 @@
 import type { PersistorPluginConfig } from './config.ts';
 import type { PersistorClient, PersistorNode, PersistorContext } from './persistor-client.ts';
-import type { OpenClawTool } from './types.ts';
+import type { OpenClawTool, ToolResult } from './types.ts';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -12,7 +12,7 @@ function isUUID(str: string): boolean {
   return UUID_RE.test(str);
 }
 
-function jsonWrap(text: string) {
+function jsonWrap(text: string): ToolResult {
   return { content: [{ type: 'text', text }] };
 }
 
@@ -31,10 +31,9 @@ function formatNode(node: PersistorNode, context?: PersistorContext | null): str
   if (context?.neighbors?.length) {
     lines.push('', `Neighbors (${context.neighbors.length}):`);
     for (const n of context.neighbors) {
-      // Neighbors can be flat node objects or { node, edge, direction } wrappers
-      const label = n.label ?? n.node?.label ?? 'unknown';
-      const type = n.type ?? n.node?.type ?? 'unknown';
-      lines.push(`  → ${label} (${type})`);
+      const isWrapped = 'node' in n && 'edge' in n;
+      const innerNode: PersistorNode = isWrapped ? (n as { node: PersistorNode }).node : n;
+      lines.push(`  → ${innerNode.label} (${innerNode.type})`);
     }
   }
   if (context?.edges?.length) {
@@ -78,12 +77,9 @@ export function createUnifiedGetTool(
 
   fileGetTool.execute = async (
     toolCallId: string,
-    params: { path: string; from?: number; lines?: number },
-  ) => {
-    const path =
-      typeof params === 'object' && params !== null
-        ? String((params as Record<string, unknown>).path ?? '')
-        : '';
+    params: Record<string, unknown>,
+  ): Promise<ToolResult> => {
+    const path = typeof params['path'] === 'string' ? params['path'] : '';
 
     // File paths always go to the file tool
     if (isFilePath(path)) {

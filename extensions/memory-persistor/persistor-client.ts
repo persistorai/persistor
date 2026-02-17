@@ -34,29 +34,24 @@ export interface PersistorClientConfig {
 }
 
 export class PersistorClient {
-  private baseUrl: string;
-  private apiKey: string;
-  private timeout: number;
-  private defaultSearchMode: string;
-  private defaultSearchLimit: number;
+  private readonly config: Readonly<PersistorClientConfig>;
 
   constructor(config: PersistorClientConfig) {
-    this.baseUrl = config.url.replace(/\/+$/, '');
-    this.apiKey = config.apiKey;
-    this.timeout = config.timeout;
-    this.defaultSearchMode = config.searchMode;
-    this.defaultSearchLimit = config.searchLimit;
+    this.config = { ...config, url: config.url.replace(/\/+$/, '') };
   }
 
   private headers(): Record<string, string> {
-    return { Authorization: `Bearer ${this.apiKey}`, 'Content-Type': 'application/json' };
+    return {
+      Authorization: `Bearer ${this.config.apiKey}`,
+      'Content-Type': 'application/json',
+    };
   }
 
   private async get(path: string): Promise<Response | null> {
     try {
-      const res = await fetch(`${this.baseUrl}${path}`, {
+      const res = await fetch(`${this.config.url}${path}`, {
         headers: this.headers(),
-        signal: AbortSignal.timeout(this.timeout),
+        signal: AbortSignal.timeout(this.config.timeout),
       });
       if (!res.ok) {
         console.warn(`Persistor ${path}: HTTP ${res.status}`);
@@ -77,16 +72,22 @@ export class PersistorClient {
     query: string,
     opts?: { mode?: string; limit?: number },
   ): Promise<PersistorSearchResult[]> {
-    const mode = opts?.mode ?? this.defaultSearchMode;
-    const limit = opts?.limit ?? this.defaultSearchLimit;
+    const mode = opts?.mode ?? this.config.searchMode;
+    const limit = opts?.limit ?? this.config.searchLimit;
     const segment =
       mode === 'semantic' ? '/search/semantic' : mode === 'text' ? '/search' : '/search/hybrid';
     const res = await this.get(`/api/v1${segment}?q=${encodeURIComponent(query)}&limit=${limit}`);
     if (!res) return [];
     try {
-      const body = await res.json();
-      // API returns { nodes: [...] } wrapper, not a bare array
-      const nodes = Array.isArray(body) ? body : (body?.nodes ?? body?.results ?? []);
+      const body: unknown = await res.json();
+      const obj = body != null && typeof body === 'object' ? (body as Record<string, unknown>) : {};
+      const nodes: unknown[] = Array.isArray(body)
+        ? (body as unknown[])
+        : Array.isArray(obj['nodes'])
+          ? (obj['nodes'] as unknown[])
+          : Array.isArray(obj['results'])
+            ? (obj['results'] as unknown[])
+            : [];
       return nodes as PersistorSearchResult[];
     } catch (e: unknown) {
       console.warn('Persistor search parse:', e);

@@ -3,7 +3,7 @@ import { mergeResults } from './result-merger.ts';
 import type { PersistorPluginConfig } from './config.ts';
 import type { PersistorClient, PersistorSearchResult } from './persistor-client.ts';
 import type { FileSearchResult } from './result-merger.ts';
-import type { OpenClawTool, ToolContentPart } from './types.ts';
+import type { OpenClawTool, ToolContentPart, ToolResult } from './types.ts';
 
 /**
  * Extract the JSON payload from a tool result.
@@ -45,7 +45,7 @@ function extractFileResults(toolResult: unknown): FileSearchResult[] {
   }));
 }
 
-function jsonResult(payload: unknown) {
+function jsonResult(payload: unknown): ToolResult {
   return { content: [{ type: 'text', text: JSON.stringify(payload, null, 2) }] };
 }
 
@@ -58,7 +58,7 @@ export function createUnifiedSearchTool(
   fileSearchTool: OpenClawTool,
   persistorClient: PersistorClient,
   config: PersistorPluginConfig,
-) {
+): OpenClawTool {
   const originalExecute = fileSearchTool.execute.bind(fileSearchTool);
 
   fileSearchTool.description =
@@ -66,9 +66,11 @@ export function createUnifiedSearchTool(
 
   fileSearchTool.execute = async (
     toolCallId: string,
-    params: { query: string; maxResults?: number; minScore?: number },
-  ) => {
-    const { query, maxResults = 20, minScore = 0 } = params;
+    params: Record<string, unknown>,
+  ): Promise<ToolResult> => {
+    const query = typeof params['query'] === 'string' ? params['query'] : '';
+    const maxResults = typeof params['maxResults'] === 'number' ? params['maxResults'] : 20;
+    const minScore = typeof params['minScore'] === 'number' ? params['minScore'] : 0;
 
     const [fileResult, persistorResult] = await Promise.allSettled([
       originalExecute(toolCallId, params),
@@ -91,7 +93,13 @@ export function createUnifiedSearchTool(
     return jsonResult({
       results: filtered.map((r) => {
         if (r.source === 'file') {
-          return { source: 'file', path: r.path, snippet: r.snippet, score: r.score, line: r.line };
+          return {
+            source: 'file',
+            path: r.path,
+            snippet: r.snippet,
+            score: r.score,
+            line: r.line,
+          };
         }
         return {
           source: 'persistor',
