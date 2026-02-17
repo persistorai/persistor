@@ -61,6 +61,10 @@ func TestLoad_Defaults(t *testing.T) {
 		t.Errorf("unexpected EmbeddingModel default: %s", cfg.EmbeddingModel)
 	}
 
+	if cfg.EmbeddingDimensions != 1024 {
+		t.Errorf("unexpected EmbeddingDimensions default: %d", cfg.EmbeddingDimensions)
+	}
+
 	if cfg.EnablePlayground {
 		t.Error("expected EnablePlayground=false by default")
 	}
@@ -124,6 +128,21 @@ func TestLoad_ErrorCases(t *testing.T) {
 			name:         "encryption key wrong length",
 			envOverrides: map[string]string{"ENCRYPTION_KEY": "aabbccdd"},
 			wantErr:      "ENCRYPTION_KEY must be 64 hex characters",
+		},
+		{
+			name:         "embedding dimensions zero",
+			envOverrides: map[string]string{"EMBEDDING_DIMENSIONS": "0"},
+			wantErr:      "EMBEDDING_DIMENSIONS must be an integer between 1 and 4096",
+		},
+		{
+			name:         "embedding dimensions too high",
+			envOverrides: map[string]string{"EMBEDDING_DIMENSIONS": "5000"},
+			wantErr:      "EMBEDDING_DIMENSIONS must be an integer between 1 and 4096",
+		},
+		{
+			name:         "embedding dimensions non-numeric",
+			envOverrides: map[string]string{"EMBEDDING_DIMENSIONS": "abc"},
+			wantErr:      "EMBEDDING_DIMENSIONS must be an integer between 1 and 4096",
 		},
 		{
 			name:         "embed workers zero",

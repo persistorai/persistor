@@ -35,9 +35,10 @@ var ErrCircuitOpen = errors.New("embedding circuit breaker is open")
 
 // EmbeddingService generates vector embeddings via the Ollama API.
 type EmbeddingService struct {
-	ollamaURL string
-	model     string
-	client    *http.Client
+	ollamaURL  string
+	model      string
+	dimensions int
+	client     *http.Client
 
 	mu              sync.Mutex
 	cbState         int
@@ -54,8 +55,13 @@ type embeddingResponse struct {
 	Embeddings [][]float32 `json:"embeddings"`
 }
 
-// NewEmbeddingService creates an EmbeddingService for the given Ollama endpoint and model.
-func NewEmbeddingService(ollamaURL, model string) *EmbeddingService {
+// Dimensions returns the expected embedding vector dimensions.
+func (s *EmbeddingService) Dimensions() int {
+	return s.dimensions
+}
+
+// NewEmbeddingService creates an EmbeddingService for the given Ollama endpoint, model, and expected dimensions.
+func NewEmbeddingService(ollamaURL, model string, dimensions int) *EmbeddingService {
 	transport := &http.Transport{
 		DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
 			host, _, err := net.SplitHostPort(addr)
@@ -80,10 +86,11 @@ func NewEmbeddingService(ollamaURL, model string) *EmbeddingService {
 	}
 
 	return &EmbeddingService{
-		ollamaURL: ollamaURL,
-		model:     model,
-		client:    &http.Client{Timeout: embeddingTimeout, Transport: transport},
-		cbState:   cbClosed,
+		ollamaURL:  ollamaURL,
+		model:      model,
+		dimensions: dimensions,
+		client:     &http.Client{Timeout: embeddingTimeout, Transport: transport},
+		cbState:    cbClosed,
 	}
 }
 
@@ -142,7 +149,12 @@ func (s *EmbeddingService) doGenerate(ctx context.Context, text string) ([]float
 		return nil, fmt.Errorf("ollama returned empty embeddings")
 	}
 
-	return result.Embeddings[0], nil
+	vec := result.Embeddings[0]
+	if s.dimensions > 0 && len(vec) != s.dimensions {
+		return nil, fmt.Errorf("embedding dimension mismatch: expected %d, got %d", s.dimensions, len(vec))
+	}
+
+	return vec, nil
 }
 
 // cbAllow checks whether the circuit breaker permits a request.

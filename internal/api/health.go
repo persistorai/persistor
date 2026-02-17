@@ -16,27 +16,29 @@ import (
 
 // HealthHandler serves health check endpoints.
 type HealthHandler struct {
-	pool           *dbpool.Pool
-	hub            *ws.Hub
-	log            *logrus.Logger
-	httpClient     *http.Client
-	version        string
-	startTime      time.Time
-	ollamaURL      string
-	embeddingModel string
+	pool                *dbpool.Pool
+	hub                 *ws.Hub
+	log                 *logrus.Logger
+	httpClient          *http.Client
+	version             string
+	startTime           time.Time
+	ollamaURL           string
+	embeddingModel      string
+	embeddingDimensions int
 }
 
 // NewHealthHandler creates a HealthHandler with the given dependencies.
-func NewHealthHandler(pool *dbpool.Pool, hub *ws.Hub, log *logrus.Logger, version, ollamaURL, embeddingModel string) *HealthHandler {
+func NewHealthHandler(pool *dbpool.Pool, hub *ws.Hub, log *logrus.Logger, version, ollamaURL, embeddingModel string, embeddingDimensions int) *HealthHandler {
 	return &HealthHandler{
-		pool:           pool,
-		hub:            hub,
-		log:            log,
-		httpClient:     &http.Client{Timeout: 2 * time.Second},
-		version:        version,
-		startTime:      time.Now(),
-		ollamaURL:      ollamaURL,
-		embeddingModel: embeddingModel,
+		pool:                pool,
+		hub:                 hub,
+		log:                 log,
+		httpClient:          &http.Client{Timeout: 2 * time.Second},
+		version:             version,
+		startTime:           time.Now(),
+		ollamaURL:           ollamaURL,
+		embeddingModel:      embeddingModel,
+		embeddingDimensions: embeddingDimensions,
 	}
 }
 
@@ -48,21 +50,23 @@ type readinessResponse struct {
 
 // healthResponse is the JSON payload returned by the health/liveness endpoint.
 type healthResponse struct {
-	Status        string  `json:"status"`
-	Version       string  `json:"version"`
-	Database      string  `json:"database"`
-	Embeddings    string  `json:"embeddings"`
-	UptimeSeconds float64 `json:"uptime_seconds"`
+	Status              string  `json:"status"`
+	Version             string  `json:"version"`
+	Database            string  `json:"database"`
+	Embeddings          string  `json:"embeddings"`
+	EmbeddingDimensions int     `json:"embedding_dimensions"`
+	UptimeSeconds       float64 `json:"uptime_seconds"`
 }
 
 // Liveness handles GET /api/health — returns status with db, embeddings, and uptime info.
 func (h *HealthHandler) Liveness(c *gin.Context) {
 	resp := healthResponse{
-		Status:        "ok",
-		Version:       h.version,
-		Database:      "connected",
-		Embeddings:    "unavailable",
-		UptimeSeconds: time.Since(h.startTime).Seconds(),
+		Status:              "ok",
+		Version:             h.version,
+		Database:            "connected",
+		Embeddings:          "unavailable",
+		EmbeddingDimensions: h.embeddingDimensions,
+		UptimeSeconds:       time.Since(h.startTime).Seconds(),
 	}
 
 	// Best-effort database ping (non-fatal for liveness).

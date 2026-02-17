@@ -13,7 +13,7 @@ import (
 func TestLiveness_ReturnsOK(t *testing.T) {
 	t.Parallel()
 
-	h := api.NewHealthHandler(nil, nil, testLogger(), "test-v1", "", "test-model")
+	h := api.NewHealthHandler(nil, nil, testLogger(), "test-v1", "", "test-model", 1024)
 
 	r := gin.New()
 	r.GET("/health", h.Liveness)

@@ -33,6 +33,7 @@ type Config struct {
 	CORSOrigins        []string
 	OllamaURL          string
 	EmbeddingModel     string
+	EmbeddingDimensions int
 	LogLevel           string
 	EncryptionProvider string
 	EncryptionKey      Secret
@@ -57,6 +58,12 @@ func Load() (*Config, error) {
 		VaultToken:         Secret(envOrDefault("VAULT_TOKEN", "")),
 		EnablePlayground:   envOrDefault("ENABLE_PLAYGROUND", "false") == "true",
 	}
+
+	embeddingDims, err := strconv.Atoi(envOrDefault("EMBEDDING_DIMENSIONS", "1024"))
+	if err != nil || embeddingDims < 1 || embeddingDims > 4096 {
+		return nil, fmt.Errorf("EMBEDDING_DIMENSIONS must be an integer between 1 and 4096")
+	}
+	cfg.EmbeddingDimensions = embeddingDims
 
 	embedWorkers, err := strconv.Atoi(envOrDefault("EMBED_WORKERS", "4"))
 	if err != nil || embedWorkers < 1 || embedWorkers > 16 {
