@@ -5,7 +5,12 @@ import type { OpenClawTool, ToolResult } from './types.ts';
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 function isFilePath(path: string): boolean {
-  return path.includes('/') || path.endsWith('.md');
+  return (
+    path.startsWith('./') ||
+    path.startsWith('/') ||
+    path.startsWith('memory/') ||
+    path.endsWith('.md')
+  );
 }
 
 function isUUID(str: string): boolean {
@@ -18,7 +23,7 @@ function jsonWrap(text: string): ToolResult {
 
 function formatNode(node: PersistorNode, context?: PersistorContext | null): string {
   const lines: string[] = [
-    `📦 Node: ${node.label} (${node.type})`,
+    `Node: ${node.label} (${node.type})`,
     `ID: ${node.id}`,
     `Salience: ${String(node.salience_score)}`,
   ];
@@ -33,13 +38,13 @@ function formatNode(node: PersistorNode, context?: PersistorContext | null): str
     for (const n of context.neighbors) {
       const isWrapped = 'node' in n && 'edge' in n;
       const innerNode: PersistorNode = isWrapped ? (n as { node: PersistorNode }).node : n;
-      lines.push(`  → ${innerNode.label} (${innerNode.type})`);
+      lines.push(`  -> ${innerNode.label} (${innerNode.type})`);
     }
   }
   if (context?.edges?.length) {
     lines.push('', 'Edges:');
     for (const e of context.edges) {
-      lines.push(`  ${e.source} —[${e.relation ?? e.type ?? '?'}]→ ${e.target}`);
+      lines.push(`  ${e.source} --[${e.relation ?? e.type ?? '?'}]--> ${e.target}`);
     }
   }
   return lines.join('\n');
@@ -63,7 +68,8 @@ async function getPersistorNode(
 
 /**
  * Wraps the built-in file get tool, adding Persistor node lookup.
- * Mutates the original tool to preserve all properties the runtime expects.
+ * Returns a cloned tool object that preserves all properties (including
+ * non-enumerable ones) with only `execute` and `description` overridden.
  */
 export function createUnifiedGetTool(
   fileGetTool: OpenClawTool,
@@ -72,10 +78,15 @@ export function createUnifiedGetTool(
 ): OpenClawTool {
   const originalExecute = fileGetTool.execute.bind(fileGetTool);
 
-  fileGetTool.description =
+  const wrappedTool = Object.create(
+    Object.getPrototypeOf(fileGetTool) as object,
+    Object.getOwnPropertyDescriptors(fileGetTool),
+  ) as OpenClawTool;
+
+  wrappedTool.description =
     'Read from MEMORY.md, memory/*.md files, or Persistor knowledge graph nodes. Pass a file path for files, or a node UUID for Persistor lookups.';
 
-  fileGetTool.execute = async (
+  wrappedTool.execute = async (
     toolCallId: string,
     params: Record<string, unknown>,
   ): Promise<ToolResult> => {
@@ -99,5 +110,5 @@ export function createUnifiedGetTool(
     return originalExecute(toolCallId, params);
   };
 
-  return fileGetTool;
+  return wrappedTool;
 }

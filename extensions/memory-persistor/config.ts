@@ -51,6 +51,9 @@ interface RawPluginConfig {
 
 const VALID_SEARCH_MODES = new Set<string>(['hybrid', 'text', 'semantic']);
 
+const isPositiveFinite = (v: unknown): v is number =>
+  typeof v === 'number' && Number.isFinite(v) && v > 0;
+
 /**
  * Merge partial user config with defaults.
  *
@@ -83,7 +86,7 @@ export function resolveConfig(raw: Record<string, unknown>): PersistorPluginConf
   }
 
   const rawTimeout = persistorRaw.timeout;
-  const timeout = typeof rawTimeout === 'number' ? rawTimeout : defaultConfig.persistor.timeout;
+  const timeout = isPositiveFinite(rawTimeout) ? rawTimeout : defaultConfig.persistor.timeout;
 
   const rawSearchMode = persistorRaw.searchMode;
   const searchMode =
@@ -92,8 +95,9 @@ export function resolveConfig(raw: Record<string, unknown>): PersistorPluginConf
       : defaultConfig.persistor.searchMode;
 
   const rawSearchLimit = persistorRaw.searchLimit;
-  const searchLimit =
-    typeof rawSearchLimit === 'number' ? rawSearchLimit : defaultConfig.persistor.searchLimit;
+  const searchLimit = isPositiveFinite(rawSearchLimit)
+    ? rawSearchLimit
+    : defaultConfig.persistor.searchLimit;
 
   const rawFileWeight = weightsRaw.file;
   const fileWeight = typeof rawFileWeight === 'number' ? rawFileWeight : defaultConfig.weights.file;

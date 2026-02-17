@@ -26,15 +26,21 @@ function extractToolPayload(result: unknown): unknown {
   return null;
 }
 
+/** Default score assigned when a file result has no explicit score */
+const DEFAULT_UNKNOWN_SCORE = 0.5;
+
+const isRecord = (v: unknown): v is Record<string, unknown> =>
+  v != null && typeof v === 'object' && !Array.isArray(v);
+
 function extractFileResults(toolResult: unknown): FileSearchResult[] {
   const payload = extractToolPayload(toolResult);
   if (!payload || typeof payload !== 'object') return [];
   const obj = payload as Record<string, unknown>;
   const results = Array.isArray(obj['results']) ? obj['results'] : [];
-  return results.map((r: Record<string, unknown>) => ({
+  return results.filter(isRecord).map((r) => ({
     path: String(r['path'] ?? r['file'] ?? 'unknown'),
     snippet: String(r['snippet'] ?? r['text'] ?? r['content'] ?? String(r)),
-    score: typeof r['score'] === 'number' ? r['score'] : 0.5,
+    score: typeof r['score'] === 'number' ? r['score'] : DEFAULT_UNKNOWN_SCORE,
     line:
       typeof r['line'] === 'number'
         ? r['line']
@@ -50,8 +56,8 @@ function jsonResult(payload: unknown): ToolResult {
 
 /**
  * Wraps the built-in file search tool, adding Persistor results.
- * Returns the SAME tool object with only `execute` and `description` overridden
- * to preserve all other properties the runtime expects.
+ * Returns a cloned tool object that preserves all properties (including
+ * non-enumerable ones) with only `execute` and `description` overridden.
  */
 export function createUnifiedSearchTool(
   fileSearchTool: OpenClawTool,
@@ -60,10 +66,15 @@ export function createUnifiedSearchTool(
 ): OpenClawTool {
   const originalExecute = fileSearchTool.execute.bind(fileSearchTool);
 
-  fileSearchTool.description =
+  const wrappedTool = Object.create(
+    Object.getPrototypeOf(fileSearchTool) as object,
+    Object.getOwnPropertyDescriptors(fileSearchTool),
+  ) as OpenClawTool;
+
+  wrappedTool.description =
     'Semantically search MEMORY.md + memory/*.md files AND the Persistor knowledge graph. Returns unified results from both sources.';
 
-  fileSearchTool.execute = async (
+  wrappedTool.execute = async (
     toolCallId: string,
     params: Record<string, unknown>,
   ): Promise<ToolResult> => {
@@ -118,5 +129,5 @@ export function createUnifiedSearchTool(
     });
   };
 
-  return fileSearchTool;
+  return wrappedTool;
 }

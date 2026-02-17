@@ -6,13 +6,16 @@ export interface FileSearchResult {
   snippet: string;
   score: number;
   line?: number | undefined;
-  [key: string]: unknown;
+  metadata?: Record<string, unknown>;
 }
 
 export interface MergeWeights {
   file: number;
   persistor: number;
 }
+
+/** Upper bound for salience scores used to normalize to 0–1 range */
+const SALIENCE_SCORE_MAX = 100;
 
 const clamp01 = (n: number): number => Math.max(0, Math.min(1, n));
 
@@ -22,19 +25,19 @@ export function mergeResults(
   weights: MergeWeights,
 ): UnifiedSearchResult[] {
   const fileUnified: UnifiedSearchResult[] = fileResults.map((r) => {
-    const { path, snippet, score, line, ...rest } = r;
+    const { path, snippet, score, line } = r;
     return {
       source: 'file' as const,
       score: clamp01(score) * weights.file,
       path,
       snippet,
       line,
-      raw: Object.keys(rest).length ? rest : undefined,
     };
   });
 
   const persistorUnified: UnifiedSearchResult[] = persistorResults.map((r) => {
-    const normalized = r.score != null ? clamp01(r.score) : clamp01(r.salience_score / 100);
+    const normalized =
+      r.score != null ? clamp01(r.score) : clamp01(r.salience_score / SALIENCE_SCORE_MAX);
     return {
       source: 'persistor' as const,
       score: normalized * weights.persistor,

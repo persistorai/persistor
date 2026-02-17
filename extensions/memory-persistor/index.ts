@@ -5,6 +5,18 @@ import { createUnifiedSearchTool } from './unified-search.ts';
 
 import type { OpenClawPluginApi } from 'openclaw/plugin-sdk';
 
+function getPluginConfig(api: OpenClawPluginApi): Record<string, unknown> {
+  const record = api as Record<string, unknown>;
+  if (
+    'pluginConfig' in record &&
+    typeof record['pluginConfig'] === 'object' &&
+    record['pluginConfig'] !== null
+  ) {
+    return record['pluginConfig'] as Record<string, unknown>;
+  }
+  return {};
+}
+
 const memoryPersistorPlugin = {
   id: 'memory-persistor',
   name: 'Memory (Persistor)',
@@ -12,20 +24,23 @@ const memoryPersistorPlugin = {
   kind: 'memory' as const,
 
   register(api: OpenClawPluginApi) {
-    const pluginConfig = (api as Record<string, unknown>)['pluginConfig'] as
-      | Record<string, unknown>
-      | undefined;
-    const config = resolveConfig(pluginConfig ?? {});
+    const pluginConfig = getPluginConfig(api);
+    const config = resolveConfig(pluginConfig);
     const persistorClient = new PersistorClient(config.persistor);
 
     // Fire-and-forget health check
-    void persistorClient.checkHealth().then((ok) => {
-      console.log(
-        ok
-          ? '[memory-persistor] ✅ Persistor connected'
-          : '[memory-persistor] ⚠️ Persistor unreachable — file-only mode',
-      );
-    });
+    persistorClient
+      .checkHealth()
+      .then((ok) => {
+        console.log(
+          ok
+            ? '[memory-persistor] [OK] Persistor connected'
+            : '[memory-persistor] [WARN] Persistor unreachable — file-only mode',
+        );
+      })
+      .catch(() => {
+        /* health check is fire-and-forget */
+      });
 
     api.registerTool(
       (ctx) => {
@@ -58,7 +73,11 @@ const memoryPersistorPlugin = {
           .description('Check Persistor health and stats')
           .action(async () => {
             const healthy = await persistorClient.checkHealth();
-            console.log(healthy ? '✅ Persistor is healthy' : '❌ Persistor is unreachable');
+            console.log(
+              healthy
+                ? '[memory-persistor] [OK] Persistor is healthy'
+                : '[memory-persistor] [WARN] Persistor is unreachable',
+            );
           });
 
         kg.command('search <query>')
@@ -66,7 +85,7 @@ const memoryPersistorPlugin = {
           .action(async (query: string) => {
             const results = await persistorClient.search(query);
             if (results.length === 0) {
-              console.log('No results.');
+              console.log('[memory-persistor] No results.');
               return;
             }
             for (const r of results) {

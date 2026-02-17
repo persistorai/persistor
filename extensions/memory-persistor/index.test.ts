@@ -16,15 +16,15 @@ async function test(name: string, fn: () => void | Promise<void>): Promise<void>
   try {
     await fn();
     passed++;
-    console.log(`  ✅ ${name}`);
+    console.log(`  [OK] ${name}`);
   } catch (e: unknown) {
     failed++;
-    console.log(`  ❌ ${name}: ${(e as Error).message}`);
+    console.log(`  [FAIL] ${name}: ${e instanceof Error ? e.message : String(e)}`);
   }
 }
 
 async function runTests(): Promise<void> {
-  console.log('\n🧪 memory-persistor tests\n');
+  console.log('\n[memory-persistor] tests\n');
 
   // --- Result Merger ---
   const w = { file: 1.0, persistor: 0.9 };
@@ -44,7 +44,7 @@ async function runTests(): Promise<void> {
     assert(first.source === 'file', 'file should rank first (0.8*1.0 > 0.7*0.9)');
   });
 
-  await test('merge: empty persistor → file only', () => {
+  await test('merge: empty persistor -> file only', () => {
     const r = mergeResults(fileR, [], w);
     const first = r[0];
     if (!first) throw new Error('expected result');
@@ -52,14 +52,14 @@ async function runTests(): Promise<void> {
     assert(first.score === 0.8, `expected 0.8, got ${first.score}`);
   });
 
-  await test('merge: empty file → persistor only', () => {
+  await test('merge: empty file -> persistor only', () => {
     const r = mergeResults([], persR, w);
     const first = r[0];
     if (!first) throw new Error('expected result');
     assert(r.length === 1 && first.source === 'persistor', 'should have persistor only');
   });
 
-  await test('merge: both empty → []', () => {
+  await test('merge: both empty -> []', () => {
     assert(mergeResults([], [], w).length === 0, 'should be empty');
   });
 

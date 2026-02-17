@@ -64,12 +64,12 @@ export class PersistorClient {
         signal: AbortSignal.timeout(this.config.timeout),
       });
       if (!res.ok) {
-        console.warn(`Persistor ${path}: HTTP ${res.status}`);
+        console.warn(`[memory-persistor] Persistor ${path}: HTTP ${res.status}`);
         return null;
       }
       return res;
     } catch (e: unknown) {
-      console.warn(`Persistor ${path}:`, e);
+      console.warn(`[memory-persistor] Persistor ${path}:`, e);
       return null;
     }
   }
@@ -102,7 +102,7 @@ export class PersistorClient {
             : [];
       return nodes.filter(isSearchResult);
     } catch (e: unknown) {
-      console.warn('Persistor search parse:', e);
+      console.warn('[memory-persistor] Persistor search parse:', e);
       return [];
     }
   }
@@ -114,7 +114,7 @@ export class PersistorClient {
       const body: unknown = await res.json();
       return isPersistorNode(body) ? body : null;
     } catch (e: unknown) {
-      console.warn('Persistor getNode parse:', e);
+      console.warn('[memory-persistor] Persistor getNode parse:', e);
       return null;
     }
   }
@@ -126,7 +126,7 @@ export class PersistorClient {
       const body: unknown = await res.json();
       return isPersistorContext(body) ? body : null;
     } catch (e: unknown) {
-      console.warn('Persistor getContext parse:', e);
+      console.warn('[memory-persistor] Persistor getContext parse:', e);
       return null;
     }
   }

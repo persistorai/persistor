@@ -1,4 +1,11 @@
-/** Content part within a tool result */
+/**
+ * Content part within a tool result.
+ *
+ * When `type` is `'image'`, the `source` field contains a provider-specific
+ * media descriptor (typically `{ type: 'base64', media_type: string, data: string }`
+ * or `{ type: 'url', url: string }`). The exact shape depends on the OpenClaw
+ * runtime and is intentionally left as `unknown` to avoid coupling to internals.
+ */
 export interface ToolContentPart {
   type: 'text' | 'image';
   text?: string;
@@ -8,7 +15,6 @@ export interface ToolContentPart {
 /** Tool result returned by OpenClaw tools */
 export interface ToolResult {
   content: ToolContentPart[];
-  details?: unknown;
 }
 
 /** Shape of an OpenClaw tool (search, get, etc.) */
@@ -16,7 +22,7 @@ export interface OpenClawTool {
   name: string;
   label: string;
   description: string;
-  parameters: unknown;
+  parameters: Record<string, unknown>;
   execute: (toolCallId: string, params: Record<string, unknown>) => Promise<ToolResult>;
 }
 
