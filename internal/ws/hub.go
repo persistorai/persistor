@@ -32,6 +32,8 @@ type Hub struct {
 	register    chan *Client
 	unregister  chan *Client
 	broadcast   chan tenantBroadcast
+	shutdown    chan struct{} // signals Run to begin graceful drain
+	done        chan struct{} // closed when Run has finished draining
 	count       atomic.Int64
 	log         *logrus.Logger
 	seq         *EventSequence
@@ -46,35 +48,30 @@ func NewHub(log *logrus.Logger) *Hub {
 		register:    make(chan *Client, registerBuffer),
 		unregister:  make(chan *Client, registerBuffer),
 		broadcast:   make(chan tenantBroadcast, broadcastBuffer),
+		shutdown:    make(chan struct{}),
+		done:        make(chan struct{}),
 		log:         log,
 		seq:         NewEventSequence(),
 		buffer:      NewEventBuffer(defaultBufferMaxLen, defaultBufferMaxAge),
 	}
 }
 
+// drainTimeout is how long the hub waits for clients to flush after shutdown.
+const drainTimeout = 3 * time.Second
+
 // Run starts the hub event loop. It should be run as a goroutine.
-// It exits when the context is cancelled, closing all client send channels.
+// It exits when Shutdown is called or the context is cancelled.
 func (h *Hub) Run(ctx context.Context) { //nolint:gocognit,gocyclo,cyclop // connection-limit checks add necessary branching.
+	defer close(h.done)
+
 	for {
 		select {
 		case <-ctx.Done():
-			// Send shutdown message to all clients before closing.
-			shutdownMsg := []byte(`{"type":"shutdown","message":"server shutting down"}`)
-			for client := range h.clients {
-				select {
-				case client.send <- shutdownMsg:
-				default:
-				}
-			}
-			// Brief delay to allow messages to flush.
-			time.Sleep(500 * time.Millisecond)
-			// Then close all clients.
-			for client := range h.clients {
-				client.closeSend()
-				delete(h.clients, client)
-			}
-			h.tenantCount = make(map[string]int)
-			h.count.Store(0)
+			h.drainClients()
+
+			return
+		case <-h.shutdown:
+			h.drainClients()
 
 			return
 
@@ -196,6 +193,71 @@ func (h *Hub) BroadcastEvent(eventType, tenantID string, data json.RawMessage) {
 
 	h.buffer.Append(tenantID, &evt)
 	h.BroadcastToTenant(tenantID, msg)
+}
+
+// Shutdown initiates a graceful WebSocket drain: sends a shutdown frame to
+// every connected client, waits for their write pumps to flush, then closes
+// all connections. It blocks until drain is complete or the timeout expires.
+func (h *Hub) Shutdown() {
+	close(h.shutdown)
+	<-h.done
+}
+
+// drainClients sends a close frame to every client and waits for buffers to flush.
+func (h *Hub) drainClients() {
+	if len(h.clients) == 0 {
+		return
+	}
+
+	h.log.WithField("clients", len(h.clients)).Info("draining WebSocket clients")
+
+	// Send shutdown notification so clients know to reconnect.
+	shutdownMsg := []byte(`{"type":"shutdown","message":"server shutting down"}`)
+	for client := range h.clients {
+		select {
+		case client.send <- shutdownMsg:
+		default:
+		}
+	}
+
+	// Wait for send buffers to empty or timeout.
+	deadline := time.After(drainTimeout)
+	ticker := time.NewTicker(50 * time.Millisecond) //nolint:mnd // poll interval
+	defer ticker.Stop()
+
+	for {
+		allDrained := true
+
+		for client := range h.clients {
+			if len(client.send) > 0 {
+				allDrained = false
+
+				break
+			}
+		}
+
+		if allDrained {
+			break
+		}
+
+		select {
+		case <-deadline:
+			h.log.Warn("WebSocket drain timeout, closing remaining clients")
+
+			goto closeAll
+		case <-ticker.C:
+		}
+	}
+
+closeAll:
+	for client := range h.clients {
+		client.closeSend()
+		delete(h.clients, client)
+	}
+
+	h.tenantCount = make(map[string]int)
+	h.count.Store(0)
+	metrics.WSConnections.Set(0)
 }
 
 // ReplayEvents sends buffered events since lastEventID to the client.

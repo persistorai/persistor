@@ -50,6 +50,11 @@ func (m *mockNodeStore) DeleteNode(ctx context.Context, tenantID, nodeID string)
 	return m.deleteNode(ctx, tenantID, nodeID)
 }
 
+func (m *mockNodeStore) PatchNodeProperties(_ context.Context, _, _ string, _ models.PatchPropertiesRequest) (*models.Node, error) {
+	m.record("PatchNodeProperties")
+	return &models.Node{}, nil
+}
+
 func (m *mockNodeStore) MigrateNode(_ context.Context, _, _ string, _ models.MigrateNodeRequest) (*models.MigrateNodeResult, error) {
 	m.record("MigrateNode")
 	return &models.MigrateNodeResult{}, nil
@@ -85,6 +90,11 @@ func (m *mockEdgeStore) CreateEdge(ctx context.Context, tenantID string, req mod
 func (m *mockEdgeStore) UpdateEdge(ctx context.Context, tenantID, source, target, relation string, req models.UpdateEdgeRequest) (*models.Edge, error) {
 	m.record("UpdateEdge")
 	return m.updateEdge(ctx, tenantID, source, target, relation, req)
+}
+
+func (m *mockEdgeStore) PatchEdgeProperties(_ context.Context, _, _, _, _ string, _ models.PatchPropertiesRequest) (*models.Edge, error) {
+	m.record("PatchEdgeProperties")
+	return &models.Edge{}, nil
 }
 
 func (m *mockEdgeStore) DeleteEdge(ctx context.Context, tenantID, source, target, relation string) error {

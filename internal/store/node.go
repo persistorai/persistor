@@ -187,6 +187,69 @@ func (s *NodeStore) UpdateNode(
 	return n, nil
 }
 
+// PatchNodeProperties merges patch properties into existing node properties.
+// Keys with null values are removed; all others are added/updated.
+func (s *NodeStore) PatchNodeProperties(
+	ctx context.Context,
+	tenantID string,
+	nodeID string,
+	req models.PatchPropertiesRequest,
+) (*models.Node, error) {
+	ctx, cancel := withTimeout(ctx)
+	defer cancel()
+
+	tx, err := s.beginTx(ctx, tenantID)
+	if err != nil {
+		return nil, fmt.Errorf("patching node properties: %w", err)
+	}
+
+	defer tx.Rollback(ctx) //nolint:errcheck // best-effort rollback after commit.
+
+	oldProps, err := fetchNodeProperties(ctx, tx, tenantID, nodeID, &s.Base)
+	if err != nil {
+		return nil, err
+	}
+
+	merged := models.MergeProperties(oldProps, req.Properties)
+
+	propsJSON, err := s.encryptProperties(ctx, tenantID, merged)
+	if err != nil {
+		return nil, fmt.Errorf("preparing patched properties: %w", err)
+	}
+
+	query := fmt.Sprintf(
+		"UPDATE kg_nodes SET properties = $1 WHERE tenant_id = $2 AND id = $3 RETURNING %s",
+		nodeColumns,
+	)
+
+	row := tx.QueryRow(ctx, query, propsJSON, tenantID, nodeID)
+
+	n, err := scanNode(row.Scan)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, models.ErrNodeNotFound
+		}
+
+		return nil, fmt.Errorf("scanning patched node: %w", err)
+	}
+
+	if err := s.decryptNode(ctx, tenantID, n); err != nil {
+		return nil, err
+	}
+
+	if err := RecordPropertyChanges(ctx, tx, tenantID, nodeID, oldProps, merged, ""); err != nil {
+		return nil, fmt.Errorf("recording property history: %w", err)
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return nil, fmt.Errorf("committing patch node properties: %w", err)
+	}
+
+	s.notify("kg_nodes", "update", tenantID)
+
+	return n, nil
+}
+
 // DeleteNode removes a node by ID and its associated edges within the same transaction.
 func (s *NodeStore) DeleteNode(ctx context.Context, tenantID, nodeID string) error {
 	ctx, cancel := withTimeout(ctx)

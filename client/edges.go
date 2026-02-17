@@ -65,6 +65,18 @@ func (s *EdgeService) Update(ctx context.Context, source, target, relation strin
 	return &edge, nil
 }
 
+// PatchProperties partially updates edge properties (merge semantics).
+func (s *EdgeService) PatchProperties(ctx context.Context, source, target, relation string, properties map[string]any) (*Edge, error) {
+	path := fmt.Sprintf("/api/v1/edges/%s/%s/%s/properties",
+		url.PathEscape(source), url.PathEscape(target), url.PathEscape(relation))
+	var edge Edge
+	req := &PatchPropertiesRequest{Properties: properties}
+	if err := s.c.patch(ctx, path, req, &edge); err != nil {
+		return nil, err
+	}
+	return &edge, nil
+}
+
 // Delete removes an edge by source/target/relation.
 func (s *EdgeService) Delete(ctx context.Context, source, target, relation string) error {
 	path := fmt.Sprintf("/api/v1/edges/%s/%s/%s",

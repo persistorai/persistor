@@ -61,7 +61,7 @@ func setupMiddleware(ctx context.Context, r *gin.Engine, deps *RouterDeps) {
 	r.Use(middleware.MaxBodySize(maxBodySize))
 	r.Use(cors.New(cors.Config{
 		AllowOrigins:     deps.CORSOrigins,
-		AllowMethods:     []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
+		AllowMethods:     []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
 		AllowHeaders:     []string{"Content-Type", "Authorization"},
 		MaxAge:           1 * time.Hour,
 		AllowCredentials: false,
@@ -103,6 +103,7 @@ func registerRoutes(ctx context.Context, api *gin.RouterGroup, deps *RouterDeps)
 	api.POST("/nodes", nodes.Create)
 	api.GET("/nodes/:id", nodes.Get)
 	api.PUT("/nodes/:id", nodes.Update)
+	api.PATCH("/nodes/:id/properties", nodes.PatchProperties)
 	api.DELETE("/nodes/:id", nodes.Delete)
 	api.POST("/nodes/:id/migrate", nodes.Migrate)
 	api.GET("/nodes/:id/history", history.GetHistory)
@@ -111,6 +112,7 @@ func registerRoutes(ctx context.Context, api *gin.RouterGroup, deps *RouterDeps)
 	api.GET("/edges", edges.List)
 	api.POST("/edges", edges.Create)
 	api.PUT("/edges/:source/:target/:relation", edges.Update)
+	api.PATCH("/edges/:source/:target/:relation/properties", edges.PatchProperties)
 	api.DELETE("/edges/:source/:target/:relation", edges.Delete)
 
 	// Search.

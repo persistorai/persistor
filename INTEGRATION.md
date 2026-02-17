@@ -186,7 +186,20 @@ curl -X PUT http://localhost:3030/api/v1/nodes/bob-smith \
   }'
 ```
 
-All fields are optional. Only provided fields are updated. Returns updated node (200) or **404**.
+All fields are optional. Only provided fields are updated. **Note:** `properties` replaces the entire object. Use PATCH for partial property updates. Returns updated node (200) or **404**.
+
+#### `PATCH /api/v1/nodes/:id/properties` — Partial Property Update
+
+```bash
+curl -X PATCH http://localhost:3030/api/v1/nodes/bob-smith/properties \
+  -H "Authorization: Bearer $API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "properties": {"senior": true, "department": "engineering"}
+  }'
+```
+
+Merges provided keys into existing properties. Keys set to `null` are removed. Returns updated node (200) or **404**.
 
 #### `DELETE /api/v1/nodes/:id` — Delete
 
@@ -252,7 +265,18 @@ curl -X PUT http://localhost:3030/api/v1/edges/alice/bob-smith/reports_to \
   -d '{"properties": {"since": "2024", "quality": "close"}, "weight": 2.0}'
 ```
 
-Updates `properties` and/or `weight`. Returns updated edge (200) or **404**.
+Updates `properties` and/or `weight`. **Note:** `properties` replaces the entire object. Use PATCH for partial property updates. Returns updated edge (200) or **404**.
+
+#### `PATCH /api/v1/edges/:source/:target/:relation/properties` — Partial Property Update
+
+```bash
+curl -X PATCH http://localhost:3030/api/v1/edges/alice/bob-smith/reports_to/properties \
+  -H "Authorization: Bearer $API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"properties": {"quality": "close"}}'
+```
+
+Merges provided keys into existing properties. Keys set to `null` are removed. Returns updated edge (200) or **404**.
 
 #### `DELETE /api/v1/edges/:source/:target/:relation` — Delete
 

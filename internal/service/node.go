@@ -15,6 +15,7 @@ type NodeStore interface {
 	GetNode(ctx context.Context, tenantID, nodeID string) (*models.Node, error)
 	CreateNode(ctx context.Context, tenantID string, req models.CreateNodeRequest) (*models.Node, error)
 	UpdateNode(ctx context.Context, tenantID string, nodeID string, req models.UpdateNodeRequest) (*models.Node, error)
+	PatchNodeProperties(ctx context.Context, tenantID string, nodeID string, req models.PatchPropertiesRequest) (*models.Node, error)
 	DeleteNode(ctx context.Context, tenantID, nodeID string) error
 	MigrateNode(ctx context.Context, tenantID, oldID string, req models.MigrateNodeRequest) (*models.MigrateNodeResult, error)
 }
@@ -112,6 +113,30 @@ func (s *NodeService) UpdateNode(
 	s.auditAsync(tenantID, "node.update", "node", node.ID, map[string]any{"type": node.Type, "label": node.Label})
 
 	return node, nil
+}
+
+// PatchNodeProperties partially updates node properties (merge semantics).
+func (s *NodeService) PatchNodeProperties(
+	ctx context.Context, tenantID, nodeID string, req models.PatchPropertiesRequest,
+) (*models.Node, error) {
+	node, err := s.store.PatchNodeProperties(ctx, tenantID, nodeID, req)
+	if err != nil {
+		return nil, err
+	}
+
+	s.auditAsync(tenantID, "node.patch_properties", "node", nodeID, map[string]any{"patched_keys": mapKeys(req.Properties)})
+
+	return node, nil
+}
+
+// mapKeys returns the keys of a map as a slice.
+func mapKeys(m map[string]any) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+
+	return keys
 }
 
 // MigrateNode atomically migrates a node to a new ID.

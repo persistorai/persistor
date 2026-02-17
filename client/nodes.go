@@ -69,6 +69,16 @@ func (s *NodeService) Update(ctx context.Context, id string, req *UpdateNodeRequ
 	return &node, nil
 }
 
+// PatchProperties partially updates node properties (merge semantics).
+func (s *NodeService) PatchProperties(ctx context.Context, id string, properties map[string]any) (*Node, error) {
+	var node Node
+	req := &PatchPropertiesRequest{Properties: properties}
+	if err := s.c.patch(ctx, "/api/v1/nodes/"+url.PathEscape(id)+"/properties", req, &node); err != nil {
+		return nil, err
+	}
+	return &node, nil
+}
+
 // Delete removes a node by ID.
 func (s *NodeService) Delete(ctx context.Context, id string) error {
 	return s.c.del(ctx, "/api/v1/nodes/"+url.PathEscape(id), nil, nil)

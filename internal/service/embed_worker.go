@@ -31,6 +31,7 @@ type EmbedWorker struct {
 	jobs        chan EmbedJob
 	maxJobs     int
 	concurrency int
+	done        chan struct{} // closed when Run() returns after drain
 }
 
 // NewEmbedWorker creates a worker with the given queue capacity and concurrency.
@@ -49,6 +50,7 @@ func NewEmbedWorker(embed *EmbeddingService, repo EmbeddingUpdater, log *logrus.
 		jobs:        make(chan EmbedJob, queueSize),
 		maxJobs:     queueSize,
 		concurrency: concurrency,
+		done:        make(chan struct{}),
 	}
 }
 
@@ -63,8 +65,10 @@ func (w *EmbedWorker) Enqueue(job EmbedJob) {
 }
 
 // Run spawns N worker goroutines and blocks until the context is cancelled
-// and all workers have drained. Call in a goroutine.
+// and all queued jobs have been drained. Call in a goroutine.
 func (w *EmbedWorker) Run(ctx context.Context) {
+	defer close(w.done)
+
 	var wg sync.WaitGroup
 
 	w.log.WithField("concurrency", w.concurrency).Info("starting embed workers")
@@ -81,11 +85,24 @@ func (w *EmbedWorker) Run(ctx context.Context) {
 	w.log.Info("all embed workers stopped")
 }
 
+// Wait blocks until Run() has finished draining and returned.
+// Safe to call from shutdown sequences after cancelling the context.
+func (w *EmbedWorker) Wait(timeout time.Duration) {
+	select {
+	case <-w.done:
+	case <-time.After(timeout):
+		w.log.Warn("embed worker drain timed out")
+	}
+}
+
 func (w *EmbedWorker) runWorker(ctx context.Context, id int) {
 	w.log.WithField("worker_id", id).Debug("embed worker started")
+
+	// Process jobs until context is cancelled.
 	for {
 		select {
 		case <-ctx.Done():
+			w.drainWorker(id)
 			return
 		case job := <-w.jobs:
 			metrics.EmbedQueueDepth.Set(float64(len(w.jobs)))
@@ -94,10 +111,53 @@ func (w *EmbedWorker) runWorker(ctx context.Context, id int) {
 	}
 }
 
+// drainWorker processes remaining queued jobs with a background context (no retries).
+func (w *EmbedWorker) drainWorker(id int) {
+	remaining := len(w.jobs)
+	if remaining == 0 {
+		return
+	}
+
+	w.log.WithFields(logrus.Fields{
+		"worker_id": id,
+		"remaining": remaining,
+	}).Info("draining embed queue")
+
+	drainCtx, drainCancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer drainCancel()
+
+	for {
+		select {
+		case job := <-w.jobs:
+			metrics.EmbedQueueDepth.Set(float64(len(w.jobs)))
+			w.processSingle(drainCtx, job)
+		case <-drainCtx.Done():
+			w.log.WithField("worker_id", id).Warn("drain timeout, dropping remaining jobs")
+			return
+		default:
+			// Channel empty, drain complete.
+			return
+		}
+	}
+}
+
 const (
 	maxRetries     = 3
 	baseRetryDelay = 2 * time.Second
 )
+
+// processSingle attempts a single embedding without retry (used during drain).
+func (w *EmbedWorker) processSingle(ctx context.Context, job EmbedJob) {
+	embedding, err := w.embed.Generate(ctx, job.Text)
+	if err != nil {
+		w.log.WithError(err).WithField("node_id", job.NodeID).Warn("embedding failed during drain")
+		return
+	}
+
+	if err := w.repo.UpdateNodeEmbedding(ctx, job.TenantID, job.NodeID, embedding); err != nil {
+		w.log.WithError(err).WithField("node_id", job.NodeID).Error("storing embedding during drain")
+	}
+}
 
 func (w *EmbedWorker) processWithRetry(ctx context.Context, job EmbedJob) {
 	for attempt := range maxRetries {

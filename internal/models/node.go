@@ -117,6 +117,47 @@ type UpdateNodeRequest struct {
 	Properties map[string]any `json:"properties,omitempty"`
 }
 
+// PatchPropertiesRequest is the payload for partially updating properties.
+// Keys with non-null values are added/updated; keys with null values are removed.
+type PatchPropertiesRequest struct {
+	Properties map[string]any `json:"properties"`
+}
+
+// Validate checks PatchPropertiesRequest fields.
+func (r *PatchPropertiesRequest) Validate() error {
+	if r.Properties == nil || len(r.Properties) == 0 {
+		return fmt.Errorf("properties is required and must not be empty")
+	}
+
+	data, err := json.Marshal(r.Properties)
+	if err != nil {
+		return fmt.Errorf("invalid properties: %w", err)
+	}
+	if len(data) > 65536 {
+		return ErrFieldTooLong("properties", 65536)
+	}
+
+	return nil
+}
+
+// MergeProperties merges patch into existing properties.
+// Keys with null values are removed; all others are added/updated.
+func MergeProperties(existing, patch map[string]any) map[string]any {
+	if existing == nil {
+		existing = make(map[string]any)
+	}
+
+	for k, v := range patch {
+		if v == nil {
+			delete(existing, k)
+		} else {
+			existing[k] = v
+		}
+	}
+
+	return existing
+}
+
 // Validate checks UpdateNodeRequest fields.
 func (r *UpdateNodeRequest) Validate() error {
 	if r.Type != nil && *r.Type == "" {

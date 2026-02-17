@@ -12,6 +12,7 @@ type NodeRepository interface {
 	GetNode(ctx context.Context, tenantID, nodeID string) (*models.Node, error)
 	CreateNode(ctx context.Context, tenantID string, req models.CreateNodeRequest) (*models.Node, error)
 	UpdateNode(ctx context.Context, tenantID string, nodeID string, req models.UpdateNodeRequest) (*models.Node, error)
+	PatchNodeProperties(ctx context.Context, tenantID string, nodeID string, req models.PatchPropertiesRequest) (*models.Node, error)
 	DeleteNode(ctx context.Context, tenantID, nodeID string) error
 	MigrateNode(ctx context.Context, tenantID, oldID string, req models.MigrateNodeRequest) (*models.MigrateNodeResult, error)
 }
@@ -21,6 +22,7 @@ type EdgeRepository interface {
 	ListEdges(ctx context.Context, tenantID string, source, target, relation string, limit, offset int) ([]models.Edge, bool, error)
 	CreateEdge(ctx context.Context, tenantID string, req models.CreateEdgeRequest) (*models.Edge, error)
 	UpdateEdge(ctx context.Context, tenantID string, source, target, relation string, req models.UpdateEdgeRequest) (*models.Edge, error)
+	PatchEdgeProperties(ctx context.Context, tenantID string, source, target, relation string, req models.PatchPropertiesRequest) (*models.Edge, error)
 	DeleteEdge(ctx context.Context, tenantID string, source, target, relation string) error
 }
 

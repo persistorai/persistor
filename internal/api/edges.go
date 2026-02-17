@@ -139,6 +139,60 @@ func (h *EdgeHandler) Update(c *gin.Context) {
 	c.JSON(http.StatusOK, edge)
 }
 
+// PatchProperties handles PATCH /api/edges/:source/:target/:relation/properties.
+func (h *EdgeHandler) PatchProperties(c *gin.Context) {
+	source := c.Param("source")
+	target := c.Param("target")
+	relation := c.Param("relation")
+
+	for _, pair := range []struct{ name, val string }{{"source", source}, {"target", target}, {"relation", relation}} {
+		if err := validatePathID(pair.val); err != nil {
+			respondError(c, http.StatusBadRequest, ErrCodeInvalidRequest, "invalid "+pair.name+": "+err.Error())
+
+			return
+		}
+	}
+
+	var req models.PatchPropertiesRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		respondError(c, http.StatusBadRequest, ErrCodeInvalidRequest, "invalid request body")
+
+		return
+	}
+
+	if err := req.Validate(); err != nil {
+		respondError(c, http.StatusBadRequest, ErrCodeValidationError, err.Error())
+
+		return
+	}
+
+	tenantID := getTenantID(c)
+	if tenantID == "" {
+		return
+	}
+
+	edge, err := h.repo.PatchEdgeProperties(c.Request.Context(), tenantID, source, target, relation, req)
+	if err != nil {
+		if errors.Is(err, models.ErrEdgeNotFound) {
+			respondError(c, http.StatusNotFound, ErrCodeNotFound, "edge not found")
+
+			return
+		}
+
+		h.log.WithError(err).Error("patching edge properties")
+		respondError(c, http.StatusInternalServerError, ErrCodeInternalError, "internal server error")
+
+		return
+	}
+
+	h.log.WithFields(logrus.Fields{
+		"action": "edge.patch_properties", "tenant_id": tenantID,
+		"source": source, "target": target, "relation": relation,
+	}).Info("audit")
+
+	c.JSON(http.StatusOK, edge)
+}
+
 // Delete handles DELETE /api/edges/:source/:target/:relation.
 func (h *EdgeHandler) Delete(c *gin.Context) {
 	source := c.Param("source")

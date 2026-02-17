@@ -151,6 +151,11 @@ func (c *Client) put(ctx context.Context, path string, body any, result any) err
 	return c.do(ctx, http.MethodPut, path, body, result)
 }
 
+// patch is a convenience wrapper for PATCH requests.
+func (c *Client) patch(ctx context.Context, path string, body any, result any) error {
+	return c.do(ctx, http.MethodPatch, path, body, result)
+}
+
 // del is a convenience wrapper for DELETE requests.
 func (c *Client) del(ctx context.Context, path string, params url.Values, result any) error {
 	if len(params) > 0 {

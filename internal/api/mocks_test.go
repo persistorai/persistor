@@ -35,6 +35,10 @@ func (m *mockNodeRepo) DeleteNode(ctx context.Context, tenantID, nodeID string) 
 	return m.deleteFn(ctx, tenantID, nodeID)
 }
 
+func (m *mockNodeRepo) PatchNodeProperties(_ context.Context, _, _ string, _ models.PatchPropertiesRequest) (*models.Node, error) {
+	return nil, nil
+}
+
 func (m *mockNodeRepo) MigrateNode(_ context.Context, _, _ string, _ models.MigrateNodeRequest) (*models.MigrateNodeResult, error) {
 	return nil, nil
 }
@@ -57,6 +61,10 @@ func (m *mockEdgeRepo) CreateEdge(ctx context.Context, tenantID string, req mode
 
 func (m *mockEdgeRepo) UpdateEdge(ctx context.Context, tenantID, source, target, relation string, req models.UpdateEdgeRequest) (*models.Edge, error) {
 	return m.updateFn(ctx, tenantID, source, target, relation, req)
+}
+
+func (m *mockEdgeRepo) PatchEdgeProperties(_ context.Context, _, _, _, _ string, _ models.PatchPropertiesRequest) (*models.Edge, error) {
+	return nil, nil
 }
 
 func (m *mockEdgeRepo) DeleteEdge(ctx context.Context, tenantID, source, target, relation string) error {

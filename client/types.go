@@ -67,6 +67,11 @@ type CreateEdgeRequest struct {
 	Weight     *float64       `json:"weight,omitempty"`
 }
 
+// PatchPropertiesRequest is the payload for partially updating properties.
+type PatchPropertiesRequest struct {
+	Properties map[string]any `json:"properties"`
+}
+
 // UpdateEdgeRequest is the payload for updating an edge.
 type UpdateEdgeRequest struct {
 	Properties map[string]any `json:"properties,omitempty"`

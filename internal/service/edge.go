@@ -13,6 +13,7 @@ type EdgeStore interface {
 	ListEdges(ctx context.Context, tenantID string, source, target, relation string, limit, offset int) ([]models.Edge, bool, error)
 	CreateEdge(ctx context.Context, tenantID string, req models.CreateEdgeRequest) (*models.Edge, error)
 	UpdateEdge(ctx context.Context, tenantID string, source, target, relation string, req models.UpdateEdgeRequest) (*models.Edge, error)
+	PatchEdgeProperties(ctx context.Context, tenantID string, source, target, relation string, req models.PatchPropertiesRequest) (*models.Edge, error)
 	DeleteEdge(ctx context.Context, tenantID string, source, target, relation string) error
 }
 
@@ -75,6 +76,20 @@ func (s *EdgeService) UpdateEdge(
 
 	s.auditAsync(tenantID, "edge.update", "edge", source+"/"+target+"/"+relation,
 		map[string]any{"source": source, "target": target, "relation": relation})
+
+	return edge, nil
+}
+
+// PatchEdgeProperties partially updates edge properties (merge semantics).
+func (s *EdgeService) PatchEdgeProperties(
+	ctx context.Context, tenantID string, source, target, relation string, req models.PatchPropertiesRequest,
+) (*models.Edge, error) {
+	edge, err := s.store.PatchEdgeProperties(ctx, tenantID, source, target, relation, req)
+	if err != nil {
+		return nil, err
+	}
+
+	s.auditAsync(tenantID, "edge.patch_properties", "edge", source+"/"+target+"/"+relation, nil)
 
 	return edge, nil
 }

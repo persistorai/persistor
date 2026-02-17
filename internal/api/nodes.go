@@ -163,6 +163,52 @@ func (h *NodeHandler) Update(c *gin.Context) {
 	c.JSON(http.StatusOK, node)
 }
 
+// PatchProperties handles PATCH /api/nodes/:id/properties.
+func (h *NodeHandler) PatchProperties(c *gin.Context) {
+	nodeID := c.Param("id")
+	if err := validatePathID(nodeID); err != nil {
+		respondError(c, http.StatusBadRequest, ErrCodeInvalidRequest, err.Error())
+
+		return
+	}
+
+	var req models.PatchPropertiesRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		respondError(c, http.StatusBadRequest, ErrCodeInvalidRequest, "invalid request body")
+
+		return
+	}
+
+	if err := req.Validate(); err != nil {
+		respondError(c, http.StatusBadRequest, ErrCodeValidationError, err.Error())
+
+		return
+	}
+
+	tenantID := getTenantID(c)
+	if tenantID == "" {
+		return
+	}
+
+	node, err := h.repo.PatchNodeProperties(c.Request.Context(), tenantID, nodeID, req)
+	if err != nil {
+		if errors.Is(err, models.ErrNodeNotFound) {
+			respondError(c, http.StatusNotFound, ErrCodeNotFound, "node not found")
+
+			return
+		}
+
+		h.log.WithError(err).Error("patching node properties")
+		respondError(c, http.StatusInternalServerError, ErrCodeInternalError, "internal server error")
+
+		return
+	}
+
+	h.log.WithFields(logrus.Fields{"action": "node.patch_properties", "tenant_id": tenantID, "node_id": nodeID}).Info("audit")
+
+	c.JSON(http.StatusOK, node)
+}
+
 // Migrate handles POST /api/nodes/:id/migrate.
 func (h *NodeHandler) Migrate(c *gin.Context) {
 	nodeID := c.Param("id")
