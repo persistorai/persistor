@@ -1,5 +1,5 @@
-import type { PersistorClient, PersistorNode, PersistorContext } from './persistor-client.ts';
 import type { PersistorPluginConfig } from './config.ts';
+import type { PersistorClient, PersistorNode, PersistorContext } from './persistor-client.ts';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -24,7 +24,7 @@ function formatNode(node: PersistorNode, context?: PersistorContext | null): str
   if (node.properties && Object.keys(node.properties).length > 0) {
     lines.push('', 'Properties:');
     for (const [k, v] of Object.entries(node.properties)) {
-      lines.push(`  ${k}: ${typeof v === 'object' ? JSON.stringify(v) : v}`);
+      lines.push(`  ${k}: ${typeof v === 'object' ? JSON.stringify(v) : String(v)}`);
     }
   }
   if (context?.neighbors?.length) {
@@ -46,7 +46,9 @@ function formatNode(node: PersistorNode, context?: PersistorContext | null): str
 }
 
 async function getPersistorNode(
-  client: PersistorClient, id: string, includeContext: boolean,
+  client: PersistorClient,
+  id: string,
+  includeContext: boolean,
 ): Promise<string | null> {
   try {
     const node = await client.getNode(id);
@@ -73,8 +75,11 @@ export function createUnifiedGetTool(
   fileGetTool.description =
     'Read from MEMORY.md, memory/*.md files, or Persistor knowledge graph nodes. Pass a file path for files, or a node UUID for Persistor lookups.';
 
-  fileGetTool.execute = async (toolCallId: string, params: { path: string; from?: number; lines?: number }) => {
-    const path = typeof params === 'object' && params !== null ? (params as any).path ?? '' : '';
+  fileGetTool.execute = async (
+    toolCallId: string,
+    params: { path: string; from?: number; lines?: number },
+  ) => {
+    const path = typeof params === 'object' && params !== null ? ((params as any).path ?? '') : '';
 
     // File paths always go to the file tool
     if (isFilePath(path)) {

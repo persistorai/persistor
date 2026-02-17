@@ -19,8 +19,14 @@ export interface PersistorSearchResult {
 
 export interface PersistorContext {
   node: PersistorNode;
-  neighbors: Array<PersistorNode | { node: PersistorNode; edge: any; direction: string }>;
-  edges?: Array<{ source: string; target: string; relation?: string; type?: string; weight?: number }>;
+  neighbors: (PersistorNode | { node: PersistorNode; edge: any; direction: string })[];
+  edges?: {
+    source: string;
+    target: string;
+    relation?: string;
+    type?: string;
+    weight?: number;
+  }[];
 }
 
 export interface PersistorClientConfig {
@@ -47,7 +53,7 @@ export class PersistorClient {
   }
 
   private headers(): Record<string, string> {
-    return { 'Authorization': `Bearer ${this.apiKey}`, 'Content-Type': 'application/json' };
+    return { Authorization: `Bearer ${this.apiKey}`, 'Content-Type': 'application/json' };
   }
 
   private async get(path: string): Promise<Response | null> {
@@ -56,19 +62,29 @@ export class PersistorClient {
         headers: this.headers(),
         signal: AbortSignal.timeout(this.timeout),
       });
-      if (!res.ok) { console.warn(`Persistor ${path}: HTTP ${res.status}`); return null; }
+      if (!res.ok) {
+        console.warn(`Persistor ${path}: HTTP ${res.status}`);
+        return null;
+      }
       return res;
-    } catch (e) { console.warn(`Persistor ${path}:`, e); return null; }
+    } catch (e: unknown) {
+      console.warn(`Persistor ${path}:`, e);
+      return null;
+    }
   }
 
   async checkHealth(): Promise<boolean> {
     return (await this.get('/api/v1/ready')) !== null;
   }
 
-  async search(query: string, opts?: { mode?: string; limit?: number }): Promise<PersistorSearchResult[]> {
+  async search(
+    query: string,
+    opts?: { mode?: string; limit?: number },
+  ): Promise<PersistorSearchResult[]> {
     const mode = opts?.mode ?? this.defaultSearchMode;
     const limit = opts?.limit ?? this.defaultSearchLimit;
-    const segment = mode === 'semantic' ? '/search/semantic' : mode === 'text' ? '/search' : '/search/hybrid';
+    const segment =
+      mode === 'semantic' ? '/search/semantic' : mode === 'text' ? '/search' : '/search/hybrid';
     const res = await this.get(`/api/v1${segment}?q=${encodeURIComponent(query)}&limit=${limit}`);
     if (!res) return [];
     try {
@@ -76,18 +92,31 @@ export class PersistorClient {
       // API returns { nodes: [...] } wrapper, not a bare array
       const nodes = Array.isArray(body) ? body : (body?.nodes ?? body?.results ?? []);
       return nodes as PersistorSearchResult[];
-    } catch (e) { console.warn('Persistor search parse:', e); return []; }
+    } catch (e: unknown) {
+      console.warn('Persistor search parse:', e);
+      return [];
+    }
   }
 
   async getNode(id: string): Promise<PersistorNode | null> {
     const res = await this.get(`/api/v1/nodes/${encodeURIComponent(id)}`);
     if (!res) return null;
-    try { return await res.json() as PersistorNode; } catch (e) { console.warn('Persistor getNode parse:', e); return null; }
+    try {
+      return (await res.json()) as PersistorNode;
+    } catch (e: unknown) {
+      console.warn('Persistor getNode parse:', e);
+      return null;
+    }
   }
 
   async getContext(id: string): Promise<PersistorContext | null> {
     const res = await this.get(`/api/v1/graph/context/${encodeURIComponent(id)}`);
     if (!res) return null;
-    try { return await res.json() as PersistorContext; } catch (e) { console.warn('Persistor getContext parse:', e); return null; }
+    try {
+      return (await res.json()) as PersistorContext;
+    } catch (e: unknown) {
+      console.warn('Persistor getContext parse:', e);
+      return null;
+    }
   }
 }

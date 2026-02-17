@@ -63,3 +63,7 @@ server
 persistor.env
 persistor-server
 /persistor-cli
+
+# Node.js
+node_modules/
+tsconfig.tsbuildinfo

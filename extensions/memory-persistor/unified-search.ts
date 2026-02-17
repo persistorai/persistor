@@ -1,6 +1,7 @@
-import type { PersistorClient } from './persistor-client.ts';
-import type { PersistorPluginConfig } from './config.ts';
 import { mergeResults } from './result-merger.ts';
+
+import type { PersistorPluginConfig } from './config.ts';
+import type { PersistorClient } from './persistor-client.ts';
 import type { FileSearchResult } from './result-merger.ts';
 
 /**
@@ -11,9 +12,15 @@ function extractToolPayload(result: unknown): unknown {
   if (!result || typeof result !== 'object') return null;
   const obj = result as Record<string, unknown>;
   if (Array.isArray(obj.content)) {
-    const textPart = obj.content.find((c: any) => c?.type === 'text' && typeof c?.text === 'string');
+    const textPart = obj.content.find(
+      (c: any) => c?.type === 'text' && typeof c?.text === 'string',
+    );
     if (textPart) {
-      try { return JSON.parse((textPart as any).text); } catch { return null; }
+      try {
+        return JSON.parse(textPart.text);
+      } catch {
+        return null;
+      }
     }
   }
   return null;
@@ -51,7 +58,10 @@ export function createUnifiedSearchTool(
   fileSearchTool.description =
     'Semantically search MEMORY.md + memory/*.md files AND the Persistor knowledge graph. Returns unified results from both sources.';
 
-  fileSearchTool.execute = async (toolCallId: string, params: { query: string; maxResults?: number; minScore?: number }) => {
+  fileSearchTool.execute = async (
+    toolCallId: string,
+    params: { query: string; maxResults?: number; minScore?: number },
+  ) => {
     const { query, maxResults = 20, minScore = 0 } = params;
 
     const [fileResult, persistorResult] = await Promise.allSettled([
@@ -59,7 +69,8 @@ export function createUnifiedSearchTool(
       persistorClient.search(query, { limit: config.persistor.searchLimit }),
     ]);
 
-    const fileResults = fileResult.status === 'fulfilled' ? extractFileResults(fileResult.value) : [];
+    const fileResults =
+      fileResult.status === 'fulfilled' ? extractFileResults(fileResult.value) : [];
     let persistorResults: any[] = [];
     let persistorAvailable = true;
     if (persistorResult.status === 'fulfilled') {
@@ -77,12 +88,20 @@ export function createUnifiedSearchTool(
           return { source: 'file', path: r.path, snippet: r.snippet, score: r.score, line: r.line };
         }
         return {
-          source: 'persistor', nodeId: r.nodeId, nodeType: r.nodeType,
-          label: r.label, properties: r.properties,
-          salienceScore: r.salienceScore, score: r.score,
+          source: 'persistor',
+          nodeId: r.nodeId,
+          nodeType: r.nodeType,
+          label: r.label,
+          properties: r.properties,
+          salienceScore: r.salienceScore,
+          score: r.score,
         };
       }),
-      meta: { persistorAvailable, totalFile: fileResults.length, totalPersistor: persistorResults.length },
+      meta: {
+        persistorAvailable,
+        totalFile: fileResults.length,
+        totalPersistor: persistorResults.length,
+      },
     });
   };
 

@@ -48,13 +48,16 @@ export function resolveConfig(raw: Record<string, unknown>): PersistorPluginConf
       url: (persistorRaw.url as string) ?? defaultConfig.persistor.url,
       apiKey,
       timeout: (persistorRaw.timeout as number) ?? defaultConfig.persistor.timeout,
-      searchMode: (persistorRaw.searchMode as PersistorPluginConfig['persistor']['searchMode']) ?? defaultConfig.persistor.searchMode,
+      searchMode:
+        (persistorRaw.searchMode as PersistorPluginConfig['persistor']['searchMode']) ??
+        defaultConfig.persistor.searchMode,
       searchLimit: (persistorRaw.searchLimit as number) ?? defaultConfig.persistor.searchLimit,
     },
     weights: {
       file: (weightsRaw.file as number) ?? defaultConfig.weights.file,
       persistor: (weightsRaw.persistor as number) ?? defaultConfig.weights.persistor,
     },
-    persistorContextOnGet: (raw.persistorContextOnGet as boolean) ?? defaultConfig.persistorContextOnGet,
+    persistorContextOnGet:
+      (raw.persistorContextOnGet as boolean) ?? defaultConfig.persistorContextOnGet,
   };
 }

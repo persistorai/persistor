@@ -44,7 +44,7 @@ export function mergeResults(
   persistorResults: PersistorSearchResult[],
   weights: MergeWeights,
 ): UnifiedSearchResult[] {
-  const fileUnified: UnifiedSearchResult[] = fileResults.map((r, i) => {
+  const fileUnified: UnifiedSearchResult[] = fileResults.map((r, _i) => {
     const { path, snippet, score, line, ...rest } = r;
     return {
       source: 'file' as const,
@@ -56,7 +56,7 @@ export function mergeResults(
     };
   });
 
-  const persistorUnified: UnifiedSearchResult[] = persistorResults.map((r, i) => {
+  const persistorUnified: UnifiedSearchResult[] = persistorResults.map((r, _i) => {
     const normalized = r.score != null ? clamp01(r.score) : clamp01(r.salience_score / 100);
     return {
       source: 'persistor' as const,

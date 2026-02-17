@@ -1,14 +1,23 @@
-import { mergeResults } from './result-merger.ts';
 import { resolveConfig, defaultConfig } from './config.ts';
+import { mergeResults } from './result-merger.ts';
 import { createUnifiedGetTool } from './unified-get.ts';
 
-let passed = 0, failed = 0;
+let passed = 0,
+  failed = 0;
 
-function assert(cond: boolean, msg: string) { if (!cond) throw new Error(msg); }
+function assert(cond: boolean, msg: string) {
+  if (!cond) throw new Error(msg);
+}
 
 async function test(name: string, fn: () => void | Promise<void>) {
-  try { await fn(); passed++; console.log(`  ✅ ${name}`); }
-  catch (e: any) { failed++; console.log(`  ❌ ${name}: ${e.message}`); }
+  try {
+    await fn();
+    passed++;
+    console.log(`  ✅ ${name}`);
+  } catch (e: any) {
+    failed++;
+    console.log(`  ❌ ${name}: ${e.message}`);
+  }
 }
 
 async function runTests() {
@@ -17,7 +26,9 @@ async function runTests() {
   // --- Result Merger ---
   const w = { file: 1.0, persistor: 0.9 };
   const fileR = [{ path: 'MEMORY.md', snippet: 'hello', score: 0.8, line: 1 }];
-  const persR = [{ id: 'a', type: 'concept', label: 'T', properties: {}, salience_score: 75, score: 0.7 }];
+  const persR = [
+    { id: 'a', type: 'concept', label: 'T', properties: {}, salience_score: 75, score: 0.7 },
+  ];
 
   await test('merge: file + persistor in score order', () => {
     const r = mergeResults(fileR, persR, w);
@@ -56,7 +67,10 @@ async function runTests() {
   });
 
   await test('config: custom values override', () => {
-    const c = resolveConfig({ persistor: { url: 'http://x:9999', timeout: 5000 }, weights: { file: 0.5 } });
+    const c = resolveConfig({
+      persistor: { url: 'http://x:9999', timeout: 5000 },
+      weights: { file: 0.5 },
+    });
     assert(c.persistor.url === 'http://x:9999', 'url not overridden');
     assert(c.persistor.timeout === 5000, 'timeout not overridden');
     assert(c.weights.file === 0.5, 'weight not overridden');
@@ -70,9 +84,18 @@ async function runTests() {
   });
 
   // --- Unified Get ---
-  const mockFileGet = { name: 'memory_get', execute: async (_id: string, p: any) => `file:${p.path}` };
+  const mockFileGet = {
+    name: 'memory_get',
+    execute: async (_id: string, p: any) => `file:${p.path}`,
+  };
   const mockClient: any = {
-    getNode: async (id: string) => ({ id, type: 'concept', label: 'T', properties: {}, salience: 75 }),
+    getNode: async (id: string) => ({
+      id,
+      type: 'concept',
+      label: 'T',
+      properties: {},
+      salience: 75,
+    }),
     getContext: async () => null,
     checkHealth: async () => true,
   };
@@ -90,7 +113,12 @@ async function runTests() {
   });
 
   await test('get: non-file non-UUID tries persistor then file', async () => {
-    const failClient: any = { ...mockClient, getNode: async () => { throw new Error('nope'); } };
+    const failClient: any = {
+      ...mockClient,
+      getNode: async () => {
+        throw new Error('nope');
+      },
+    };
     const tool = createUnifiedGetTool(mockFileGet, failClient, cfg);
     const r = await tool.execute('t3', { path: 'some-label' });
     assert(r === 'file:some-label', `expected file fallback, got: ${r}`);
@@ -100,4 +128,4 @@ async function runTests() {
   if (failed > 0) process.exit(1);
 }
 
-runTests();
+void runTests();
