@@ -6,7 +6,7 @@ import "github.com/prometheus/client_golang/prometheus"
 var (
 	RequestDuration = prometheus.NewHistogramVec(
 		prometheus.HistogramOpts{
-			Name:    "sms_http_request_duration_seconds",
+			Name:    "persistor_http_request_duration_seconds",
 			Help:    "HTTP request duration in seconds",
 			Buckets: prometheus.DefBuckets,
 		},
@@ -15,7 +15,7 @@ var (
 
 	RequestsTotal = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
-			Name: "sms_http_requests_total",
+			Name: "persistor_http_requests_total",
 			Help: "Total HTTP requests",
 		},
 		[]string{"method", "path", "status"},
@@ -23,7 +23,7 @@ var (
 
 	ErrorsTotal = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
-			Name: "sms_errors_total",
+			Name: "persistor_errors_total",
 			Help: "Total errors by type",
 		},
 		[]string{"type"},
@@ -31,28 +31,28 @@ var (
 
 	EmbedQueueDepth = prometheus.NewGauge(
 		prometheus.GaugeOpts{
-			Name: "sms_embed_queue_depth",
+			Name: "persistor_embed_queue_depth",
 			Help: "Current embedding queue depth",
 		},
 	)
 
 	WSConnections = prometheus.NewGauge(
 		prometheus.GaugeOpts{
-			Name: "sms_websocket_connections",
+			Name: "persistor_websocket_connections",
 			Help: "Active WebSocket connections",
 		},
 	)
 
 	NodeCount = prometheus.NewGauge(
 		prometheus.GaugeOpts{
-			Name: "sms_nodes_total",
+			Name: "persistor_nodes_total",
 			Help: "Total node count",
 		},
 	)
 
 	EdgeCount = prometheus.NewGauge(
 		prometheus.GaugeOpts{
-			Name: "sms_edges_total",
+			Name: "persistor_edges_total",
 			Help: "Total edge count",
 		},
 	)

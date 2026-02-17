@@ -255,7 +255,7 @@ Codes: `invalid_request`, `validation_error`, `not_found`, `conflict`, `internal
 The `client/` package (Apache-2.0) provides a typed Go client:
 
 ```go
-import "github.com/yourorg/persistor/client"
+import "github.com/persistorai/persistor/client"
 
 c := client.New("http://localhost:3030", "your-api-key")
 node, err := c.CreateNode(ctx, client.NodeCreate{

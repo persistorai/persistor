@@ -162,7 +162,7 @@ Production-ready with clean architecture:
 - **Auth & security:** API key auth with caching, brute force protection, body limits, request IDs
 - **Go client library:** `client/` package for programmatic access (nodes, edges, search, graph, bulk, salience, audit)
 - **CLI tool:** `cmd/persistor-cli/` for admin, diagnostics, and CRUD operations
-- **Prometheus metrics:** `sms_*` metrics, `/metrics` endpoint, Gin middleware
+- **Prometheus metrics:** `persistor_*` metrics, `/metrics` endpoint, Gin middleware
 - **WebSocket hardening:** Ping/pong, monotonic event IDs, reconnection replay,
   event buffering, permessage-deflate, graceful drain on shutdown
 - **GraphQL API:** gqlgen at `/api/v1/graphql` + playground (coexists with REST)
@@ -177,7 +177,6 @@ See planning docs for architecture decisions, schema design, migration plan, bac
 
 ## Important Notes
 
-- PostgreSQL 18 is installed and running — native install, not Docker
 - Service listens on localhost only (127.0.0.1:3030) — never expose externally
 - Backup data is age-encrypted — never store plaintext exports
 - The `migrate-from-sqlite` binary in .gitignore — only the source (`scripts/migrate-from-sqlite.go`) is tracked

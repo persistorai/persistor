@@ -4,7 +4,7 @@ info:
   description: Knowledge graph and vector memory service with tenant isolation, encryption at rest, and real-time notifications.
   version: 0.7.0
   license:
-    name: Proprietary
+    name: AGPL-3.0
 
 servers:
   - url: http://localhost:3030/api/v1

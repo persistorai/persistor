@@ -40,7 +40,7 @@ graph-structured memory across sessions.
 
 ```bash
 # Clone and build
-git clone <repo-url>/persistor.git
+git clone https://github.com/persistorai/persistor.git
 cd persistor
 
 # Configure environment (or use systemd EnvironmentFile — see Deployment)
