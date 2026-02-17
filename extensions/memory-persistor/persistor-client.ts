@@ -1,3 +1,5 @@
+import { type PersistorEdge } from './types.ts';
+
 export interface PersistorNode {
   id: string;
   type: string;
@@ -19,14 +21,8 @@ export interface PersistorSearchResult {
 
 export interface PersistorContext {
   node: PersistorNode;
-  neighbors: (PersistorNode | { node: PersistorNode; edge: any; direction: string })[];
-  edges?: {
-    source: string;
-    target: string;
-    relation?: string;
-    type?: string;
-    weight?: number;
-  }[];
+  neighbors: (PersistorNode | { node: PersistorNode; edge: PersistorEdge; direction: string })[];
+  edges?: PersistorEdge[];
 }
 
 export interface PersistorClientConfig {

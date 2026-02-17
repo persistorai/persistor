@@ -1,8 +1,9 @@
 import { mergeResults } from './result-merger.ts';
 
 import type { PersistorPluginConfig } from './config.ts';
-import type { PersistorClient } from './persistor-client.ts';
+import type { PersistorClient, PersistorSearchResult } from './persistor-client.ts';
 import type { FileSearchResult } from './result-merger.ts';
+import type { OpenClawTool, ToolContentPart } from './types.ts';
 
 /**
  * Extract the JSON payload from a tool result.
@@ -13,7 +14,7 @@ function extractToolPayload(result: unknown): unknown {
   const obj = result as Record<string, unknown>;
   if (Array.isArray(obj.content)) {
     const textPart = obj.content.find(
-      (c: any) => c?.type === 'text' && typeof c?.text === 'string',
+      (c: ToolContentPart) => c?.type === 'text' && typeof c?.text === 'string',
     );
     if (textPart) {
       try {
@@ -31,11 +32,16 @@ function extractFileResults(toolResult: unknown): FileSearchResult[] {
   if (!payload || typeof payload !== 'object') return [];
   const obj = payload as Record<string, unknown>;
   const results = Array.isArray(obj.results) ? obj.results : [];
-  return results.map((r: any) => ({
-    path: r.path ?? r.file ?? 'unknown',
-    snippet: r.snippet ?? r.text ?? r.content ?? String(r),
+  return results.map((r: Record<string, unknown>) => ({
+    path: String(r.path ?? r.file ?? 'unknown'),
+    snippet: String(r.snippet ?? r.text ?? r.content ?? String(r)),
     score: typeof r.score === 'number' ? r.score : 0.5,
-    line: r.line ?? r.startLine ?? undefined,
+    line:
+      typeof r.line === 'number'
+        ? r.line
+        : typeof r.startLine === 'number'
+          ? r.startLine
+          : undefined,
   }));
 }
 
@@ -49,7 +55,7 @@ function jsonResult(payload: unknown) {
  * to preserve all other properties the runtime expects.
  */
 export function createUnifiedSearchTool(
-  fileSearchTool: any,
+  fileSearchTool: OpenClawTool,
   persistorClient: PersistorClient,
   config: PersistorPluginConfig,
 ) {
@@ -71,7 +77,7 @@ export function createUnifiedSearchTool(
 
     const fileResults =
       fileResult.status === 'fulfilled' ? extractFileResults(fileResult.value) : [];
-    let persistorResults: any[] = [];
+    let persistorResults: PersistorSearchResult[] = [];
     let persistorAvailable = true;
     if (persistorResult.status === 'fulfilled') {
       persistorResults = persistorResult.value;

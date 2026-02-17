@@ -2,6 +2,9 @@ import { resolveConfig, defaultConfig } from './config.ts';
 import { mergeResults } from './result-merger.ts';
 import { createUnifiedGetTool } from './unified-get.ts';
 
+import type { PersistorClient } from './persistor-client.ts';
+import type { OpenClawTool } from './types.ts';
+
 let passed = 0,
   failed = 0;
 
@@ -14,9 +17,9 @@ async function test(name: string, fn: () => void | Promise<void>) {
     await fn();
     passed++;
     console.log(`  ✅ ${name}`);
-  } catch (e: any) {
+  } catch (e: unknown) {
     failed++;
-    console.log(`  ❌ ${name}: ${e.message}`);
+    console.log(`  ❌ ${name}: ${(e as Error).message}`);
   }
 }
 
@@ -86,9 +89,9 @@ async function runTests() {
   // --- Unified Get ---
   const mockFileGet = {
     name: 'memory_get',
-    execute: async (_id: string, p: any) => `file:${p.path}`,
+    execute: async (_id: string, p: Record<string, unknown>) => `file:${p.path}`,
   };
-  const mockClient: any = {
+  const mockClient = {
     getNode: async (id: string) => ({
       id,
       type: 'concept',
@@ -100,7 +103,11 @@ async function runTests() {
     checkHealth: async () => true,
   };
   const cfg = resolveConfig({});
-  const getTool = createUnifiedGetTool(mockFileGet, mockClient, cfg);
+  const getTool = createUnifiedGetTool(
+    mockFileGet as unknown as OpenClawTool,
+    mockClient as unknown as PersistorClient,
+    cfg,
+  );
 
   await test('get: file path routes to file tool', async () => {
     const r = await getTool.execute('t1', { path: 'memory/notes.md' });
@@ -109,19 +116,34 @@ async function runTests() {
 
   await test('get: UUID routes to persistor', async () => {
     const r = await getTool.execute('t2', { path: '12345678-1234-1234-1234-123456789abc' });
-    assert(typeof r === 'string' && r.includes('Node:'), `expected node output, got: ${r}`);
+    const text = (r as Record<string, unknown>).content;
+    assert(
+      Array.isArray(text) && JSON.stringify(text).includes('Node:'),
+      `expected node output, got: ${JSON.stringify(r)}`,
+    );
   });
 
   await test('get: non-file non-UUID tries persistor then file', async () => {
-    const failClient: any = {
+    const freshFileGet = {
+      name: 'memory_get',
+      execute: async (_id: string, p: Record<string, unknown>) => `file:${p.path}`,
+    };
+    const failClient = {
       ...mockClient,
       getNode: async () => {
         throw new Error('nope');
       },
     };
-    const tool = createUnifiedGetTool(mockFileGet, failClient, cfg);
+    const tool = createUnifiedGetTool(
+      freshFileGet as unknown as OpenClawTool,
+      failClient as unknown as PersistorClient,
+      cfg,
+    );
     const r = await tool.execute('t3', { path: 'some-label' });
-    assert(r === 'file:some-label', `expected file fallback, got: ${r}`);
+    assert(
+      r === ('file:some-label' as unknown),
+      `expected file fallback, got: ${JSON.stringify(r)}`,
+    );
   });
 
   console.log(`\n${passed} passed, ${failed} failed`);

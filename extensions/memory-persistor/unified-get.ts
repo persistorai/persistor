@@ -1,5 +1,6 @@
 import type { PersistorPluginConfig } from './config.ts';
 import type { PersistorClient, PersistorNode, PersistorContext } from './persistor-client.ts';
+import type { OpenClawTool } from './types.ts';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -36,9 +37,9 @@ function formatNode(node: PersistorNode, context?: PersistorContext | null): str
       lines.push(`  → ${label} (${type})`);
     }
   }
-  if ((context as any)?.edges?.length) {
+  if (context?.edges?.length) {
     lines.push('', 'Edges:');
-    for (const e of (context as any).edges) {
+    for (const e of context.edges) {
       lines.push(`  ${e.source} —[${e.relation ?? e.type ?? '?'}]→ ${e.target}`);
     }
   }
@@ -66,7 +67,7 @@ async function getPersistorNode(
  * Mutates the original tool to preserve all properties the runtime expects.
  */
 export function createUnifiedGetTool(
-  fileGetTool: any,
+  fileGetTool: OpenClawTool,
   persistorClient: PersistorClient,
   config: PersistorPluginConfig,
 ) {
@@ -79,7 +80,10 @@ export function createUnifiedGetTool(
     toolCallId: string,
     params: { path: string; from?: number; lines?: number },
   ) => {
-    const path = typeof params === 'object' && params !== null ? ((params as any).path ?? '') : '';
+    const path =
+      typeof params === 'object' && params !== null
+        ? String((params as Record<string, unknown>).path ?? '')
+        : '';
 
     // File paths always go to the file tool
     if (isFilePath(path)) {
