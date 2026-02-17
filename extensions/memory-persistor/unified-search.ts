@@ -13,12 +13,11 @@ function extractToolPayload(result: unknown): unknown {
   if (!result || typeof result !== 'object') return null;
   const obj = result as Record<string, unknown>;
   if (Array.isArray(obj.content)) {
-    const textPart = obj.content.find(
-      (c: ToolContentPart) => c?.type === 'text' && typeof c?.text === 'string',
-    );
+    const parts = obj.content as ToolContentPart[];
+    const textPart = parts.find((c) => c.type === 'text' && typeof c.text === 'string');
     if (textPart) {
       try {
-        return JSON.parse(textPart.text);
+        return JSON.parse(textPart.text) as unknown;
       } catch {
         return null;
       }

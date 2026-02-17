@@ -20,15 +20,15 @@ function formatNode(node: PersistorNode, context?: PersistorContext | null): str
   const lines: string[] = [
     `📦 Node: ${node.label} (${node.type})`,
     `ID: ${node.id}`,
-    `Salience: ${node.salience_score ?? 'n/a'}`,
+    `Salience: ${String(node.salience_score)}`,
   ];
-  if (node.properties && Object.keys(node.properties).length > 0) {
+  if (Object.keys(node.properties).length > 0) {
     lines.push('', 'Properties:');
     for (const [k, v] of Object.entries(node.properties)) {
       lines.push(`  ${k}: ${typeof v === 'object' ? JSON.stringify(v) : String(v)}`);
     }
   }
-  if (context?.neighbors?.length) {
+  if (context?.neighbors.length) {
     lines.push('', `Neighbors (${context.neighbors.length}):`);
     for (const n of context.neighbors) {
       const isWrapped = 'node' in n && 'edge' in n;

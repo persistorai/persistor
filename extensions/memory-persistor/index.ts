@@ -12,9 +12,10 @@ const memoryPersistorPlugin = {
   kind: 'memory' as const,
 
   register(api: OpenClawPluginApi) {
-    const config = resolveConfig(
-      ((api as Record<string, unknown>).pluginConfig as Record<string, unknown>) ?? {},
-    );
+    const pluginConfig = (api as Record<string, unknown>).pluginConfig as
+      | Record<string, unknown>
+      | undefined;
+    const config = resolveConfig(pluginConfig ?? {});
     const persistorClient = new PersistorClient(config.persistor);
 
     // Fire-and-forget health check

@@ -36,19 +36,27 @@ async function runTests() {
   await test('merge: file + persistor in score order', () => {
     const r = mergeResults(fileR, persR, w);
     assert(r.length === 2, `expected 2, got ${r.length}`);
-    assert(r[0].score >= r[1].score, 'not sorted by score');
-    assert(r[0].source === 'file', 'file should rank first (0.8*1.0 > 0.7*0.9)');
+    const first = r[0];
+    const second = r[1];
+    assert(first !== undefined, 'expected at least one result');
+    assert(second !== undefined, 'expected at least two results');
+    assert(first.score >= second.score, 'not sorted by score');
+    assert(first.source === 'file', 'file should rank first (0.8*1.0 > 0.7*0.9)');
   });
 
   await test('merge: empty persistor → file only', () => {
     const r = mergeResults(fileR, [], w);
-    assert(r.length === 1 && r[0].source === 'file', 'should have file only');
-    assert(r[0].score === 0.8, `expected 0.8, got ${r[0].score}`);
+    const first = r[0];
+    assert(first !== undefined, 'expected at least one result');
+    assert(r.length === 1 && first.source === 'file', 'should have file only');
+    assert(first.score === 0.8, `expected 0.8, got ${first.score}`);
   });
 
   await test('merge: empty file → persistor only', () => {
     const r = mergeResults([], persR, w);
-    assert(r.length === 1 && r[0].source === 'persistor', 'should have persistor only');
+    const first = r[0];
+    assert(first !== undefined, 'expected at least one result');
+    assert(r.length === 1 && first.source === 'persistor', 'should have persistor only');
   });
 
   await test('merge: both empty → []', () => {
@@ -58,7 +66,9 @@ async function runTests() {
   await test('merge: score normalization uses salience_score/100 when no score', () => {
     const noScore = [{ id: 'b', type: 'concept', label: 'X', properties: {}, salience_score: 60 }];
     const r = mergeResults([], noScore, { file: 1, persistor: 1 });
-    assert(Math.abs(r[0].score - 0.6) < 0.001, `expected ~0.6, got ${r[0].score}`);
+    const first = r[0];
+    assert(first !== undefined, 'expected at least one result');
+    assert(Math.abs(first.score - 0.6) < 0.001, `expected ~0.6, got ${first.score}`);
   });
 
   // --- Config ---
@@ -89,7 +99,7 @@ async function runTests() {
   // --- Unified Get ---
   const mockFileGet = {
     name: 'memory_get',
-    execute: async (_id: string, p: Record<string, unknown>) => `file:${p.path}`,
+    execute: async (_id: string, p: Record<string, unknown>) => `file:${String(p.path)}`,
   };
   const mockClient = {
     getNode: async (id: string) => ({
@@ -111,7 +121,7 @@ async function runTests() {
 
   await test('get: file path routes to file tool', async () => {
     const r = await getTool.execute('t1', { path: 'memory/notes.md' });
-    assert(r === 'file:memory/notes.md', `unexpected: ${r}`);
+    assert(r === 'file:memory/notes.md', `unexpected: ${JSON.stringify(r)}`);
   });
 
   await test('get: UUID routes to persistor', async () => {
@@ -126,7 +136,7 @@ async function runTests() {
   await test('get: non-file non-UUID tries persistor then file', async () => {
     const freshFileGet = {
       name: 'memory_get',
-      execute: async (_id: string, p: Record<string, unknown>) => `file:${p.path}`,
+      execute: async (_id: string, p: Record<string, unknown>) => `file:${String(p.path)}`,
     };
     const failClient = {
       ...mockClient,
