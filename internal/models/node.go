@@ -92,6 +92,24 @@ func (r *CreateNodeRequest) Validate() error {
 	return nil
 }
 
+// MigrateNodeRequest is the payload for migrating a node to a new ID.
+type MigrateNodeRequest struct {
+	NewID     string `json:"new_id"`
+	NewLabel  string `json:"new_label,omitempty"`
+	DeleteOld bool   `json:"delete_old"`
+}
+
+// MigrateNodeResult summarizes the outcome of a node migration.
+type MigrateNodeResult struct {
+	OldID         string  `json:"old_id"`
+	NewID         string  `json:"new_id"`
+	OutgoingEdges int     `json:"outgoing_edges"`
+	IncomingEdges int     `json:"incoming_edges"`
+	Salience      float64 `json:"salience"`
+	OldDeleted    bool    `json:"old_deleted"`
+	DryRun        bool    `json:"dry_run"`
+}
+
 // UpdateNodeRequest is the payload for updating an existing node.
 type UpdateNodeRequest struct {
 	Type       *string        `json:"type,omitempty"`

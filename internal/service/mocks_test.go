@@ -50,6 +50,11 @@ func (m *mockNodeStore) DeleteNode(ctx context.Context, tenantID, nodeID string)
 	return m.deleteNode(ctx, tenantID, nodeID)
 }
 
+func (m *mockNodeStore) MigrateNode(_ context.Context, _, _ string, _ models.MigrateNodeRequest) (*models.MigrateNodeResult, error) {
+	m.record("MigrateNode")
+	return &models.MigrateNodeResult{}, nil
+}
+
 // mockEdgeStore records calls and returns configured responses.
 type mockEdgeStore struct {
 	mu    sync.Mutex

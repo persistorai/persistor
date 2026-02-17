@@ -35,6 +35,10 @@ func (m *mockNodeRepo) DeleteNode(ctx context.Context, tenantID, nodeID string) 
 	return m.deleteFn(ctx, tenantID, nodeID)
 }
 
+func (m *mockNodeRepo) MigrateNode(_ context.Context, _, _ string, _ models.MigrateNodeRequest) (*models.MigrateNodeResult, error) {
+	return nil, nil
+}
+
 // mockEdgeRepo implements api.EdgeRepository for testing.
 type mockEdgeRepo struct {
 	listFn   func(ctx context.Context, tenantID, source, target, relation string, limit, offset int) ([]models.Edge, bool, error)

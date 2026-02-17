@@ -74,6 +74,33 @@ func (s *NodeService) Delete(ctx context.Context, id string) error {
 	return s.c.del(ctx, "/api/v1/nodes/"+url.PathEscape(id), nil, nil)
 }
 
+// MigrateNodeRequest is the payload for migrating a node to a new ID.
+type MigrateNodeRequest struct {
+	NewID     string `json:"new_id"`
+	NewLabel  string `json:"new_label,omitempty"`
+	DeleteOld bool   `json:"delete_old"`
+}
+
+// MigrateNodeResult summarizes the outcome of a node migration.
+type MigrateNodeResult struct {
+	OldID         string  `json:"old_id"`
+	NewID         string  `json:"new_id"`
+	OutgoingEdges int     `json:"outgoing_edges"`
+	IncomingEdges int     `json:"incoming_edges"`
+	Salience      float64 `json:"salience"`
+	OldDeleted    bool    `json:"old_deleted"`
+	DryRun        bool    `json:"dry_run"`
+}
+
+// Migrate migrates a node to a new ID, atomically updating all edges.
+func (s *NodeService) Migrate(ctx context.Context, oldID string, req *MigrateNodeRequest) (*MigrateNodeResult, error) {
+	var result MigrateNodeResult
+	if err := s.c.post(ctx, fmt.Sprintf("/api/v1/nodes/%s/migrate", url.PathEscape(oldID)), req, &result); err != nil {
+		return nil, err
+	}
+	return &result, nil
+}
+
 // History returns property change history for a node.
 func (s *NodeService) History(ctx context.Context, id string, property string, limit, offset int) ([]PropertyChange, bool, error) {
 	params := url.Values{}

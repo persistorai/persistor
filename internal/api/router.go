@@ -102,6 +102,7 @@ func registerRoutes(ctx context.Context, api *gin.RouterGroup, deps *RouterDeps)
 	api.GET("/nodes/:id", nodes.Get)
 	api.PUT("/nodes/:id", nodes.Update)
 	api.DELETE("/nodes/:id", nodes.Delete)
+	api.POST("/nodes/:id/migrate", nodes.Migrate)
 	api.GET("/nodes/:id/history", history.GetHistory)
 
 	// Edges.

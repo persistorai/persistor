@@ -21,6 +21,7 @@ func newNodeCmd() *cobra.Command {
 	cmd.AddCommand(nodeDeleteCmd())
 	cmd.AddCommand(nodeListCmd())
 	cmd.AddCommand(nodeHistoryCmd())
+	cmd.AddCommand(nodeMigrateCmd())
 	return cmd
 }
 
@@ -158,6 +159,70 @@ func nodeListCmd() *cobra.Command {
 	cmd.Flags().StringVar(&nodeType, "type", "", "Filter by type")
 	cmd.Flags().IntVar(&limit, "limit", 0, "Max results")
 	cmd.Flags().IntVar(&offset, "offset", 0, "Offset")
+	return cmd
+}
+
+func nodeMigrateCmd() *cobra.Command {
+	var label string
+	var deleteOld, dryRun bool
+	cmd := &cobra.Command{
+		Use:   "migrate <old-id> <new-id>",
+		Short: "Migrate a node to a new ID, updating all edges atomically",
+		Args:  cobra.ExactArgs(2),
+		Run: func(cmd *cobra.Command, args []string) {
+			oldID, newID := args[0], args[1]
+
+			if dryRun {
+				// Dry run: fetch node and count edges client-side.
+				node, err := apiClient.Nodes.Get(context.Background(), oldID)
+				if err != nil {
+					fatal("get node for dry run", err)
+				}
+				edges, _, err := apiClient.Edges.List(context.Background(), &client.EdgeListOptions{Source: oldID, Limit: 10000})
+				if err != nil {
+					fatal("list outgoing edges", err)
+				}
+				outgoing := len(edges)
+				edges, _, err = apiClient.Edges.List(context.Background(), &client.EdgeListOptions{Target: oldID, Limit: 10000})
+				if err != nil {
+					fatal("list incoming edges", err)
+				}
+				incoming := len(edges)
+				fmt.Println("Dry run — no changes made")
+				fmt.Printf("  Node: %s → %s\n", oldID, newID)
+				fmt.Printf("  Outgoing edges: %d would be migrated\n", outgoing)
+				fmt.Printf("  Incoming edges: %d would be migrated\n", incoming)
+				if deleteOld {
+					fmt.Println("  Old node would be deleted")
+				}
+				_ = node
+				return
+			}
+
+			req := &client.MigrateNodeRequest{
+				NewID:     newID,
+				NewLabel:  label,
+				DeleteOld: deleteOld,
+			}
+			result, err := apiClient.Nodes.Migrate(context.Background(), oldID, req)
+			if err != nil {
+				fatal("migrate node", err)
+			}
+			total := result.OutgoingEdges + result.IncomingEdges
+			fmt.Printf("Migrating node: %s → %s\n", oldID, newID)
+			fmt.Printf("  Edges migrated: %d (%d outgoing, %d incoming)\n", total, result.OutgoingEdges, result.IncomingEdges)
+			fmt.Printf("  Salience transferred: %.2f\n", result.Salience)
+			deleted := "no"
+			if result.OldDeleted {
+				deleted = "yes"
+			}
+			fmt.Printf("  Old node deleted: %s\n", deleted)
+			fmt.Println("  Done!")
+		},
+	}
+	cmd.Flags().StringVar(&label, "label", "", "New label (defaults to keeping the old one)")
+	cmd.Flags().BoolVar(&deleteOld, "delete-old", true, "Delete the old node after migration")
+	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Show what would happen without doing it")
 	return cmd
 }
 

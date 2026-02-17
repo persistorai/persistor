@@ -13,6 +13,7 @@ type NodeRepository interface {
 	CreateNode(ctx context.Context, tenantID string, req models.CreateNodeRequest) (*models.Node, error)
 	UpdateNode(ctx context.Context, tenantID string, nodeID string, req models.UpdateNodeRequest) (*models.Node, error)
 	DeleteNode(ctx context.Context, tenantID, nodeID string) error
+	MigrateNode(ctx context.Context, tenantID, oldID string, req models.MigrateNodeRequest) (*models.MigrateNodeResult, error)
 }
 
 // EdgeRepository defines edge operations used by EdgeHandler.

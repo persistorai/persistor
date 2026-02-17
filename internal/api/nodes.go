@@ -163,6 +163,61 @@ func (h *NodeHandler) Update(c *gin.Context) {
 	c.JSON(http.StatusOK, node)
 }
 
+// Migrate handles POST /api/nodes/:id/migrate.
+func (h *NodeHandler) Migrate(c *gin.Context) {
+	nodeID := c.Param("id")
+	if err := validatePathID(nodeID); err != nil {
+		respondError(c, http.StatusBadRequest, ErrCodeInvalidRequest, err.Error())
+
+		return
+	}
+
+	var req models.MigrateNodeRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		respondError(c, http.StatusBadRequest, ErrCodeInvalidRequest, "invalid request body")
+
+		return
+	}
+
+	if req.NewID == "" {
+		respondError(c, http.StatusBadRequest, ErrCodeValidationError, "new_id is required")
+
+		return
+	}
+
+	tenantID := getTenantID(c)
+	if tenantID == "" {
+		return
+	}
+
+	result, err := h.repo.MigrateNode(c.Request.Context(), tenantID, nodeID, req)
+	if err != nil {
+		if errors.Is(err, models.ErrNodeNotFound) {
+			respondError(c, http.StatusNotFound, ErrCodeNotFound, "node not found")
+
+			return
+		}
+
+		if errors.Is(err, models.ErrDuplicateKey) {
+			respondError(c, http.StatusConflict, "conflict", "node with new_id already exists")
+
+			return
+		}
+
+		h.log.WithError(err).Error("migrating node")
+		respondError(c, http.StatusInternalServerError, ErrCodeInternalError, "internal server error")
+
+		return
+	}
+
+	h.log.WithFields(logrus.Fields{
+		"action": "node.migrate", "tenant_id": tenantID,
+		"old_id": nodeID, "new_id": req.NewID,
+	}).Info("audit")
+
+	c.JSON(http.StatusOK, result)
+}
+
 // Delete handles DELETE /api/nodes/:id.
 func (h *NodeHandler) Delete(c *gin.Context) {
 	nodeID := c.Param("id")

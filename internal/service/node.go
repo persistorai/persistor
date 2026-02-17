@@ -16,6 +16,7 @@ type NodeStore interface {
 	CreateNode(ctx context.Context, tenantID string, req models.CreateNodeRequest) (*models.Node, error)
 	UpdateNode(ctx context.Context, tenantID string, nodeID string, req models.UpdateNodeRequest) (*models.Node, error)
 	DeleteNode(ctx context.Context, tenantID, nodeID string) error
+	MigrateNode(ctx context.Context, tenantID, oldID string, req models.MigrateNodeRequest) (*models.MigrateNodeResult, error)
 }
 
 // EmbedEnqueuer enqueues embedding generation jobs.
@@ -111,6 +112,31 @@ func (s *NodeService) UpdateNode(
 	s.auditAsync(tenantID, "node.update", "node", node.ID, map[string]any{"type": node.Type, "label": node.Label})
 
 	return node, nil
+}
+
+// MigrateNode atomically migrates a node to a new ID.
+func (s *NodeService) MigrateNode(
+	ctx context.Context, tenantID, oldID string, req models.MigrateNodeRequest,
+) (*models.MigrateNodeResult, error) {
+	result, err := s.store.MigrateNode(ctx, tenantID, oldID, req)
+	if err != nil {
+		return nil, err
+	}
+
+	// Re-embed the new node.
+	if s.embedWorker != nil {
+		label := result.NewID
+		s.embedWorker.Enqueue(EmbedJob{TenantID: tenantID, NodeID: result.NewID, Text: label})
+	}
+
+	s.auditAsync(tenantID, "node.migrate", "node", oldID, map[string]any{
+		"new_id":         result.NewID,
+		"outgoing_edges": result.OutgoingEdges,
+		"incoming_edges": result.IncomingEdges,
+		"old_deleted":    result.OldDeleted,
+	})
+
+	return result, nil
 }
 
 // DeleteNode removes a node (pass-through).
