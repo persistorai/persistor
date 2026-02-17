@@ -9,8 +9,6 @@ package store
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"time"
@@ -100,20 +98,3 @@ func (b *Base) notify(table, op, tenantID string) {
 	}
 }
 
-// GetTenantByAPIKey looks up a tenant ID by API key hash.
-func (b *Base) GetTenantByAPIKey(ctx context.Context, apiKey string) (string, error) {
-	ctx, cancel := withTimeout(ctx)
-	defer cancel()
-
-	hash := sha256.Sum256([]byte(apiKey))
-	apiKeyHash := hex.EncodeToString(hash[:])
-
-	var tenantID string
-
-	err := b.Pool.QueryRow(ctx, "SELECT id FROM tenants WHERE api_key_hash = $1", apiKeyHash).Scan(&tenantID)
-	if err != nil {
-		return "", fmt.Errorf("looking up tenant by API key: %w", err)
-	}
-
-	return tenantID, nil
-}

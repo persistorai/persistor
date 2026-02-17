@@ -18,12 +18,12 @@ type BulkStore interface {
 type BulkService struct {
 	store       BulkStore
 	embedWorker EmbedEnqueuer
-	auditWorker *AuditWorker
+	auditWorker AuditEnqueuer
 	log         *logrus.Logger
 }
 
 // NewBulkService creates a BulkService.
-func NewBulkService(store BulkStore, embedWorker EmbedEnqueuer, auditWorker *AuditWorker, log *logrus.Logger) *BulkService {
+func NewBulkService(store BulkStore, embedWorker EmbedEnqueuer, auditWorker AuditEnqueuer, log *logrus.Logger) *BulkService {
 	return &BulkService{store: store, embedWorker: embedWorker, auditWorker: auditWorker, log: log}
 }
 

@@ -19,12 +19,12 @@ type EdgeStore interface {
 // EdgeService wraps EdgeStore with audit logging for mutations.
 type EdgeService struct {
 	store       EdgeStore
-	auditWorker *AuditWorker
+	auditWorker AuditEnqueuer
 	log         *logrus.Logger
 }
 
 // NewEdgeService creates an EdgeService.
-func NewEdgeService(store EdgeStore, auditWorker *AuditWorker, log *logrus.Logger) *EdgeService {
+func NewEdgeService(store EdgeStore, auditWorker AuditEnqueuer, log *logrus.Logger) *EdgeService {
 	return &EdgeService{store: store, auditWorker: auditWorker, log: log}
 }
 

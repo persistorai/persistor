@@ -1,0 +1,1043 @@
+openapi: 3.1.0
+info:
+  title: Persistor API
+  description: Knowledge graph and vector memory service with tenant isolation, encryption at rest, and real-time notifications.
+  version: 0.7.0
+  license:
+    name: Proprietary
+
+servers:
+  - url: http://localhost:3030/api/v1
+    description: Local development
+
+security:
+  - BearerAuth: []
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      description: API key mapped to a single tenant. SHA-256 hashed before storage.
+
+  schemas:
+    Node:
+      type: object
+      properties:
+        id:
+          type: string
+          maxLength: 255
+          description: Unique identifier. Auto-generated UUID if omitted on create.
+        type:
+          type: string
+          maxLength: 100
+          description: "Category: person, project, concept, event, place, etc."
+        label:
+          type: string
+          maxLength: 10000
+          description: Human-readable name. Used for full-text search.
+        properties:
+          type: object
+          description: Arbitrary metadata. Encrypted at rest (AES-256-GCM).
+        salience_score:
+          type: number
+          format: double
+        access_count:
+          type: integer
+        last_accessed:
+          type:
+            - string
+            - "null"
+          format: date-time
+        user_boosted:
+          type: boolean
+        superseded_by:
+          type:
+            - string
+            - "null"
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    NodeCreate:
+      type: object
+      required: [type, label]
+      properties:
+        id:
+          type: string
+          maxLength: 255
+        type:
+          type: string
+          maxLength: 100
+        label:
+          type: string
+          maxLength: 10000
+        properties:
+          type: object
+
+    NodeUpdate:
+      type: object
+      properties:
+        type:
+          type: string
+          maxLength: 100
+        label:
+          type: string
+          maxLength: 10000
+        properties:
+          type: object
+
+    NodeMigrate:
+      type: object
+      required: [new_id]
+      properties:
+        new_id:
+          type: string
+          maxLength: 255
+
+    Edge:
+      type: object
+      properties:
+        source:
+          type: string
+          maxLength: 255
+        target:
+          type: string
+          maxLength: 255
+        relation:
+          type: string
+          maxLength: 255
+        properties:
+          type: object
+          description: Encrypted at rest.
+        weight:
+          type: number
+          format: double
+          minimum: 0
+          maximum: 1000
+        salience_score:
+          type: number
+          format: double
+        access_count:
+          type: integer
+        user_boosted:
+          type: boolean
+        superseded_by:
+          type:
+            - string
+            - "null"
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    EdgeCreate:
+      type: object
+      required: [source, target, relation]
+      properties:
+        source:
+          type: string
+          maxLength: 255
+        target:
+          type: string
+          maxLength: 255
+        relation:
+          type: string
+          maxLength: 255
+        properties:
+          type: object
+        weight:
+          type: number
+          format: double
+          minimum: 0
+          maximum: 1000
+          default: 1.0
+
+    EdgeUpdate:
+      type: object
+      properties:
+        properties:
+          type: object
+        weight:
+          type: number
+          format: double
+          minimum: 0
+          maximum: 1000
+
+    SupersedeRequest:
+      type: object
+      required: [old_id, new_id]
+      properties:
+        old_id:
+          type: string
+        new_id:
+          type: string
+
+    AuditEntry:
+      type: object
+      properties:
+        id:
+          type: integer
+        entity_type:
+          type: string
+        entity_id:
+          type: string
+        action:
+          type: string
+        changes:
+          type: object
+        created_at:
+          type: string
+          format: date-time
+
+    Error:
+      type: object
+      properties:
+        error:
+          type: object
+          properties:
+            code:
+              type: string
+            message:
+              type: string
+
+paths:
+  /health:
+    get:
+      summary: Liveness probe
+      security: []
+      operationId: healthLiveness
+      tags: [Health]
+      responses:
+        "200":
+          description: Service is alive
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ok
+
+  /ready:
+    get:
+      summary: Readiness probe
+      security: []
+      operationId: healthReadiness
+      tags: [Health]
+      responses:
+        "200":
+          description: Service is ready
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ok
+        "503":
+          description: Service is degraded
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: degraded
+
+  /nodes:
+    get:
+      summary: List nodes
+      operationId: listNodes
+      tags: [Nodes]
+      parameters:
+        - name: type
+          in: query
+          schema:
+            type: string
+        - name: min_salience
+          in: query
+          schema:
+            type: number
+            default: 0
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 50
+            maximum: 1000
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            default: 0
+            maximum: 100000
+      responses:
+        "200":
+          description: Paginated node list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  nodes:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Node"
+                  has_more:
+                    type: boolean
+
+    post:
+      summary: Create a node
+      operationId: createNode
+      tags: [Nodes]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NodeCreate"
+      responses:
+        "201":
+          description: Node created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Node"
+        "409":
+          description: Node ID already exists
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /nodes/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+
+    get:
+      summary: Get a node
+      operationId: getNode
+      tags: [Nodes]
+      responses:
+        "200":
+          description: Node found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Node"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+    put:
+      summary: Update a node
+      operationId: updateNode
+      tags: [Nodes]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NodeUpdate"
+      responses:
+        "200":
+          description: Node updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Node"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+    delete:
+      summary: Delete a node
+      description: Cascades — also deletes all connected edges.
+      operationId: deleteNode
+      tags: [Nodes]
+      responses:
+        "200":
+          description: Node deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  deleted:
+                    type: boolean
+                    example: true
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /nodes/{id}/migrate:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+    post:
+      summary: Migrate a node to a new ID
+      operationId: migrateNode
+      tags: [Nodes]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NodeMigrate"
+      responses:
+        "200":
+          description: Node migrated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Node"
+
+  /nodes/{id}/history:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+    get:
+      summary: Get node change history
+      operationId: getNodeHistory
+      tags: [Nodes]
+      parameters:
+        - name: property
+          in: query
+          schema:
+            type: string
+          description: Filter by property key
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 50
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            default: 0
+      responses:
+        "200":
+          description: History entries
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /edges:
+    get:
+      summary: List edges
+      operationId: listEdges
+      tags: [Edges]
+      parameters:
+        - name: source
+          in: query
+          schema:
+            type: string
+        - name: target
+          in: query
+          schema:
+            type: string
+        - name: relation
+          in: query
+          schema:
+            type: string
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 50
+            maximum: 1000
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            default: 0
+      responses:
+        "200":
+          description: Paginated edge list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  edges:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Edge"
+                  has_more:
+                    type: boolean
+
+    post:
+      summary: Create an edge
+      operationId: createEdge
+      tags: [Edges]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/EdgeCreate"
+      responses:
+        "201":
+          description: Edge created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Edge"
+        "400":
+          description: Source or target node does not exist
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          description: Edge already exists
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /edges/{source}/{target}/{relation}:
+    parameters:
+      - name: source
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: target
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: relation
+        in: path
+        required: true
+        schema:
+          type: string
+
+    put:
+      summary: Update an edge
+      operationId: updateEdge
+      tags: [Edges]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/EdgeUpdate"
+      responses:
+        "200":
+          description: Edge updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Edge"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+    delete:
+      summary: Delete an edge
+      operationId: deleteEdge
+      tags: [Edges]
+      responses:
+        "200":
+          description: Edge deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  deleted:
+                    type: boolean
+                    example: true
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /search:
+    get:
+      summary: Full-text search
+      operationId: searchFullText
+      tags: [Search]
+      parameters:
+        - name: q
+          in: query
+          required: true
+          schema:
+            type: string
+            maxLength: 2000
+        - name: type
+          in: query
+          schema:
+            type: string
+        - name: min_salience
+          in: query
+          schema:
+            type: number
+            default: 0
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 20
+            maximum: 1000
+      responses:
+        "200":
+          description: Search results
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  nodes:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Node"
+                  total:
+                    type: integer
+
+  /search/semantic:
+    get:
+      summary: Vector similarity search
+      operationId: searchSemantic
+      tags: [Search]
+      parameters:
+        - name: q
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 10
+      responses:
+        "200":
+          description: Semantic search results (nodes include a score field)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  nodes:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Node"
+                  total:
+                    type: integer
+        "502":
+          description: Embedding service unavailable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /search/hybrid:
+    get:
+      summary: Combined text + vector search
+      description: Falls back to full-text only if embedding generation fails.
+      operationId: searchHybrid
+      tags: [Search]
+      parameters:
+        - name: q
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 10
+      responses:
+        "200":
+          description: Hybrid search results
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  nodes:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Node"
+                  total:
+                    type: integer
+
+  /graph/neighbors/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+    get:
+      summary: Direct neighbors (1 hop)
+      operationId: graphNeighbors
+      tags: [Graph]
+      parameters:
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 100
+      responses:
+        "200":
+          description: Neighbor nodes
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /graph/traverse/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+    get:
+      summary: BFS traversal
+      operationId: graphTraverse
+      tags: [Graph]
+      parameters:
+        - name: hops
+          in: query
+          schema:
+            type: integer
+            default: 2
+            maximum: 10
+      responses:
+        "200":
+          description: Traversal results
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /graph/context/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+    get:
+      summary: Full context (node + neighbors + edges)
+      operationId: graphContext
+      tags: [Graph]
+      responses:
+        "200":
+          description: Context bundle
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /graph/path/{from}/{to}:
+    parameters:
+      - name: from
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: to
+        in: path
+        required: true
+        schema:
+          type: string
+    get:
+      summary: Shortest path between two nodes
+      operationId: graphPath
+      tags: [Graph]
+      responses:
+        "200":
+          description: Ordered path
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  path:
+                    type: array
+                    items:
+                      type: string
+        "404":
+          description: No path exists
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /bulk/nodes:
+    post:
+      summary: Bulk upsert nodes
+      description: Accepts up to 1000 nodes. Existing nodes are updated, new ones created.
+      operationId: bulkNodes
+      tags: [Bulk]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: array
+              items:
+                $ref: "#/components/schemas/NodeCreate"
+              maxItems: 1000
+      responses:
+        "200":
+          description: Upsert count
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  upserted:
+                    type: integer
+
+  /bulk/edges:
+    post:
+      summary: Bulk upsert edges
+      description: Accepts up to 1000 edges. Existing edges are updated, new ones created.
+      operationId: bulkEdges
+      tags: [Bulk]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: array
+              items:
+                $ref: "#/components/schemas/EdgeCreate"
+              maxItems: 1000
+      responses:
+        "200":
+          description: Upsert count
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  upserted:
+                    type: integer
+
+  /salience/boost/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+    post:
+      summary: Boost a node's salience
+      operationId: salienceBoost
+      tags: [Salience]
+      responses:
+        "200":
+          description: Boosted node
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Node"
+
+  /salience/supersede:
+    post:
+      summary: Mark a node as superseded
+      operationId: salienceSupersede
+      tags: [Salience]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SupersedeRequest"
+      responses:
+        "200":
+          description: Superseded successfully
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /salience/recalc:
+    post:
+      summary: Recalculate all salience scores
+      operationId: salienceRecalc
+      tags: [Salience]
+      responses:
+        "200":
+          description: Recalculation complete
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  updated:
+                    type: integer
+        "409":
+          description: Recalculation already in progress
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /audit:
+    get:
+      summary: Query audit log
+      operationId: auditQuery
+      tags: [Audit]
+      parameters:
+        - name: entity_type
+          in: query
+          schema:
+            type: string
+        - name: entity_id
+          in: query
+          schema:
+            type: string
+        - name: action
+          in: query
+          schema:
+            type: string
+        - name: since
+          in: query
+          schema:
+            type: string
+            format: date-time
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 50
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            default: 0
+      responses:
+        "200":
+          description: Audit entries
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  entries:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/AuditEntry"
+                  has_more:
+                    type: boolean
+
+    delete:
+      summary: Purge audit entries
+      operationId: auditPurge
+      tags: [Audit]
+      parameters:
+        - name: retention_days
+          in: query
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Purge result
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  deleted:
+                    type: integer
+
+  /stats:
+    get:
+      summary: Get database statistics
+      operationId: getStats
+      tags: [Admin]
+      responses:
+        "200":
+          description: Statistics
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /admin/backfill-embeddings:
+    post:
+      summary: Backfill missing vector embeddings
+      operationId: adminBackfillEmbeddings
+      tags: [Admin]
+      responses:
+        "202":
+          description: Backfill started
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /graphql:
+    get:
+      summary: GraphQL endpoint (GET)
+      operationId: graphqlGet
+      tags: [GraphQL]
+      responses:
+        "200":
+          description: GraphQL response
+    post:
+      summary: GraphQL endpoint (POST)
+      operationId: graphqlPost
+      tags: [GraphQL]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                query:
+                  type: string
+                variables:
+                  type: object
+                operationName:
+                  type: string
+      responses:
+        "200":
+          description: GraphQL response

@@ -33,12 +33,12 @@ type Auditor interface {
 type NodeService struct {
 	store       NodeStore
 	embedWorker EmbedEnqueuer
-	auditWorker *AuditWorker
+	auditWorker AuditEnqueuer
 	log         *logrus.Logger
 }
 
 // NewNodeService creates a NodeService.
-func NewNodeService(store NodeStore, embedWorker EmbedEnqueuer, auditWorker *AuditWorker, log *logrus.Logger) *NodeService {
+func NewNodeService(store NodeStore, embedWorker EmbedEnqueuer, auditWorker AuditEnqueuer, log *logrus.Logger) *NodeService {
 	return &NodeService{store: store, embedWorker: embedWorker, auditWorker: auditWorker, log: log}
 }
 

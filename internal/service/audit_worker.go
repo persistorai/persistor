@@ -16,6 +16,11 @@ type AuditJob struct {
 	Detail     map[string]any
 }
 
+// AuditEnqueuer abstracts audit job submission.
+type AuditEnqueuer interface {
+	Enqueue(job *AuditJob)
+}
+
 // AuditWorker buffers audit entries and writes them via a single worker goroutine.
 type AuditWorker struct {
 	auditor Auditor
