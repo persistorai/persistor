@@ -6,6 +6,7 @@ import (
 
 	"github.com/sirupsen/logrus"
 
+	"github.com/persistorai/persistor/internal/domain"
 	"github.com/persistorai/persistor/internal/models"
 )
 
@@ -25,10 +26,8 @@ type EmbedEnqueuer interface {
 	Enqueue(job EmbedJob)
 }
 
-// Auditor records audit log entries (fire-and-forget).
-type Auditor interface {
-	RecordAudit(ctx context.Context, tenantID, action, entityType, entityID, actor string, detail map[string]any) error
-}
+// Auditor is an alias for the canonical domain.Auditor interface.
+type Auditor = domain.Auditor
 
 // NodeService wraps NodeStore with business logic (embedding on create/update).
 type NodeService struct {

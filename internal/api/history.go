@@ -1,19 +1,12 @@
 package api
 
 import (
-	"context"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
 	"github.com/sirupsen/logrus"
 
-	"github.com/persistorai/persistor/internal/models"
 )
-
-// HistoryRepository defines history operations used by HistoryHandler.
-type HistoryRepository interface {
-	GetPropertyHistory(ctx context.Context, tenantID, nodeID string, propertyKey string, limit, offset int) ([]models.PropertyChange, bool, error)
-}
 
 // HistoryHandler serves property history endpoints.
 type HistoryHandler struct {

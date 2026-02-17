@@ -1,20 +1,13 @@
 package api
 
 import (
-	"context"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
 	"github.com/sirupsen/logrus"
 
-	"github.com/persistorai/persistor/internal/models"
 	"github.com/persistorai/persistor/internal/service"
 )
-
-// AdminRepository defines admin operations.
-type AdminRepository interface {
-	ListNodesWithoutEmbeddings(ctx context.Context, tenantID string, limit int) ([]models.NodeSummary, error)
-}
 
 // AdminHandler serves administrative endpoints.
 type AdminHandler struct {
