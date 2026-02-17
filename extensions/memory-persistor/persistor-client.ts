@@ -1,4 +1,4 @@
-import { type PersistorEdge } from './types.ts';
+import { type PersistorEdge, type PersistorSearchResult } from './types.ts';
 
 export interface PersistorNode {
   id: string;
@@ -8,15 +8,6 @@ export interface PersistorNode {
   salience_score: number;
   created_at: string;
   updated_at: string;
-}
-
-export interface PersistorSearchResult {
-  id: string;
-  type: string;
-  label: string;
-  properties: Record<string, unknown>;
-  salience_score: number;
-  score?: number;
 }
 
 export interface PersistorContext {
@@ -47,7 +38,7 @@ export class PersistorClient {
     };
   }
 
-  private async get(path: string): Promise<Response | null> {
+  private async request(path: string): Promise<Response | null> {
     try {
       const res = await fetch(`${this.config.url}${path}`, {
         headers: this.headers(),
@@ -65,7 +56,7 @@ export class PersistorClient {
   }
 
   async checkHealth(): Promise<boolean> {
-    return (await this.get('/api/v1/ready')) !== null;
+    return (await this.request('/api/v1/ready')) !== null;
   }
 
   async search(
@@ -76,7 +67,9 @@ export class PersistorClient {
     const limit = opts?.limit ?? this.config.searchLimit;
     const segment =
       mode === 'semantic' ? '/search/semantic' : mode === 'text' ? '/search' : '/search/hybrid';
-    const res = await this.get(`/api/v1${segment}?q=${encodeURIComponent(query)}&limit=${limit}`);
+    const res = await this.request(
+      `/api/v1${segment}?q=${encodeURIComponent(query)}&limit=${limit}`,
+    );
     if (!res) return [];
     try {
       const body: unknown = await res.json();
@@ -96,7 +89,7 @@ export class PersistorClient {
   }
 
   async getNode(id: string): Promise<PersistorNode | null> {
-    const res = await this.get(`/api/v1/nodes/${encodeURIComponent(id)}`);
+    const res = await this.request(`/api/v1/nodes/${encodeURIComponent(id)}`);
     if (!res) return null;
     try {
       return (await res.json()) as PersistorNode;
@@ -107,7 +100,7 @@ export class PersistorClient {
   }
 
   async getContext(id: string): Promise<PersistorContext | null> {
-    const res = await this.get(`/api/v1/graph/context/${encodeURIComponent(id)}`);
+    const res = await this.request(`/api/v1/graph/context/${encodeURIComponent(id)}`);
     if (!res) return null;
     try {
       return (await res.json()) as PersistorContext;

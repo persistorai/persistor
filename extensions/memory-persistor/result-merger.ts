@@ -1,4 +1,4 @@
-import type { UnifiedSearchResult } from './types.ts';
+import type { PersistorSearchResult, UnifiedSearchResult } from './types.ts';
 
 /** A result from the built-in file memory search */
 export interface FileSearchResult {
@@ -7,16 +7,6 @@ export interface FileSearchResult {
   score: number;
   line?: number | undefined;
   [key: string]: unknown;
-}
-
-/** A result from Persistor search API */
-export interface PersistorSearchResult {
-  id: string;
-  type: string;
-  label: string;
-  properties: Record<string, unknown>;
-  salience_score: number;
-  score?: number;
 }
 
 export interface MergeWeights {

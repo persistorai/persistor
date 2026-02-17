@@ -1,9 +1,9 @@
 import { mergeResults } from './result-merger.ts';
 
 import type { PersistorPluginConfig } from './config.ts';
-import type { PersistorClient, PersistorSearchResult } from './persistor-client.ts';
+import type { PersistorClient } from './persistor-client.ts';
 import type { FileSearchResult } from './result-merger.ts';
-import type { OpenClawTool, ToolContentPart, ToolResult } from './types.ts';
+import type { OpenClawTool, PersistorSearchResult, ToolContentPart, ToolResult } from './types.ts';
 
 /**
  * Extract the JSON payload from a tool result.

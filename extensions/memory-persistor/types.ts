@@ -20,6 +20,16 @@ export interface OpenClawTool {
   execute: (toolCallId: string, params: Record<string, unknown>) => Promise<ToolResult>;
 }
 
+/** A result from Persistor search API */
+export interface PersistorSearchResult {
+  id: string;
+  type: string;
+  label: string;
+  properties: Record<string, unknown>;
+  salience_score: number;
+  score?: number;
+}
+
 /** Edge in a Persistor context response */
 export interface PersistorEdge {
   source: string;
