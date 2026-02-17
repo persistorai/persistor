@@ -3,9 +3,10 @@ import { type PersistorEdge, type PersistorSearchResult } from './types.ts';
 function extractArray(body: unknown): unknown[] {
   if (Array.isArray(body)) return body;
   if (body != null && typeof body === 'object') {
-    const obj = body as Record<string, unknown>;
-    if (Array.isArray(obj['nodes'])) return obj['nodes'] as unknown[];
-    if (Array.isArray(obj['results'])) return obj['results'] as unknown[];
+    for (const key of ['nodes', 'results'] as const) {
+      const val = (body as Record<string, unknown>)[key];
+      if (Array.isArray(val)) return val;
+    }
   }
   return [];
 }

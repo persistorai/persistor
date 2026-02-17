@@ -4,6 +4,7 @@ import type { PersistorPluginConfig } from './config.ts';
 import type { PersistorClient } from './persistor-client.ts';
 import type { FileSearchResult } from './result-merger.ts';
 import type { OpenClawTool, PersistorSearchResult, ToolContentPart, ToolResult } from './types.ts';
+import type { TextContent } from '@mariozechner/pi-ai';
 
 /**
  * Extract the JSON payload from a tool result.
@@ -11,12 +12,13 @@ import type { OpenClawTool, PersistorSearchResult, ToolContentPart, ToolResult }
  */
 function extractToolPayload(result: unknown): unknown {
   if (!result || typeof result !== 'object') return null;
-  const obj = result as Record<string, unknown>;
-  if (Array.isArray(obj['content'])) {
+  if (!('content' in result)) return null;
+  const content = (result as { content: unknown }).content;
+  if (Array.isArray(content)) {
     const isToolContentPart = (v: unknown): v is ToolContentPart =>
       v != null && typeof v === 'object' && 'type' in v;
-    const parts = (obj['content'] as unknown[]).filter(isToolContentPart);
-    const textPart = parts.find((c) => c.type === 'text' && typeof c.text === 'string');
+    const parts = content.filter(isToolContentPart);
+    const textPart = parts.find((c): c is TextContent => c.type === 'text');
     if (textPart?.text != null) {
       try {
         return JSON.parse(textPart.text) as unknown;
@@ -36,8 +38,8 @@ const isRecord = (v: unknown): v is Record<string, unknown> =>
 
 function extractFileResults(toolResult: unknown): FileSearchResult[] {
   const payload = extractToolPayload(toolResult);
-  if (!payload || typeof payload !== 'object') return [];
-  const obj = payload as Record<string, unknown>;
+  if (!isRecord(payload)) return [];
+  const obj = payload;
   const results = Array.isArray(obj['results']) ? obj['results'] : [];
   return results.filter(isRecord).map((r) => ({
     path: String(r['path'] ?? r['file'] ?? 'unknown'),
@@ -53,7 +55,10 @@ function extractFileResults(toolResult: unknown): FileSearchResult[] {
 }
 
 function jsonResult(payload: unknown): ToolResult {
-  return { content: [{ type: 'text', text: JSON.stringify(payload, null, 2) }] };
+  return {
+    content: [{ type: 'text', text: JSON.stringify(payload, null, 2) }],
+    details: undefined,
+  };
 }
 
 /**
@@ -79,6 +84,8 @@ export function createUnifiedSearchTool(
   wrappedTool.execute = async (
     toolCallId: string,
     params: Record<string, unknown>,
+    _signal?: AbortSignal,
+    _onUpdate?: (partialResult: ToolResult) => void,
   ): Promise<ToolResult> => {
     const query = typeof params['query'] === 'string' ? params['query'] : '';
     const maxResults = typeof params['maxResults'] === 'number' ? params['maxResults'] : 20;

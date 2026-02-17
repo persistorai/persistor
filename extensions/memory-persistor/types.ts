@@ -1,20 +1,12 @@
-/**
- * Content part within a tool result.
- *
- * When `type` is `'image'`, the `source` field contains a provider-specific
- * media descriptor (typically `{ type: 'base64', media_type: string, data: string }`
- * or `{ type: 'url', url: string }`). The exact shape depends on the OpenClaw
- * runtime and is intentionally left as `unknown` to avoid coupling to internals.
- */
-export interface ToolContentPart {
-  type: 'text' | 'image';
-  text?: string;
-  source?: unknown;
-}
+import type { TextContent, ImageContent } from '@mariozechner/pi-ai';
+
+/** Content part within a tool result — re-exported from pi-ai for SDK compatibility. */
+export type ToolContentPart = TextContent | ImageContent;
 
 /** Tool result returned by OpenClaw tools */
 export interface ToolResult {
   content: ToolContentPart[];
+  details: unknown;
 }
 
 /** Shape of an OpenClaw tool (search, get, etc.) */
@@ -23,7 +15,12 @@ export interface OpenClawTool {
   label: string;
   description: string;
   parameters: Record<string, unknown>;
-  execute: (toolCallId: string, params: Record<string, unknown>) => Promise<ToolResult>;
+  execute: (
+    toolCallId: string,
+    params: Record<string, unknown>,
+    signal?: AbortSignal,
+    onUpdate?: (partialResult: ToolResult) => void,
+  ) => Promise<ToolResult>;
 }
 
 /** A result from Persistor search API */
@@ -74,5 +71,6 @@ export interface UnifiedSearchResult {
   label?: string;
   properties?: Record<string, unknown>;
   salienceScore?: number;
+  /** Raw Persistor response data — kept for debugging; consider removing if payload size matters. */
   raw?: Record<string, unknown> | undefined;
 }

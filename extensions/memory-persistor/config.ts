@@ -43,7 +43,12 @@ interface RawWeightsConfig {
   persistor?: unknown;
 }
 
-const VALID_SEARCH_MODES = new Set<string>(['hybrid', 'text', 'semantic']);
+type SearchMode = 'hybrid' | 'text' | 'semantic';
+const VALID_SEARCH_MODES = new Set<SearchMode>(['hybrid', 'text', 'semantic']);
+
+function isSearchMode(v: string): v is SearchMode {
+  return VALID_SEARCH_MODES.has(v as SearchMode);
+}
 
 const isPositiveFinite = (v: unknown): v is number =>
   typeof v === 'number' && Number.isFinite(v) && v > 0;
@@ -84,8 +89,8 @@ export function resolveConfig(raw: Record<string, unknown>): PersistorPluginConf
 
   const rawSearchMode = persistorRaw.searchMode;
   const searchMode =
-    typeof rawSearchMode === 'string' && VALID_SEARCH_MODES.has(rawSearchMode)
-      ? (rawSearchMode as 'hybrid' | 'text' | 'semantic')
+    typeof rawSearchMode === 'string' && isSearchMode(rawSearchMode)
+      ? rawSearchMode
       : defaultConfig.persistor.searchMode;
 
   const rawSearchLimit = persistorRaw.searchLimit;

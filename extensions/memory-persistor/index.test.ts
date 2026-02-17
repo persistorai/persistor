@@ -5,8 +5,8 @@ import { createUnifiedGetTool } from './unified-get.ts';
 import type { PersistorClient } from './persistor-client.ts';
 import type { OpenClawTool } from './types.ts';
 
-let passed = 0,
-  failed = 0;
+let passed = 0;
+let failed = 0;
 
 function assert(cond: boolean, msg: string): void {
   if (!cond) throw new Error(msg);

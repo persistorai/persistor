@@ -5,6 +5,7 @@ import { createUnifiedSearchTool } from './unified-search.ts';
 
 import type { OpenClawPluginApi } from 'openclaw/plugin-sdk';
 
+/** Extract pluginConfig from the API object — known SDK gap: pluginConfig is not on OpenClawPluginApi type yet. */
 function getPluginConfig(api: OpenClawPluginApi): Record<string, unknown> {
   const record = api as Record<string, unknown>;
   if (

@@ -15,7 +15,7 @@ function isUUID(str: string): boolean {
 }
 
 function jsonWrap(text: string): ToolResult {
-  return { content: [{ type: 'text', text }] };
+  return { content: [{ type: 'text', text }], details: undefined };
 }
 
 function formatNode(node: PersistorNode, context?: PersistorContext | null): string {
@@ -85,6 +85,8 @@ export function createUnifiedGetTool(
   wrappedTool.execute = async (
     toolCallId: string,
     params: Record<string, unknown>,
+    _signal?: AbortSignal,
+    _onUpdate?: (partialResult: ToolResult) => void,
   ): Promise<ToolResult> => {
     const path = typeof params['path'] === 'string' ? params['path'] : '';
 
