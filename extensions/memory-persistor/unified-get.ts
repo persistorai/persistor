@@ -4,7 +4,7 @@ import type { PersistorPluginConfig } from './config.ts';
 import type { PersistorClient, PersistorNode, PersistorContext } from './persistor-client.ts';
 import type { OpenClawTool, ToolResult } from './types.ts';
 
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu;
 
 function isFilePath(path: string): boolean {
   return path.startsWith('./') || path.startsWith('/') || path.startsWith('memory/');
@@ -72,8 +72,11 @@ export function createUnifiedGetTool(
   persistorClient: PersistorClient,
   config: PersistorPluginConfig,
 ): OpenClawTool {
+  // bind is a no-op for arrow fns but kept for safety if execute is ever a method
   const originalExecute = fileGetTool.execute.bind(fileGetTool);
 
+  // Object.create clone preserves prototype chain + own property descriptors.
+  // Assumes no private class fields (WeakMap-based or #-private) on the tool.
   const wrappedTool = Object.create(
     Object.getPrototypeOf(fileGetTool) as object,
     Object.getOwnPropertyDescriptors(fileGetTool),

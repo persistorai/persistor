@@ -1,10 +1,13 @@
 import { type PersistorEdge, type PersistorSearchResult } from './types.ts';
 
+const isRecord = (v: unknown): v is Record<string, unknown> =>
+  v != null && typeof v === 'object' && !Array.isArray(v);
+
 function extractArray(body: unknown): unknown[] {
   if (Array.isArray(body)) return body;
-  if (body != null && typeof body === 'object') {
+  if (isRecord(body)) {
     for (const key of ['nodes', 'results'] as const) {
-      const val = (body as Record<string, unknown>)[key];
+      const val = body[key];
       if (Array.isArray(val)) return val;
     }
   }
@@ -54,11 +57,25 @@ export interface PersistorClientConfig {
   searchLimit: number;
 }
 
+/** Allowed URL prefixes for sending auth headers */
+const ALLOWED_URL_PREFIXES = ['http://localhost', 'http://127.0.0.1', 'http://[::1]'];
+
+function isAllowedUrl(url: string): boolean {
+  return ALLOWED_URL_PREFIXES.some((prefix) => url.startsWith(prefix));
+}
+
 export class PersistorClient {
   private readonly config: Readonly<PersistorClientConfig>;
 
   constructor(config: PersistorClientConfig) {
-    this.config = { ...config, url: config.url.replace(/\/+$/, '') };
+    const cleanUrl = config.url.replace(/\/+$/, '');
+    if (!isAllowedUrl(cleanUrl)) {
+      throw new Error(
+        `[memory-persistor] Refusing non-localhost Persistor URL: ${cleanUrl}. ` +
+          `Only localhost URLs are allowed to prevent credential leakage.`,
+      );
+    }
+    this.config = { ...config, url: cleanUrl };
   }
 
   private headers(): Record<string, string> {
@@ -68,10 +85,15 @@ export class PersistorClient {
     };
   }
 
-  private async request(path: string): Promise<Response | null> {
+  private async request(
+    path: string,
+    init?: { method?: string; body?: string },
+  ): Promise<Response | null> {
     try {
       const res = await fetch(`${this.config.url}${path}`, {
+        method: init?.method ?? 'GET',
         headers: this.headers(),
+        body: init?.body,
         signal: AbortSignal.timeout(this.config.timeout),
       });
       if (!res.ok) {
@@ -96,12 +118,15 @@ export class PersistorClient {
   ): Promise<PersistorSearchResult[]> {
     const mode = opts?.mode ?? this.config.searchMode;
     const limit = opts?.limit ?? this.config.searchLimit;
-    const safeQuery = query.length > 1500 ? query.slice(0, 1500) : query;
+    // Truncate to 500 chars to stay within safe URL/body sizes
+    const safeQuery = query.length > 500 ? query.slice(0, 500) : query;
     const segment =
       mode === 'semantic' ? '/search/semantic' : mode === 'text' ? '/search' : '/search/hybrid';
-    const res = await this.request(
-      `/api/v1${segment}?q=${encodeURIComponent(safeQuery)}&limit=${limit}`,
-    );
+    // Use POST with JSON body to avoid URL length limits
+    const res = await this.request(`/api/v1${segment}`, {
+      method: 'POST',
+      body: JSON.stringify({ q: safeQuery, limit }),
+    });
     if (!res) return [];
     try {
       const body: unknown = await res.json();

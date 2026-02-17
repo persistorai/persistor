@@ -16,7 +16,7 @@ function extractToolPayload(result: unknown): unknown {
   const content = (result as { content: unknown }).content;
   if (Array.isArray(content)) {
     const isToolContentPart = (v: unknown): v is ToolContentPart =>
-      v != null && typeof v === 'object' && 'type' in v;
+      v != null && typeof v === 'object' && 'type' in v && typeof (v as Record<string, unknown>)['type'] === 'string';
     const parts = content.filter(isToolContentPart);
     const textPart = parts.find((c): c is TextContent => c.type === 'text');
     if (textPart?.text != null) {
@@ -71,8 +71,11 @@ export function createUnifiedSearchTool(
   persistorClient: PersistorClient,
   config: PersistorPluginConfig,
 ): OpenClawTool {
+  // bind is a no-op for arrow fns but kept for safety if execute is ever a method
   const originalExecute = fileSearchTool.execute.bind(fileSearchTool);
 
+  // Object.create clone preserves prototype chain + own property descriptors.
+  // Assumes no private class fields (WeakMap-based or #-private) on the tool.
   const wrappedTool = Object.create(
     Object.getPrototypeOf(fileSearchTool) as object,
     Object.getOwnPropertyDescriptors(fileSearchTool),

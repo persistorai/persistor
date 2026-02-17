@@ -6,8 +6,9 @@ import { createUnifiedSearchTool } from './unified-search.ts';
 import type { OpenClawPluginApi } from 'openclaw/plugin-sdk';
 
 /** Extract pluginConfig from the API object — known SDK gap: pluginConfig is not on OpenClawPluginApi type yet. */
+// TODO(SDK-XXX): Remove cast once pluginConfig is added to OpenClawPluginApi
 function getPluginConfig(api: OpenClawPluginApi): Record<string, unknown> {
-  const record = api as Record<string, unknown>;
+  const record = api as unknown as Record<string, unknown>;
   if (
     'pluginConfig' in record &&
     typeof record['pluginConfig'] === 'object' &&
@@ -74,6 +75,7 @@ const memoryPersistorPlugin = {
           .description('Check Persistor health and stats')
           .action(async () => {
             const healthy = await persistorClient.checkHealth();
+            // Intentional console.log — this is CLI output
             console.log(
               healthy
                 ? '[memory-persistor] [OK] Persistor is healthy'
@@ -85,6 +87,7 @@ const memoryPersistorPlugin = {
           .description('Search Persistor directly')
           .action(async (query: string) => {
             const results = await persistorClient.search(query);
+            // Intentional console.log — CLI output for search results
             if (results.length === 0) {
               console.log('[memory-persistor] No results.');
               return;

@@ -99,8 +99,14 @@ async function runTests(): Promise<void> {
   // --- Unified Get ---
   const mockFileGet = {
     name: 'memory_get',
-    execute: async (_id: string, p: Record<string, unknown>) => ({
+    execute: async (
+      _id: string,
+      p: Record<string, unknown>,
+      _signal?: AbortSignal,
+      _onUpdate?: unknown,
+    ) => ({
       content: [{ type: 'text' as const, text: `file:${String(p['path'])}` }],
+      details: undefined,
     }),
   };
   const mockClient = {
@@ -141,8 +147,14 @@ async function runTests(): Promise<void> {
   await test('get: non-file non-UUID tries persistor then file', async () => {
     const freshFileGet = {
       name: 'memory_get',
-      execute: async (_id: string, p: Record<string, unknown>) => ({
+      execute: async (
+        _id: string,
+        p: Record<string, unknown>,
+        _signal?: AbortSignal,
+        _onUpdate?: unknown,
+      ) => ({
         content: [{ type: 'text' as const, text: `file:${String(p['path'])}` }],
+        details: undefined,
       }),
     };
     const failClient = {
