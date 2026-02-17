@@ -1,0 +1,280 @@
+# Persistor — Full LLM Context
+
+> Persistent knowledge graph and vector memory for AI agents. Durable, searchable, graph-structured memory across sessions.
+
+Persistor is a Go REST API backed by PostgreSQL + pgvector that provides knowledge graph storage with vector similarity search, AES-256-GCM encryption at rest, multi-tenant isolation via Row-Level Security, and real-time WebSocket notifications.
+
+## Stack
+
+- **Go + Gin** — Fast, type-safe REST API
+- **PostgreSQL 18 + pgvector** — Knowledge graph storage with vector similarity search
+- **AES-256-GCM encryption** — All node/edge properties encrypted at rest, transparent to API consumers
+- **Ollama embeddings** — Automatic vector generation for semantic search (qwen3-embedding:0.6b)
+- **Row-Level Security** — Complete tenant isolation, one API key = one tenant
+- **WebSocket** — Real-time change notifications via PostgreSQL LISTEN/NOTIFY
+
+## Configuration
+
+| Variable              | Default                  | Description                                     |
+| --------------------- | ------------------------ | ----------------------------------------------- |
+| `DATABASE_URL`        | — (required)             | PostgreSQL connection string                    |
+| `PORT`                | `3030`                   | HTTP listen port                                |
+| `LISTEN_HOST`         | `127.0.0.1`              | Listen address (must be loopback)               |
+| `CORS_ORIGINS`        | `http://localhost:3002`  | Comma-separated allowed origins                 |
+| `OLLAMA_URL`          | `http://localhost:11434` | Ollama API endpoint (must be localhost)         |
+| `EMBEDDING_MODEL`     | `qwen3-embedding:0.6b`   | Embedding model name                            |
+| `LOG_LEVEL`           | `info`                   | Log level                                       |
+| `ENCRYPTION_PROVIDER` | `static`                 | `static` (env key) or `vault` (HashiCorp Vault) |
+| `ENCRYPTION_KEY`      | — (required if static)   | 64 hex chars (32-byte AES key)                  |
+| `VAULT_ADDR`          | `http://127.0.0.1:8200`  | Vault address (if provider=vault)               |
+| `VAULT_TOKEN`         | — (required if vault)    | Vault token                                     |
+
+## Authentication
+
+All endpoints except `/health` and `/ready` require a Bearer token:
+
+```
+Authorization: Bearer <api-key>
+```
+
+API keys are SHA-256 hashed before storage. Each key maps to exactly one tenant. Row-Level Security in PostgreSQL ensures complete tenant isolation.
+
+## Data Model
+
+### Node
+
+| Field            | Type                             | Description                                                                |
+| ---------------- | -------------------------------- | -------------------------------------------------------------------------- |
+| `id`             | string (max 255)                 | Unique identifier. Auto-generated UUID if omitted. Slug-style recommended. |
+| `type`           | string (max 100, **required**)   | Category: `person`, `project`, `concept`, `event`, `place`, etc.           |
+| `label`          | string (max 10000, **required**) | Human-readable name. Used for full-text search.                            |
+| `properties`     | object (max 64KB JSON)           | Arbitrary metadata. **Encrypted at rest** (AES-256-GCM).                   |
+| `salience_score` | float                            | Auto-calculated importance score.                                          |
+| `access_count`   | int                              | Times this node has been read.                                             |
+| `last_accessed`  | timestamp                        | Last read time.                                                            |
+| `user_boosted`   | bool                             | Whether explicitly boosted.                                                |
+| `superseded_by`  | string or null                   | ID of the replacing node.                                                  |
+| `created_at`     | timestamp                        | Creation time.                                                             |
+| `updated_at`     | timestamp                        | Last modification time.                                                    |
+
+### Edge
+
+| Field            | Type                           | Description                            |
+| ---------------- | ------------------------------ | -------------------------------------- |
+| `source`         | string (max 255, **required**) | Source node ID. Must exist.            |
+| `target`         | string (max 255, **required**) | Target node ID. Must exist.            |
+| `relation`       | string (max 255, **required**) | Relationship type.                     |
+| `properties`     | object (max 64KB JSON)         | Arbitrary metadata. Encrypted at rest. |
+| `weight`         | float (0–1000, default 1.0)    | Relationship strength.                 |
+| `salience_score` | float                          | Auto-calculated importance.            |
+| `access_count`   | int                            | Times accessed.                        |
+| `user_boosted`   | bool                           | Whether manually boosted.              |
+| `superseded_by`  | string or null                 | Superseding edge reference.            |
+| `created_at`     | timestamp                      | Creation time.                         |
+| `updated_at`     | timestamp                      | Last modification time.                |
+
+**Composite key:** Edges are uniquely identified by `(source, target, relation)`.
+
+## API Reference
+
+### Health
+
+**`GET /api/v1/health`** — Liveness probe. No auth.
+
+```json
+{ "status": "ok" }
+```
+
+**`GET /api/v1/ready`** — Readiness probe (checks DB, schema, Ollama). No auth.
+
+```json
+{
+  "status": "ok",
+  "checks": { "database": "ok", "schema": "ok", "ollama": "ok" }
+}
+```
+
+### Nodes
+
+**`POST /api/v1/nodes`** — Create a node.
+
+```json
+{
+  "id": "bob-smith",
+  "type": "person",
+  "label": "Bob Smith - Team lead",
+  "properties": { "role": "team-lead" }
+}
+```
+
+Returns 201. Omit `id` for auto-UUID. Returns 409 if ID exists.
+
+**`GET /api/v1/nodes`** — List nodes.
+Query params: `type`, `min_salience`, `limit` (default 50, max 1000), `offset` (default 0, max 100000).
+Returns `{"nodes": [...], "has_more": true}`.
+
+**`GET /api/v1/nodes/:id`** — Get a node. Returns 404 if not found.
+
+**`PUT /api/v1/nodes/:id`** — Update a node. All fields optional. `properties` replaces entirely.
+
+**`PATCH /api/v1/nodes/:id/properties`** — Merge properties. Keys set to `null` are removed.
+
+**`DELETE /api/v1/nodes/:id`** — Delete a node. Cascades to connected edges.
+
+### Edges
+
+**`POST /api/v1/edges`** — Create an edge.
+
+```json
+{
+  "source": "alice",
+  "target": "bob-smith",
+  "relation": "reports_to",
+  "properties": { "since": "2024" },
+  "weight": 1.0
+}
+```
+
+Both nodes must exist (400 otherwise). Returns 409 if edge exists.
+
+**`GET /api/v1/edges`** — List edges.
+Query params: `source`, `target`, `relation`, `limit` (default 50, max 1000), `offset`.
+
+**`PUT /api/v1/edges/:source/:target/:relation`** — Update edge properties/weight.
+
+**`PATCH /api/v1/edges/:source/:target/:relation/properties`** — Merge edge properties.
+
+**`DELETE /api/v1/edges/:source/:target/:relation`** — Delete an edge.
+
+### Search
+
+All return `{"nodes": [...], "total": N}`.
+
+**`GET /api/v1/search`** — Full-text search on node labels.
+Query params: `q` (**required**, max 2000), `type`, `min_salience`, `limit` (default 20, max 1000).
+
+**`GET /api/v1/search/semantic`** — Vector similarity search via Ollama embeddings.
+Query params: `q` (**required**), `limit` (default 10). Returns 502 if embedding service unavailable.
+
+**`GET /api/v1/search/hybrid`** — Combined text + vector search. Falls back to text-only if embeddings fail.
+Query params: `q` (**required**), `limit` (default 10).
+
+### Graph Traversal
+
+**`GET /api/v1/graph/neighbors/:id`** — Direct neighbors (1 hop).
+Query params: `limit` (default 100).
+
+**`GET /api/v1/graph/traverse/:id`** — BFS traversal.
+Query params: `hops` (default 2, max 10).
+
+**`GET /api/v1/graph/context/:id`** — Node + neighbors + connecting edges in one call.
+
+**`GET /api/v1/graph/path/:from/:to`** — Shortest path. Returns `{"path": [...]}` or 404.
+
+### Bulk Operations
+
+Both accept JSON arrays (max 1000 items) and perform upserts.
+
+**`POST /api/v1/bulk/nodes`**
+
+```json
+[{"id": "node-1", "type": "concept", "label": "First concept"}, ...]
+```
+
+Returns `{"upserted": N}`.
+
+**`POST /api/v1/bulk/edges`**
+
+```json
+[{"source": "alice", "target": "acme-app", "relation": "created"}, ...]
+```
+
+Returns `{"upserted": N}`.
+
+### Salience Management
+
+**`POST /api/v1/salience/boost/:id`** — Boost node salience and set `user_boosted: true`.
+
+**`POST /api/v1/salience/supersede`** — Mark a node as superseded.
+
+```json
+{ "old_id": "outdated-fact", "new_id": "corrected-fact" }
+```
+
+**`POST /api/v1/salience/recalc`** — Recalculate all salience scores. Returns 409 if already running.
+Returns `{"updated": N}`.
+
+### WebSocket
+
+**`GET /api/v1/ws`** — Real-time change notifications. Requires Bearer auth. Tenant-scoped.
+
+### GraphQL
+
+**`POST /api/v1/graphql`** — GraphQL endpoint.
+**`GET /api/v1/graphql/playground`** — Interactive GraphQL playground.
+
+### Admin
+
+**`POST /api/v1/admin/backfill-embeddings`** — Backfill missing vector embeddings.
+
+### Audit
+
+**`GET /api/v1/audit`** — Get audit log entries.
+**`DELETE /api/v1/audit`** — Clear audit log.
+
+### History
+
+**`GET /api/v1/nodes/:id/history`** — Get change history for a node.
+
+### Stats
+
+**`GET /api/v1/stats`** — Get graph statistics.
+
+### Metrics
+
+**`GET /metrics`** — Prometheus metrics (outside `/api/v1/`).
+
+## Error Format
+
+```json
+{ "error": { "code": "validation_error", "message": "type is required" } }
+```
+
+Codes: `invalid_request`, `validation_error`, `not_found`, `conflict`, `internal_error`.
+
+## Rate Limits
+
+- 100 req/s per IP (burst 200)
+- Max body: 10 MB
+- Max bulk items: 1000
+- Max search query: 2000 chars
+- Max traversal hops: 10
+
+## Go SDK
+
+The `client/` package (Apache-2.0) provides a typed Go client:
+
+```go
+import "github.com/yourorg/persistor/client"
+
+c := client.New("http://localhost:3030", "your-api-key")
+node, err := c.CreateNode(ctx, client.NodeCreate{
+    ID: "alice", Type: "person", Label: "Alice Smith",
+})
+results, err := c.SearchHybrid(ctx, "active projects", 10)
+```
+
+## Agent Integration Patterns
+
+1. **Search before creating** — avoid duplicates.
+2. **Use slug IDs** for important entities (`alice`, `acme-app`).
+3. **Write descriptive labels** — they power full-text search.
+4. **Use `context` endpoint** for "tell me everything about X" queries.
+5. **Boost** nodes your user emphasizes.
+6. **Supersede, don't delete** — preserves history when facts change.
+7. **Use bulk endpoints** for batch ingestion.
+8. **Run `salience/recalc`** periodically to keep scores fresh.
+
+## License
+
+AGPL-3.0 (server). Apache-2.0 (Go SDK in `client/`).

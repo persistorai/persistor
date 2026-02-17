@@ -1,0 +1,66 @@
+# Persistor
+
+> Persistent knowledge graph and vector memory for AI agents. Durable, searchable, graph-structured memory across sessions.
+
+Persistor is a Go REST API backed by PostgreSQL + pgvector that provides knowledge graph storage with vector similarity search, AES-256-GCM encryption at rest, multi-tenant isolation via Row-Level Security, and real-time WebSocket notifications.
+
+## Key Features
+
+- Knowledge graph with nodes (entities) and edges (relationships)
+- Full-text, semantic (vector), and hybrid search
+- Graph traversal: neighbors, BFS, context, shortest path
+- Salience scoring with manual boost and supersede operations
+- Bulk upsert (up to 1000 items)
+- AES-256-GCM encrypted properties at rest (transparent to API consumers)
+- Multi-tenant isolation via PostgreSQL RLS (one API key = one tenant)
+- Real-time WebSocket change notifications
+- GraphQL endpoint
+- Audit log and node history
+- Prometheus metrics
+- Go SDK (`client/` package, Apache-2.0 licensed)
+
+## Stack
+
+- Go + Gin
+- PostgreSQL 18 + pgvector
+- Ollama embeddings (qwen3-embedding:0.6b)
+- HashiCorp Vault (optional, for encryption key management)
+
+## Base URL
+
+`http://localhost:3030/api/v1`
+
+## Authentication
+
+All endpoints (except `/health` and `/ready`) require `Authorization: Bearer <api-key>`.
+
+## API Endpoints
+
+| Group     | Endpoints                                                                                                             |
+| --------- | --------------------------------------------------------------------------------------------------------------------- |
+| Health    | `GET /health`, `GET /ready`                                                                                           |
+| Nodes     | `GET/POST /nodes`, `GET/PUT/DELETE /nodes/:id`, `PATCH /nodes/:id/properties`                                         |
+| Edges     | `GET/POST /edges`, `PUT/DELETE /edges/:source/:target/:relation`, `PATCH /edges/:source/:target/:relation/properties` |
+| Search    | `GET /search`, `GET /search/semantic`, `GET /search/hybrid`                                                           |
+| Graph     | `GET /graph/neighbors/:id`, `GET /graph/traverse/:id`, `GET /graph/context/:id`, `GET /graph/path/:from/:to`          |
+| Bulk      | `POST /bulk/nodes`, `POST /bulk/edges`                                                                                |
+| Salience  | `POST /salience/boost/:id`, `POST /salience/supersede`, `POST /salience/recalc`                                       |
+| WebSocket | `GET /ws`                                                                                                             |
+| GraphQL   | `POST /graphql`, `GET /graphql/playground`                                                                            |
+| Admin     | `POST /admin/backfill-embeddings`                                                                                     |
+| Audit     | `GET /audit`, `DELETE /audit`                                                                                         |
+| History   | `GET /nodes/:id/history`                                                                                              |
+| Stats     | `GET /stats`                                                                                                          |
+| Metrics   | `GET /metrics` (Prometheus, outside `/api/v1/`)                                                                       |
+
+## Documentation
+
+- [README](README.md): Setup, configuration, deployment
+- [Integration Guide](INTEGRATION.md): Full API reference with curl examples, data model, and agent usage patterns
+- [OpenAPI Spec](openapi.yaml): Machine-readable API specification
+- [Changelog](CHANGELOG.md): Version history
+- [Go SDK](client/): Apache-2.0 licensed Go client library
+
+## License
+
+AGPL-3.0 (server). Apache-2.0 (Go SDK).
