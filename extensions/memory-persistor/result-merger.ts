@@ -46,7 +46,14 @@ export function mergeResults(
       label: r.label,
       properties: r.properties,
       salienceScore: r.salience_score,
-      raw: r as unknown as Record<string, unknown>,
+      raw: {
+        id: r.id,
+        type: r.type,
+        label: r.label,
+        properties: r.properties,
+        salience_score: r.salience_score,
+        score: r.score,
+      },
     };
   });
 

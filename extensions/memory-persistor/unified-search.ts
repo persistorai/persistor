@@ -13,7 +13,9 @@ function extractToolPayload(result: unknown): unknown {
   if (!result || typeof result !== 'object') return null;
   const obj = result as Record<string, unknown>;
   if (Array.isArray(obj['content'])) {
-    const parts = obj['content'] as ToolContentPart[];
+    const isToolContentPart = (v: unknown): v is ToolContentPart =>
+      v != null && typeof v === 'object' && 'type' in v;
+    const parts = (obj['content'] as unknown[]).filter(isToolContentPart);
     const textPart = parts.find((c) => c.type === 'text' && typeof c.text === 'string');
     if (textPart?.text != null) {
       try {

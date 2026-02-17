@@ -43,12 +43,6 @@ interface RawWeightsConfig {
   persistor?: unknown;
 }
 
-interface RawPluginConfig {
-  persistor?: unknown;
-  weights?: unknown;
-  persistorContextOnGet?: unknown;
-}
-
 const VALID_SEARCH_MODES = new Set<string>(['hybrid', 'text', 'semantic']);
 
 const isPositiveFinite = (v: unknown): v is number =>
@@ -63,15 +57,15 @@ const isPositiveFinite = (v: unknown): v is number =>
  * If the env var is unset, an empty string is used.
  */
 export function resolveConfig(raw: Record<string, unknown>): PersistorPluginConfig {
-  const pluginRaw = raw as RawPluginConfig;
-  const persistorRaw: RawPersistorConfig =
-    pluginRaw.persistor != null && typeof pluginRaw.persistor === 'object'
-      ? (pluginRaw.persistor as RawPersistorConfig)
-      : {};
-  const weightsRaw: RawWeightsConfig =
-    pluginRaw.weights != null && typeof pluginRaw.weights === 'object'
-      ? (pluginRaw.weights as RawWeightsConfig)
-      : {};
+  const isRecord = (v: unknown): v is Record<string, unknown> =>
+    v != null && typeof v === 'object' && !Array.isArray(v);
+
+  const persistorRaw: RawPersistorConfig = isRecord(raw['persistor'])
+    ? (raw['persistor'] as RawPersistorConfig)
+    : {};
+  const weightsRaw: RawWeightsConfig = isRecord(raw['weights'])
+    ? (raw['weights'] as RawWeightsConfig)
+    : {};
 
   const rawUrl = persistorRaw.url;
   const url = typeof rawUrl === 'string' ? rawUrl : defaultConfig.persistor.url;
@@ -106,7 +100,7 @@ export function resolveConfig(raw: Record<string, unknown>): PersistorPluginConf
   const persistorWeight =
     typeof rawPersistorWeight === 'number' ? rawPersistorWeight : defaultConfig.weights.persistor;
 
-  const rawContextOnGet = pluginRaw.persistorContextOnGet;
+  const rawContextOnGet = raw['persistorContextOnGet'];
   const persistorContextOnGet =
     typeof rawContextOnGet === 'boolean' ? rawContextOnGet : defaultConfig.persistorContextOnGet;
 

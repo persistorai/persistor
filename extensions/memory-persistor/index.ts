@@ -32,7 +32,7 @@ const memoryPersistorPlugin = {
     persistorClient
       .checkHealth()
       .then((ok) => {
-        console.log(
+        console.debug(
           ok
             ? '[memory-persistor] [OK] Persistor connected'
             : '[memory-persistor] [WARN] Persistor unreachable — file-only mode',

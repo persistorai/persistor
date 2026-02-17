@@ -1,5 +1,15 @@
 import { type PersistorEdge, type PersistorSearchResult } from './types.ts';
 
+function extractArray(body: unknown): unknown[] {
+  if (Array.isArray(body)) return body;
+  if (body != null && typeof body === 'object') {
+    const obj = body as Record<string, unknown>;
+    if (Array.isArray(obj['nodes'])) return obj['nodes'] as unknown[];
+    if (Array.isArray(obj['results'])) return obj['results'] as unknown[];
+  }
+  return [];
+}
+
 function isSearchResult(v: unknown): v is PersistorSearchResult {
   return v != null && typeof v === 'object' && 'id' in v && 'type' in v && 'label' in v;
 }
@@ -64,7 +74,8 @@ export class PersistorClient {
         signal: AbortSignal.timeout(this.config.timeout),
       });
       if (!res.ok) {
-        console.warn(`[memory-persistor] Persistor ${path}: HTTP ${res.status}`);
+        const body = await res.text().catch(() => '');
+        console.warn(`[memory-persistor] ${path}: HTTP ${String(res.status)} ${body}`);
         return null;
       }
       return res;
@@ -84,23 +95,16 @@ export class PersistorClient {
   ): Promise<PersistorSearchResult[]> {
     const mode = opts?.mode ?? this.config.searchMode;
     const limit = opts?.limit ?? this.config.searchLimit;
+    const safeQuery = query.length > 1500 ? query.slice(0, 1500) : query;
     const segment =
       mode === 'semantic' ? '/search/semantic' : mode === 'text' ? '/search' : '/search/hybrid';
     const res = await this.request(
-      `/api/v1${segment}?q=${encodeURIComponent(query)}&limit=${limit}`,
+      `/api/v1${segment}?q=${encodeURIComponent(safeQuery)}&limit=${limit}`,
     );
     if (!res) return [];
     try {
       const body: unknown = await res.json();
-      const obj = body != null && typeof body === 'object' ? (body as Record<string, unknown>) : {};
-      const nodes: unknown[] = Array.isArray(body)
-        ? (body as unknown[])
-        : Array.isArray(obj['nodes'])
-          ? (obj['nodes'] as unknown[])
-          : Array.isArray(obj['results'])
-            ? (obj['results'] as unknown[])
-            : [];
-      return nodes.filter(isSearchResult);
+      return extractArray(body).filter(isSearchResult);
     } catch (e: unknown) {
       console.warn('[memory-persistor] Persistor search parse:', e);
       return [];

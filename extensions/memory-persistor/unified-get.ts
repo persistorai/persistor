@@ -1,3 +1,5 @@
+import { isWrappedNeighbor } from './types.ts';
+
 import type { PersistorPluginConfig } from './config.ts';
 import type { PersistorClient, PersistorNode, PersistorContext } from './persistor-client.ts';
 import type { OpenClawTool, ToolResult } from './types.ts';
@@ -5,12 +7,7 @@ import type { OpenClawTool, ToolResult } from './types.ts';
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 function isFilePath(path: string): boolean {
-  return (
-    path.startsWith('./') ||
-    path.startsWith('/') ||
-    path.startsWith('memory/') ||
-    path.endsWith('.md')
-  );
+  return path.startsWith('./') || path.startsWith('/') || path.startsWith('memory/');
 }
 
 function isUUID(str: string): boolean {
@@ -36,8 +33,7 @@ function formatNode(node: PersistorNode, context?: PersistorContext | null): str
   if (context?.neighbors.length) {
     lines.push('', `Neighbors (${context.neighbors.length}):`);
     for (const n of context.neighbors) {
-      const isWrapped = 'node' in n && 'edge' in n;
-      const innerNode: PersistorNode = isWrapped ? (n as { node: PersistorNode }).node : n;
+      const innerNode: PersistorNode = isWrappedNeighbor(n) ? n.node : n;
       lines.push(`  -> ${innerNode.label} (${innerNode.type})`);
     }
   }
@@ -60,7 +56,7 @@ async function getPersistorNode(
     if (!node) return null;
     const context = includeContext ? await client.getContext(id) : null;
     return formatNode(node, context);
-  } catch (e) {
+  } catch (e: unknown) {
     console.warn(`[memory-persistor] getPersistorNode error:`, e);
     return null;
   }

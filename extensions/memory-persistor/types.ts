@@ -45,6 +45,23 @@ export interface PersistorEdge {
   weight?: number;
 }
 
+/** A neighbor entry that wraps node + edge + direction */
+export interface WrappedNeighbor {
+  node: {
+    id: string;
+    type: string;
+    label: string;
+    properties: Record<string, unknown>;
+    salience_score: number;
+  };
+  edge: PersistorEdge;
+  direction: string;
+}
+
+export function isWrappedNeighbor(v: unknown): v is WrappedNeighbor {
+  return v != null && typeof v === 'object' && 'node' in v && 'edge' in v;
+}
+
 /** Unified result after merging */
 export interface UnifiedSearchResult {
   source: 'file' | 'persistor';
