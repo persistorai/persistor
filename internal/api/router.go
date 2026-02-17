@@ -15,6 +15,7 @@ import (
 	"github.com/persistorai/persistor/internal/dbpool"
 	gql "github.com/persistorai/persistor/internal/graphql"
 	"github.com/persistorai/persistor/internal/middleware"
+	"github.com/persistorai/persistor/internal/security"
 	"github.com/persistorai/persistor/internal/service"
 	"github.com/persistorai/persistor/internal/ws"
 )
@@ -93,7 +94,7 @@ func registerRoutes(ctx context.Context, api *gin.RouterGroup, deps *RouterDeps)
 	api.GET("/ready", health.Readiness)
 
 	// All other API routes require authentication.
-	bfGuard := middleware.NewBruteForceGuard(ctx, log)
+	bfGuard := security.NewBruteForceGuard(ctx, log)
 	api.Use(middleware.BruteForceMiddleware(bfGuard))
 	api.Use(middleware.AuthMiddleware(middleware.NewCachedTenantLookup(ctx, deps.TenantLookup), log, bfGuard))
 

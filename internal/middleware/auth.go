@@ -8,6 +8,8 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/sirupsen/logrus"
+
+	"github.com/persistorai/persistor/internal/security"
 )
 
 // authTimingFloor is the minimum response time for auth endpoints to prevent
@@ -36,8 +38,8 @@ func enforceTimingFloor(start time.Time) {
 
 // AuthMiddleware returns Gin middleware that authenticates requests via Bearer token.
 // If a BruteForceGuard is provided, failed attempts are tracked per key hash.
-func AuthMiddleware(lookup TenantLookup, log *logrus.Logger, guards ...*BruteForceGuard) gin.HandlerFunc {
-	var guard *BruteForceGuard
+func AuthMiddleware(lookup TenantLookup, log *logrus.Logger, guards ...*security.BruteForceGuard) gin.HandlerFunc {
+	var guard *security.BruteForceGuard
 	if len(guards) > 0 {
 		guard = guards[0]
 	}
