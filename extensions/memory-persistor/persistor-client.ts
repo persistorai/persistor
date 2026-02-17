@@ -122,11 +122,9 @@ export class PersistorClient {
     const safeQuery = query.length > 500 ? query.slice(0, 500) : query;
     const segment =
       mode === 'semantic' ? '/search/semantic' : mode === 'text' ? '/search' : '/search/hybrid';
-    // Use POST with JSON body to avoid URL length limits
-    const res = await this.request(`/api/v1${segment}`, {
-      method: 'POST',
-      body: JSON.stringify({ q: safeQuery, limit }),
-    });
+    // GET with query params — Persistor API max is 2000 chars, truncation above keeps us safe
+    const params = new URLSearchParams({ q: safeQuery, limit: String(limit) });
+    const res = await this.request(`/api/v1${segment}?${params.toString()}`);
     if (!res) return [];
     try {
       const body: unknown = await res.json();

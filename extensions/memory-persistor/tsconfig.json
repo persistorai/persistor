@@ -2,7 +2,9 @@
   "$schema": "https://json.schemastore.org/tsconfig",
   "compilerOptions": {
     "target": "ES2022",
-    "lib": ["ES2022"],
+    "lib": [
+      "ES2022"
+    ],
     "module": "ESNext",
     "moduleResolution": "bundler",
     "resolveJsonModule": true,
@@ -31,6 +33,11 @@
     "checkJs": false,
     "incremental": true
   },
-  "include": ["./*.ts"],
-  "exclude": ["node_modules"]
+  "include": [
+    "./*.ts"
+  ],
+  "exclude": [
+    "node_modules",
+    "integration-test.ts"
+  ]
 }
