@@ -6,19 +6,22 @@ Backed by PostgreSQL 18 + pgvector. Go + Gin REST API with real-time WebSocket p
 ## Architecture
 
 - `cmd/server/` — Entry point, server lifecycle, graceful shutdown
-- `internal/api/` — Gin HTTP handlers (nodes, edges, search, graph, bulk, salience, health, audit)
+- `cmd/persistor-cli/` — CLI tool (admin, doctor, node/edge/graph/search/salience CRUD, import, init)
+- `internal/api/` — Gin HTTP handlers (router, nodes, edges, search, graph, bulk, salience, health, audit, stats, history, admin, errors)
 - `internal/config/` — Env-driven config with per-concern validators
 - `internal/crypto/` — AES-256-GCM encryption providers (static key, Vault)
-- `internal/db/` — Migrations (embedded via goose), LISTEN/NOTIFY
-- `internal/db/migrations/` — SQL schema files (001–004)
+- `internal/db/` — Migrations (goose embedded), LISTEN/NOTIFY, vector dimension management
+- `internal/db/migrations/` — SQL schema files (001–007: initial, property_history, audit_log, drop_old, force_rls, embed_worker_index, edge_indexes)
 - `internal/dbpool/` — pgx v5 connection pool
-- `internal/graphql/` — gqlgen schema, resolvers, type conversion
+- `internal/graphql/` — gqlgen schema, resolvers, type conversion, middleware, context helpers
+- `internal/httputil/` — Shared HTTP response helpers
 - `internal/metrics/` — Prometheus metrics (request duration, embed worker, WebSocket)
-- `internal/models/` — Request/response types with validation
-- `internal/service/` — NodeService, SearchService, BulkService, EmbedWorker, EmbeddingService
-- `internal/store/` — 8 focused stores (Node, Edge, Search, Graph, Bulk, Salience, Embedding, History) + helpers
-- `internal/ws/` — WebSocket hub + client (coder/websocket), fan-out to subscribers
-- `internal/middleware/` — Rate limiting (token bucket per IP), security headers
+- `internal/middleware/` — Auth (API key + caching), rate limiting, brute force protection, body limits, request IDs, security headers, Prometheus middleware
+- `internal/models/` — Node, Edge, Search, Salience, PropertyHistory types + validation
+- `internal/security/` — Brute force detection (shared with middleware)
+- `internal/service/` — NodeService, SearchService, BulkService, EmbedWorker, AuditWorker, EmbeddingService
+- `internal/store/` — 27 files across focused stores (Node, Edge, Search, Graph, Bulk, Salience, Embedding, History, Audit, Tenant) + helpers (encrypt, scan, bulk_helpers)
+- `internal/ws/` — WebSocket hub, client, event buffer, event types
 - `scripts/` — Backup, restore, health-check, SQLite migration, git hooks
 
 ## Tech Stack
@@ -71,30 +74,36 @@ make setup-hooks
 
 ```text
 persistor/
-├── cmd/server/main.go           # Entry point
+├── cmd/
+│   ├── server/main.go           # Entry point
+│   └── persistor-cli/           # CLI (admin, doctor, node/edge/graph/search/salience, import, init)
+├── client/                      # Go client library (nodes, edges, search, graph, bulk, salience, audit, admin)
 ├── internal/
-│   ├── api/                     # Gin handlers (router, nodes, edges, search, graph, bulk, salience, health, audit)
+│   ├── api/                     # Gin handlers (router, nodes, edges, search, graph, bulk, salience, health, audit, stats, history, admin)
 │   ├── config/                  # Env-driven config with per-concern validators
 │   ├── crypto/                  # AES-256-GCM encryption (static + Vault providers)
-│   ├── db/                      # Migrations (goose, embedded), LISTEN/NOTIFY
-│   │   └── migrations/          # 001_initial, 002_property_history, 003_audit_log, 004_drop_old
+│   ├── db/                      # Migrations (goose, embedded), LISTEN/NOTIFY, vector dims
+│   │   └── migrations/          # 001–007 (initial, property_history, audit_log, drop_old, force_rls, embed_worker_index, edge_indexes)
 │   ├── dbpool/                  # pgx v5 connection pool
-│   ├── graphql/                 # gqlgen schema, resolvers, type conversion
+│   ├── graphql/                 # gqlgen schema, resolvers, type conversion, middleware
+│   ├── httputil/                # Shared HTTP response helpers
 │   ├── metrics/                 # Prometheus instrumentation
-│   ├── models/                  # Node, Edge, Search types + validation
-│   ├── service/                 # NodeService, SearchService, BulkService, EmbedWorker, EmbeddingService
-│   ├── store/                   # 8 focused stores + shared helpers (Base, scan, encrypt)
-│   ├── ws/                      # WebSocket hub (fan-out) + client
-│   └── middleware/              # Rate limiter, security headers
+│   ├── middleware/              # Auth (API key + cache), rate limiter, brute force, body limit, request ID, security headers, Prometheus
+│   ├── models/                  # Node, Edge, Search, Salience, PropertyHistory types + validation
+│   ├── security/                # Brute force detection
+│   ├── service/                 # NodeService, SearchService, BulkService, EmbedWorker, AuditWorker, EmbeddingService
+│   ├── store/                   # 27 files: Node, Edge, Search, Graph, Bulk, Salience, Embedding, History, Audit, Tenant + helpers
+│   └── ws/                      # WebSocket hub, client, event buffer, event types
 ├── scripts/
 │   ├── hooks/pre-commit         # Go lint + markdown lint
 │   ├── migrate/                 # One-time SQLite → Postgres migration
 │   ├── backup.sh                # pg_dump + verify + encrypt + upload
 │   ├── restore.sh               # Decrypt + restore + verify
 │   └── health-check.sh          # HTTP health probe
-├── VERSION                      # Semver (0.6.0)
+├── VERSION                      # Semver (0.7.0)
 ├── CHANGELOG.md
 ├── Makefile
+├── openapi.yaml                 # OpenAPI spec
 ├── .golangci.yml                # Strict linter config
 ├── .markdownlint.yaml
 └── .gitattributes
@@ -143,20 +152,24 @@ See `internal/db/migrations/001_initial.sql` for full schema. Key points:
 
 **After code changes, always run:** `make lint` then `make build`
 
-## Current State (v0.6.0)
+## Current State (v0.7.0)
 
 Production-ready with clean architecture:
 
-- **Repository split:** 8 focused stores in `internal/store/`
-- **Service layer:** Handler → Service → Store separation
+- **Repository split:** 27 files across focused stores in `internal/store/`
+- **Service layer:** Handler → Service → Store separation, with AuditWorker background processing
 - **Audit log:** Tenant-isolated `kg_audit_log` with query/purge endpoints
-- **Prometheus metrics:** 7 `sms_*` metrics, `/metrics` endpoint, Gin middleware
+- **Auth & security:** API key auth with caching, brute force protection, body limits, request IDs
+- **Go client library:** `client/` package for programmatic access (nodes, edges, search, graph, bulk, salience, audit)
+- **CLI tool:** `cmd/persistor-cli/` for admin, diagnostics, and CRUD operations
+- **Prometheus metrics:** `sms_*` metrics, `/metrics` endpoint, Gin middleware
 - **WebSocket hardening:** Ping/pong, monotonic event IDs, reconnection replay,
-  permessage-deflate, graceful drain on shutdown
+  event buffering, permessage-deflate, graceful drain on shutdown
 - **GraphQL API:** gqlgen at `/api/v1/graphql` + playground (coexists with REST)
-- **Migrations:** goose v3, 3 SQL schema files + 1 cleanup, embedded in binary
+- **Migrations:** goose v3, 7 SQL schema files, embedded in binary
 - **Semver:** VERSION file, git tags, CHANGELOG.md
 - **Systemd:** Deployed via `persistor.service` with EnvironmentFile
+- **OpenAPI:** `openapi.yaml` spec for REST API documentation
 
 ## Planning Doc
 

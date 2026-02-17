@@ -1,4 +1,19 @@
-# Persistor
+<p align="center">
+  <img src=".github/logo.png" alt="Persistor" width="120" height="120" style="border-radius: 24px;">
+</p>
+
+<h1 align="center">Persistor</h1>
+
+<p align="center">
+  <strong>Persistent knowledge graph + vector memory for AI agents</strong><br>
+  <a href="https://persistor.ai">Website</a> · <a href="INTEGRATION.md">API Docs</a> · <a href="CHANGELOG.md">Changelog</a>
+</p>
+
+<p align="center">
+  <img alt="License" src="https://img.shields.io/badge/license-AGPL--3.0-blue">
+  <img alt="Go" src="https://img.shields.io/badge/go-1.25+-00ADD8?logo=go&logoColor=white">
+  <img alt="PostgreSQL" src="https://img.shields.io/badge/PostgreSQL-16+-336791?logo=postgresql&logoColor=white">
+</p>
 
 Persistent knowledge graph and vector memory for AI agents.
 Persistent knowledge graph and vector memory for AI agents. Durable, searchable,
