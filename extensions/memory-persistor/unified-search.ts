@@ -12,10 +12,10 @@ import type { OpenClawTool, PersistorSearchResult, ToolContentPart, ToolResult }
 function extractToolPayload(result: unknown): unknown {
   if (!result || typeof result !== 'object') return null;
   const obj = result as Record<string, unknown>;
-  if (Array.isArray(obj.content)) {
-    const parts = obj.content as ToolContentPart[];
+  if (Array.isArray(obj['content'])) {
+    const parts = obj['content'] as ToolContentPart[];
     const textPart = parts.find((c) => c.type === 'text' && typeof c.text === 'string');
-    if (textPart) {
+    if (textPart?.text != null) {
       try {
         return JSON.parse(textPart.text) as unknown;
       } catch {
@@ -30,16 +30,16 @@ function extractFileResults(toolResult: unknown): FileSearchResult[] {
   const payload = extractToolPayload(toolResult);
   if (!payload || typeof payload !== 'object') return [];
   const obj = payload as Record<string, unknown>;
-  const results = Array.isArray(obj.results) ? obj.results : [];
+  const results = Array.isArray(obj['results']) ? obj['results'] : [];
   return results.map((r: Record<string, unknown>) => ({
-    path: String(r.path ?? r.file ?? 'unknown'),
-    snippet: String(r.snippet ?? r.text ?? r.content ?? String(r)),
-    score: typeof r.score === 'number' ? r.score : 0.5,
+    path: String(r['path'] ?? r['file'] ?? 'unknown'),
+    snippet: String(r['snippet'] ?? r['text'] ?? r['content'] ?? String(r)),
+    score: typeof r['score'] === 'number' ? r['score'] : 0.5,
     line:
-      typeof r.line === 'number'
-        ? r.line
-        : typeof r.startLine === 'number'
-          ? r.startLine
+      typeof r['line'] === 'number'
+        ? r['line']
+        : typeof r['startLine'] === 'number'
+          ? r['startLine']
           : undefined,
   }));
 }

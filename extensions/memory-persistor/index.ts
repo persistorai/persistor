@@ -12,7 +12,7 @@ const memoryPersistorPlugin = {
   kind: 'memory' as const,
 
   register(api: OpenClawPluginApi) {
-    const pluginConfig = (api as Record<string, unknown>).pluginConfig as
+    const pluginConfig = (api as Record<string, unknown>)['pluginConfig'] as
       | Record<string, unknown>
       | undefined;
     const config = resolveConfig(pluginConfig ?? {});
@@ -29,14 +29,14 @@ const memoryPersistorPlugin = {
 
     api.registerTool(
       (ctx) => {
-        const fileSearchTool = api.runtime.tools.createMemorySearchTool({
-          config: ctx.config,
-          agentSessionKey: ctx.sessionKey,
-        });
-        const fileGetTool = api.runtime.tools.createMemoryGetTool({
-          config: ctx.config,
-          agentSessionKey: ctx.sessionKey,
-        });
+        const searchOpts: Record<string, unknown> = {};
+        if (ctx.config !== undefined) searchOpts['config'] = ctx.config;
+        if (ctx.sessionKey !== undefined) searchOpts['agentSessionKey'] = ctx.sessionKey;
+        const fileSearchTool = api.runtime.tools.createMemorySearchTool(searchOpts);
+        const getOpts: Record<string, unknown> = {};
+        if (ctx.config !== undefined) getOpts['config'] = ctx.config;
+        if (ctx.sessionKey !== undefined) getOpts['agentSessionKey'] = ctx.sessionKey;
+        const fileGetTool = api.runtime.tools.createMemoryGetTool(getOpts);
         if (!fileSearchTool || !fileGetTool) {
           return null;
         }

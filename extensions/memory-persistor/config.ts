@@ -79,7 +79,7 @@ export function resolveConfig(raw: Record<string, unknown>): PersistorPluginConf
     const envVar = apiKey.slice(2, -1);
     apiKey = process.env[envVar] ?? '';
   } else if (!apiKey) {
-    apiKey = process.env.PERSISTOR_API_KEY ?? '';
+    apiKey = process.env['PERSISTOR_API_KEY'] ?? '';
   }
 
   const rawTimeout = persistorRaw.timeout;

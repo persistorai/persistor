@@ -1,6 +1,6 @@
 /** Content part within a tool result */
 export interface ToolContentPart {
-  type: string;
+  type: 'text' | 'image';
   text?: string;
   source?: unknown;
 }
@@ -51,5 +51,5 @@ export interface UnifiedSearchResult {
   label?: string;
   properties?: Record<string, unknown>;
   salienceScore?: number;
-  raw?: Record<string, unknown>;
+  raw?: Record<string, unknown> | undefined;
 }

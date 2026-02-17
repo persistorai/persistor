@@ -69,7 +69,7 @@ export function createUnifiedGetTool(
   fileGetTool: OpenClawTool,
   persistorClient: PersistorClient,
   config: PersistorPluginConfig,
-) {
+): OpenClawTool {
   const originalExecute = fileGetTool.execute.bind(fileGetTool);
 
   fileGetTool.description =

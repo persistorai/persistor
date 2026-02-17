@@ -1,5 +1,24 @@
 import { type PersistorEdge, type PersistorSearchResult } from './types.ts';
 
+function isSearchResult(v: unknown): v is PersistorSearchResult {
+  return v != null && typeof v === 'object' && 'id' in v && 'type' in v && 'label' in v;
+}
+
+function isPersistorNode(v: unknown): v is PersistorNode {
+  return (
+    v != null &&
+    typeof v === 'object' &&
+    'id' in v &&
+    'type' in v &&
+    'label' in v &&
+    'salience_score' in v
+  );
+}
+
+function isPersistorContext(v: unknown): v is PersistorContext {
+  return v != null && typeof v === 'object' && 'node' in v && 'neighbors' in v;
+}
+
 export interface PersistorNode {
   id: string;
   type: string;
@@ -81,7 +100,7 @@ export class PersistorClient {
           : Array.isArray(obj['results'])
             ? (obj['results'] as unknown[])
             : [];
-      return nodes as PersistorSearchResult[];
+      return nodes.filter(isSearchResult);
     } catch (e: unknown) {
       console.warn('Persistor search parse:', e);
       return [];
@@ -92,7 +111,8 @@ export class PersistorClient {
     const res = await this.request(`/api/v1/nodes/${encodeURIComponent(id)}`);
     if (!res) return null;
     try {
-      return (await res.json()) as PersistorNode;
+      const body: unknown = await res.json();
+      return isPersistorNode(body) ? body : null;
     } catch (e: unknown) {
       console.warn('Persistor getNode parse:', e);
       return null;
@@ -103,7 +123,8 @@ export class PersistorClient {
     const res = await this.request(`/api/v1/graph/context/${encodeURIComponent(id)}`);
     if (!res) return null;
     try {
-      return (await res.json()) as PersistorContext;
+      const body: unknown = await res.json();
+      return isPersistorContext(body) ? body : null;
     } catch (e: unknown) {
       console.warn('Persistor getContext parse:', e);
       return null;
