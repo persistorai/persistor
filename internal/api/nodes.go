@@ -12,12 +12,12 @@ import (
 
 // NodeHandler serves node CRUD endpoints.
 type NodeHandler struct {
-	repo NodeRepository
+	repo NodeService
 	log  *logrus.Logger
 }
 
-// NewNodeHandler creates a NodeHandler with the given repository and logger.
-func NewNodeHandler(repo NodeRepository, log *logrus.Logger) *NodeHandler {
+// NewNodeHandler creates a NodeHandler with the given service and logger.
+func NewNodeHandler(repo NodeService, log *logrus.Logger) *NodeHandler {
 	return &NodeHandler{repo: repo, log: log}
 }
 

@@ -12,12 +12,12 @@ import (
 
 // BulkHandler serves batch operation endpoints.
 type BulkHandler struct {
-	repo BulkRepository
+	repo BulkService
 	log  *logrus.Logger
 }
 
 // NewBulkHandler creates a BulkHandler with the given repository and logger.
-func NewBulkHandler(repo BulkRepository, log *logrus.Logger) *BulkHandler {
+func NewBulkHandler(repo BulkService, log *logrus.Logger) *BulkHandler {
 	return &BulkHandler{repo: repo, log: log}
 }
 

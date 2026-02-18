@@ -6,7 +6,7 @@ import (
 	"github.com/persistorai/persistor/internal/models"
 )
 
-// mockNodeRepo implements api.NodeRepository for testing.
+// mockNodeRepo implements api.NodeService for testing.
 type mockNodeRepo struct {
 	listFn   func(ctx context.Context, tenantID, typeFilter string, minSalience float64, limit, offset int) ([]models.Node, bool, error)
 	getFn    func(ctx context.Context, tenantID, nodeID string) (*models.Node, error)
@@ -43,7 +43,7 @@ func (m *mockNodeRepo) MigrateNode(_ context.Context, _, _ string, _ models.Migr
 	return nil, nil
 }
 
-// mockEdgeRepo implements api.EdgeRepository for testing.
+// mockEdgeRepo implements api.EdgeService for testing.
 type mockEdgeRepo struct {
 	listFn   func(ctx context.Context, tenantID, source, target, relation string, limit, offset int) ([]models.Edge, bool, error)
 	createFn func(ctx context.Context, tenantID string, req models.CreateEdgeRequest) (*models.Edge, error)
@@ -71,7 +71,7 @@ func (m *mockEdgeRepo) DeleteEdge(ctx context.Context, tenantID, source, target,
 	return m.deleteFn(ctx, tenantID, source, target, relation)
 }
 
-// mockSearchRepo implements api.SearchRepository for testing.
+// mockSearchRepo implements api.SearchService for testing.
 type mockSearchRepo struct {
 	fullTextFn func(ctx context.Context, tenantID, query, typeFilter string, minSalience float64, limit int) ([]models.Node, error)
 	semanticFn func(ctx context.Context, tenantID, query string, limit int) ([]models.ScoredNode, error)

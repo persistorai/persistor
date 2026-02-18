@@ -203,9 +203,10 @@ func (s *AuditStore) purgeOldEntriesBatch(
 	defer tx.Rollback(ctx) //nolint:errcheck // best-effort rollback on early return.
 
 	tag, err := tx.Exec(ctx,
-		`DELETE FROM kg_audit_log WHERE ctid IN (
-			SELECT ctid FROM kg_audit_log
+		`DELETE FROM kg_audit_log WHERE id IN (
+			SELECT id FROM kg_audit_log
 			WHERE created_at < NOW() - make_interval(days => $1)
+			ORDER BY created_at
 			LIMIT $2
 		)`,
 		retentionDays, purgeBatchSize,

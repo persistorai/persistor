@@ -1,3 +1,4 @@
+-- +goose NO TRANSACTION
 -- +goose Up
 -- Persistor - Initial Schema
 -- Requires PostgreSQL 18+ with pgvector extension.
@@ -78,22 +79,23 @@ CREATE POLICY tenant_isolation_edges ON kg_edges
     WITH CHECK (tenant_id = current_setting('app.tenant_id')::uuid);
 
 -- Node indexes.
-CREATE INDEX idx_nodes_tenant_type ON kg_nodes(tenant_id, type);
-CREATE INDEX idx_nodes_tenant_salience_updated ON kg_nodes(tenant_id, salience_score DESC, updated_at DESC);
-CREATE INDEX idx_nodes_tenant_type_salience ON kg_nodes(tenant_id, type, salience_score DESC, updated_at DESC);
-CREATE INDEX idx_nodes_tenant_updated ON kg_nodes(tenant_id, updated_at);
+-- All indexes use CONCURRENTLY to avoid locking tables; migration runs with NO TRANSACTION.
+CREATE INDEX CONCURRENTLY idx_nodes_tenant_type ON kg_nodes(tenant_id, type);
+CREATE INDEX CONCURRENTLY idx_nodes_tenant_salience_updated ON kg_nodes(tenant_id, salience_score DESC, updated_at DESC);
+CREATE INDEX CONCURRENTLY idx_nodes_tenant_type_salience ON kg_nodes(tenant_id, type, salience_score DESC, updated_at DESC);
+CREATE INDEX CONCURRENTLY idx_nodes_tenant_updated ON kg_nodes(tenant_id, updated_at);
 -- HNSW parameters tuned for Qwen3-Embedding-0.6B 1024-dimensional vectors.
 -- m = 32 and ef_construction = 200 improve recall at the cost of slower index builds.
-CREATE INDEX idx_nodes_embedding ON kg_nodes USING hnsw (embedding vector_cosine_ops)
+CREATE INDEX CONCURRENTLY idx_nodes_embedding ON kg_nodes USING hnsw (embedding vector_cosine_ops)
     WITH (m = 32, ef_construction = 200) WHERE embedding IS NOT NULL;
-CREATE INDEX idx_nodes_fts ON kg_nodes USING gin (label_tsv);
+CREATE INDEX CONCURRENTLY idx_nodes_fts ON kg_nodes USING gin (label_tsv);
 
 -- Edge indexes.
-CREATE INDEX idx_edges_tenant_source ON kg_edges(tenant_id, source);
-CREATE INDEX idx_edges_tenant_target ON kg_edges(tenant_id, target);
-CREATE INDEX idx_edges_tenant_relation ON kg_edges(tenant_id, relation);
-CREATE INDEX idx_edges_tenant_source_relation ON kg_edges(tenant_id, source, relation);
-CREATE INDEX idx_edges_tenant_updated ON kg_edges(tenant_id, updated_at);
+CREATE INDEX CONCURRENTLY idx_edges_tenant_source ON kg_edges(tenant_id, source);
+CREATE INDEX CONCURRENTLY idx_edges_tenant_target ON kg_edges(tenant_id, target);
+CREATE INDEX CONCURRENTLY idx_edges_tenant_relation ON kg_edges(tenant_id, relation);
+CREATE INDEX CONCURRENTLY idx_edges_tenant_source_relation ON kg_edges(tenant_id, source, relation);
+CREATE INDEX CONCURRENTLY idx_edges_tenant_updated ON kg_edges(tenant_id, updated_at);
 
 -- Auto-update updated_at.
 CREATE OR REPLACE FUNCTION update_timestamp()

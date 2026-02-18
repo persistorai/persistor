@@ -11,13 +11,13 @@ import (
 
 // AdminHandler serves administrative endpoints.
 type AdminHandler struct {
-	repo        AdminRepository
+	repo        AdminService
 	embedWorker *service.EmbedWorker
 	log         *logrus.Logger
 }
 
 // NewAdminHandler creates an AdminHandler.
-func NewAdminHandler(repo AdminRepository, embedWorker *service.EmbedWorker, log *logrus.Logger) *AdminHandler {
+func NewAdminHandler(repo AdminService, embedWorker *service.EmbedWorker, log *logrus.Logger) *AdminHandler {
 	return &AdminHandler{repo: repo, embedWorker: embedWorker, log: log}
 }
 

@@ -97,13 +97,13 @@ func (m *recalcLockMap) cleanup(ctx context.Context) {
 
 // SalienceHandler serves salience management endpoints.
 type SalienceHandler struct {
-	repo  SalienceRepository
+	repo  SalienceService
 	log   *logrus.Logger
 	locks *recalcLockMap
 }
 
 // NewSalienceHandler creates a SalienceHandler with the given repository and logger.
-func NewSalienceHandler(ctx context.Context, repo SalienceRepository, log *logrus.Logger) *SalienceHandler {
+func NewSalienceHandler(ctx context.Context, repo SalienceService, log *logrus.Logger) *SalienceHandler {
 	return &SalienceHandler{repo: repo, log: log, locks: newRecalcLockMap(ctx)}
 }
 

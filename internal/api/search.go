@@ -12,12 +12,12 @@ const maxSearchQueryLen = 2000
 
 // SearchHandler serves search endpoints.
 type SearchHandler struct {
-	repo SearchRepository
+	repo SearchService
 	log  *logrus.Logger
 }
 
 // NewSearchHandler creates a SearchHandler with the given repository and logger.
-func NewSearchHandler(repo SearchRepository, log *logrus.Logger) *SearchHandler {
+func NewSearchHandler(repo SearchService, log *logrus.Logger) *SearchHandler {
 	return &SearchHandler{repo: repo, log: log}
 }
 

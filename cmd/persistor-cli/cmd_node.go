@@ -18,6 +18,7 @@ func newNodeCmd() *cobra.Command {
 	cmd.AddCommand(nodeCreateCmd())
 	cmd.AddCommand(nodeGetCmd())
 	cmd.AddCommand(nodeUpdateCmd())
+	cmd.AddCommand(nodePatchCmd())
 	cmd.AddCommand(nodeDeleteCmd())
 	cmd.AddCommand(nodeListCmd())
 	cmd.AddCommand(nodeHistoryCmd())
@@ -97,6 +98,32 @@ func nodeUpdateCmd() *cobra.Command {
 	cmd.Flags().StringVar(&label, "label", "", "Node label")
 	cmd.Flags().StringVar(&nodeType, "type", "", "Node type")
 	cmd.Flags().StringVar(&propsJSON, "props", "", "Properties as JSON")
+	return cmd
+}
+
+func nodePatchCmd() *cobra.Command {
+	var propsJSON string
+	cmd := &cobra.Command{
+		Use:   "patch <id>",
+		Short: "Partially update node properties (merge semantics)",
+		Long:  "Merges supplied properties into existing ones. Keys with null values are removed.",
+		Args:  cobra.ExactArgs(1),
+		Run: func(cmd *cobra.Command, args []string) {
+			if propsJSON == "" {
+				fatal("patch node", fmt.Errorf("--props is required"))
+			}
+			var props map[string]any
+			if err := json.Unmarshal([]byte(propsJSON), &props); err != nil {
+				fatal("parse props", err)
+			}
+			node, err := apiClient.Nodes.PatchProperties(context.Background(), args[0], props)
+			if err != nil {
+				fatal("patch node", err)
+			}
+			output(node, node.ID)
+		},
+	}
+	cmd.Flags().StringVar(&propsJSON, "props", "", "Properties as JSON (required)")
 	return cmd
 }
 

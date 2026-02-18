@@ -10,16 +10,12 @@ import (
 	"github.com/persistorai/persistor/internal/models"
 )
 
-// NodeStore defines the data access methods NodeService depends on.
-type NodeStore interface {
-	ListNodes(ctx context.Context, tenantID string, typeFilter string, minSalience float64, limit, offset int) ([]models.Node, bool, error)
-	GetNode(ctx context.Context, tenantID, nodeID string) (*models.Node, error)
-	CreateNode(ctx context.Context, tenantID string, req models.CreateNodeRequest) (*models.Node, error)
-	UpdateNode(ctx context.Context, tenantID string, nodeID string, req models.UpdateNodeRequest) (*models.Node, error)
-	PatchNodeProperties(ctx context.Context, tenantID string, nodeID string, req models.PatchPropertiesRequest) (*models.Node, error)
-	DeleteNode(ctx context.Context, tenantID, nodeID string) error
-	MigrateNode(ctx context.Context, tenantID, oldID string, req models.MigrateNodeRequest) (*models.MigrateNodeResult, error)
-}
+// NodeStore is the data-access interface NodeService depends on.
+// It reuses domain.NodeService since the method sets are identical, avoiding duplication.
+type NodeStore = domain.NodeService
+
+// Compile-time check: *NodeService must satisfy domain.NodeService.
+var _ domain.NodeService = (*NodeService)(nil)
 
 // EmbedEnqueuer enqueues embedding generation jobs.
 type EmbedEnqueuer interface {

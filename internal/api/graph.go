@@ -12,12 +12,12 @@ import (
 
 // GraphHandler serves graph traversal endpoints.
 type GraphHandler struct {
-	repo GraphRepository
+	repo GraphService
 	log  *logrus.Logger
 }
 
 // NewGraphHandler creates a GraphHandler with the given repository and logger.
-func NewGraphHandler(repo GraphRepository, log *logrus.Logger) *GraphHandler {
+func NewGraphHandler(repo GraphService, log *logrus.Logger) *GraphHandler {
 	return &GraphHandler{repo: repo, log: log}
 }
 

@@ -17,6 +17,7 @@ func newEdgeCmd() *cobra.Command {
 	cmd.AddCommand(edgeCreateCmd())
 	cmd.AddCommand(edgeListCmd())
 	cmd.AddCommand(edgeUpdateCmd())
+	cmd.AddCommand(edgePatchCmd())
 	cmd.AddCommand(edgeDeleteCmd())
 	return cmd
 }
@@ -114,6 +115,32 @@ func edgeUpdateCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&propsJSON, "props", "", "Properties as JSON")
+	return cmd
+}
+
+func edgePatchCmd() *cobra.Command {
+	var propsJSON string
+	cmd := &cobra.Command{
+		Use:   "patch <source> <target> <relation>",
+		Short: "Partially update edge properties (merge semantics)",
+		Long:  "Merges supplied properties into existing ones. Keys with null values are removed.",
+		Args:  cobra.ExactArgs(3),
+		Run: func(cmd *cobra.Command, args []string) {
+			if propsJSON == "" {
+				fatal("patch edge", fmt.Errorf("--props is required"))
+			}
+			var props map[string]any
+			if err := json.Unmarshal([]byte(propsJSON), &props); err != nil {
+				fatal("parse props", err)
+			}
+			edge, err := apiClient.Edges.PatchProperties(context.Background(), args[0], args[1], args[2], props)
+			if err != nil {
+				fatal("patch edge", err)
+			}
+			output(edge, fmt.Sprintf("%s->%s", edge.Source, edge.Target))
+		},
+	}
+	cmd.Flags().StringVar(&propsJSON, "props", "", "Properties as JSON (required)")
 	return cmd
 }
 

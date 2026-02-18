@@ -10,12 +10,12 @@ import (
 
 // HistoryHandler serves property history endpoints.
 type HistoryHandler struct {
-	repo HistoryRepository
+	repo HistoryService
 	log  *logrus.Logger
 }
 
 // NewHistoryHandler creates a HistoryHandler with the given repository and logger.
-func NewHistoryHandler(repo HistoryRepository, log *logrus.Logger) *HistoryHandler {
+func NewHistoryHandler(repo HistoryService, log *logrus.Logger) *HistoryHandler {
 	return &HistoryHandler{repo: repo, log: log}
 }
 

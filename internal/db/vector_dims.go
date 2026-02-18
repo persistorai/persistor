@@ -43,8 +43,8 @@ func EnsureVectorDimensions(ctx context.Context, pool *dbpool.Pool, log *logrus.
 		"expected": expectedType,
 	}).Info("embedding column dimensions changed, altering schema")
 
-	// Drop the HNSW index, alter column, null out mismatched embeddings, rebuild index.
-	// This runs in a transaction for safety.
+	// Phase 1: drop index, null mismatched embeddings, alter column — all in one transaction.
+	// The HNSW index must be dropped first because ALTER COLUMN TYPE would fail with it present.
 	tx, err := pool.Begin(ctx)
 	if err != nil {
 		return fmt.Errorf("beginning dimension alter tx: %w", err)
@@ -70,16 +70,18 @@ func EnsureVectorDimensions(ctx context.Context, pool *dbpool.Pool, log *logrus.
 		return fmt.Errorf("altering embedding column: %w", err)
 	}
 
-	// Recreate HNSW index.
-	if _, err := tx.Exec(ctx,
-		`CREATE INDEX idx_nodes_embedding ON kg_nodes USING hnsw (embedding vector_cosine_ops)
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("committing dimension alter: %w", err)
+	}
+
+	// Phase 2: rebuild HNSW index concurrently, outside any transaction.
+	// CREATE INDEX CONCURRENTLY cannot run inside a transaction block; it acquires
+	// weaker locks and allows concurrent reads and writes during the build.
+	if _, err := pool.Exec(ctx,
+		`CREATE INDEX CONCURRENTLY idx_nodes_embedding ON kg_nodes USING hnsw (embedding vector_cosine_ops)
 		 WITH (m = 32, ef_construction = 200) WHERE embedding IS NOT NULL`,
 	); err != nil {
 		return fmt.Errorf("recreating embedding index: %w", err)
-	}
-
-	if err := tx.Commit(ctx); err != nil {
-		return fmt.Errorf("committing dimension alter: %w", err)
 	}
 
 	log.WithField("dimensions", dimensions).Info("embedding column dimensions updated")

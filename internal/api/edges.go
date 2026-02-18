@@ -12,12 +12,12 @@ import (
 
 // EdgeHandler serves edge CRUD endpoints.
 type EdgeHandler struct {
-	repo EdgeRepository
+	repo EdgeService
 	log  *logrus.Logger
 }
 
-// NewEdgeHandler creates an EdgeHandler with the given repository and logger.
-func NewEdgeHandler(repo EdgeRepository, log *logrus.Logger) *EdgeHandler {
+// NewEdgeHandler creates an EdgeHandler with the given service and logger.
+func NewEdgeHandler(repo EdgeService, log *logrus.Logger) *EdgeHandler {
 	return &EdgeHandler{repo: repo, log: log}
 }
 

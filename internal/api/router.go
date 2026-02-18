@@ -25,15 +25,15 @@ type RouterDeps struct {
 	Log              *logrus.Logger
 	Pool             *dbpool.Pool
 	Hub              *ws.Hub
-	Nodes            NodeRepository
-	Edges            EdgeRepository
-	Search           SearchRepository
-	Graph            GraphRepository
-	Bulk             BulkRepository
-	Salience         SalienceRepository
-	Embedding        AdminRepository
-	History          HistoryRepository
-	Audit            AuditRepository
+	Nodes            NodeService
+	Edges            EdgeService
+	Search           SearchService
+	Graph            GraphService
+	Bulk             BulkService
+	Salience         SalienceService
+	Embedding        AdminService
+	History          HistoryService
+	Audit            AuditService
 	TenantLookup     middleware.TenantLookup
 	EmbedWorker      *service.EmbedWorker // used by admin handler only
 	CORSOrigins      []string

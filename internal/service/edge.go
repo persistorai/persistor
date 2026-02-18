@@ -5,17 +5,16 @@ import (
 
 	"github.com/sirupsen/logrus"
 
+	"github.com/persistorai/persistor/internal/domain"
 	"github.com/persistorai/persistor/internal/models"
 )
 
-// EdgeStore defines the data access methods EdgeService depends on.
-type EdgeStore interface {
-	ListEdges(ctx context.Context, tenantID string, source, target, relation string, limit, offset int) ([]models.Edge, bool, error)
-	CreateEdge(ctx context.Context, tenantID string, req models.CreateEdgeRequest) (*models.Edge, error)
-	UpdateEdge(ctx context.Context, tenantID string, source, target, relation string, req models.UpdateEdgeRequest) (*models.Edge, error)
-	PatchEdgeProperties(ctx context.Context, tenantID string, source, target, relation string, req models.PatchPropertiesRequest) (*models.Edge, error)
-	DeleteEdge(ctx context.Context, tenantID string, source, target, relation string) error
-}
+// EdgeStore is the data-access interface EdgeService depends on.
+// It reuses domain.EdgeService since the method sets are identical, avoiding duplication.
+type EdgeStore = domain.EdgeService
+
+// Compile-time check: *EdgeService must satisfy domain.EdgeService.
+var _ domain.EdgeService = (*EdgeService)(nil)
 
 // EdgeService wraps EdgeStore with audit logging for mutations.
 type EdgeService struct {

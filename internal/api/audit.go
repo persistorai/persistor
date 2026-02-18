@@ -13,12 +13,12 @@ import (
 
 // AuditHandler serves audit log endpoints.
 type AuditHandler struct {
-	repo AuditRepository
+	repo AuditService
 	log  *logrus.Logger
 }
 
 // NewAuditHandler creates an AuditHandler.
-func NewAuditHandler(repo AuditRepository, log *logrus.Logger) *AuditHandler {
+func NewAuditHandler(repo AuditService, log *logrus.Logger) *AuditHandler {
 	return &AuditHandler{repo: repo, log: log}
 }
 
