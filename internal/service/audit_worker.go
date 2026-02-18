@@ -40,6 +40,21 @@ func NewAuditWorker(auditor Auditor, log *logrus.Logger, queueSize int) *AuditWo
 	}
 }
 
+// auditAsync enqueues an audit entry via the AuditEnqueuer (best-effort, non-blocking).
+// It is a package-level helper shared by all service types that carry an AuditEnqueuer.
+func auditAsync(worker AuditEnqueuer, tenantID, action, entityType, entityID string, detail map[string]any) {
+	if worker == nil {
+		return
+	}
+	worker.Enqueue(&AuditJob{
+		TenantID:   tenantID,
+		Action:     action,
+		EntityType: entityType,
+		EntityID:   entityID,
+		Detail:     detail,
+	})
+}
+
 // Enqueue adds an audit job. Non-blocking; drops the job if the queue is full.
 func (w *AuditWorker) Enqueue(job *AuditJob) {
 	select {

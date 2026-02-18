@@ -88,27 +88,27 @@ export function createUnifiedGetTool(
   wrappedTool.execute = async (
     toolCallId: string,
     params: Record<string, unknown>,
-    _signal?: AbortSignal,
-    _onUpdate?: (partialResult: ToolResult) => void,
+    signal?: AbortSignal,
+    onUpdate?: (partialResult: ToolResult) => void,
   ): Promise<ToolResult> => {
     const path = typeof params['path'] === 'string' ? params['path'] : '';
 
     // File paths always go to the file tool
     if (isFilePath(path)) {
-      return originalExecute(toolCallId, params);
+      return originalExecute(toolCallId, params, signal, onUpdate);
     }
 
     // UUIDs try Persistor first, then fall back to file tool
     if (isUUID(path)) {
       const result = await getPersistorNode(persistorClient, path, config.persistorContextOnGet);
       if (result) return jsonWrap(result);
-      return originalExecute(toolCallId, params);
+      return originalExecute(toolCallId, params, signal, onUpdate);
     }
 
     // Other strings (slugs/labels) — try Persistor, then file tool
     const result = await getPersistorNode(persistorClient, path, config.persistorContextOnGet);
     if (result) return jsonWrap(result);
-    return originalExecute(toolCallId, params);
+    return originalExecute(toolCallId, params, signal, onUpdate);
   };
 
   return wrappedTool;

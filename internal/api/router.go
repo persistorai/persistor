@@ -9,7 +9,6 @@ import (
 	"github.com/99designs/gqlgen/graphql/playground"
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
-	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/sirupsen/logrus"
 
 	"github.com/persistorai/persistor/internal/dbpool"
@@ -68,9 +67,6 @@ func setupMiddleware(ctx context.Context, r *gin.Engine, deps *RouterDeps) {
 	}))
 	r.Use(middleware.NewRateLimiter(ctx, rateLimit, rateBurst).Handler())
 	r.Use(middleware.PrometheusMiddleware())
-
-	// Metrics endpoint (unauthenticated, like health).
-	r.GET("/metrics", gin.WrapH(promhttp.Handler()))
 }
 
 // registerRoutes sets up all API route handlers on the given router group.

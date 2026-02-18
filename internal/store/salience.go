@@ -50,10 +50,10 @@ func (s *SalienceStore) BoostNode(ctx context.Context, tenantID, nodeID string) 
 	sql := `UPDATE kg_nodes
 		SET user_boosted = TRUE,
 			salience_score = ` + salienceFormula + `
-		WHERE tenant_id = $1 AND id = $2
+		WHERE tenant_id = current_setting('app.tenant_id')::uuid AND id = $1
 		RETURNING ` + nodeColumns
 
-	row := tx.QueryRow(ctx, sql, tenantID, nodeID)
+	row := tx.QueryRow(ctx, sql, nodeID)
 
 	n, err := scanNode(row.Scan)
 	if err != nil {
@@ -92,11 +92,11 @@ func (s *SalienceStore) SupersedeNode(
 	defer tx.Rollback(ctx) //nolint:errcheck // best-effort rollback after commit.
 
 	oldSQL := `UPDATE kg_nodes
-		SET superseded_by = $3,
+		SET superseded_by = $2,
 			salience_score = ` + salienceFormula + `
-		WHERE tenant_id = $1 AND id = $2`
+		WHERE tenant_id = current_setting('app.tenant_id')::uuid AND id = $1`
 
-	tag, err := tx.Exec(ctx, oldSQL, tenantID, oldID, newID)
+	tag, err := tx.Exec(ctx, oldSQL, oldID, newID)
 	if err != nil {
 		return fmt.Errorf("marking node superseded: %w", err)
 	}
@@ -107,9 +107,9 @@ func (s *SalienceStore) SupersedeNode(
 
 	newSQL := `UPDATE kg_nodes
 		SET salience_score = ` + salienceFormula + `
-		WHERE tenant_id = $1 AND id = $2`
+		WHERE tenant_id = current_setting('app.tenant_id')::uuid AND id = $1`
 
-	newTag, err := tx.Exec(ctx, newSQL, tenantID, newID)
+	newTag, err := tx.Exec(ctx, newSQL, newID)
 	if err != nil {
 		return fmt.Errorf("recalculating new node salience: %w", err)
 	}

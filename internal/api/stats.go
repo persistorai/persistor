@@ -69,7 +69,7 @@ func (h *StatsHandler) GetStats(c *gin.Context) {
 			COUNT(DISTINCT type),
 			COUNT(*) FILTER (WHERE embedding IS NOT NULL),
 			COUNT(*) FILTER (WHERE embedding IS NULL),
-			(SELECT COUNT(*) FROM kg_edges) AS edge_count
+			(SELECT COUNT(*) FROM kg_edges WHERE tenant_id = current_setting('app.tenant_id')::uuid) AS edge_count
 		 FROM kg_nodes`,
 	).Scan(
 		&resp.Nodes, &resp.AvgSalience, &resp.EntityTypes,

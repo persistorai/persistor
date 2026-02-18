@@ -4,7 +4,7 @@ import "time"
 
 // AuditEntry represents a single audit log entry.
 type AuditEntry struct {
-	ID         string         `json:"id"`
+	ID         int64          `json:"id"`
 	TenantID   string         `json:"-"`
 	Action     string         `json:"action"`
 	EntityType string         `json:"entity_type"`

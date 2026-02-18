@@ -19,7 +19,8 @@ type Pool struct {
 }
 
 // NewPool creates a new PostgreSQL connection pool with sensible defaults.
-func NewPool(ctx context.Context, databaseURL string) (*Pool, error) {
+// maxConns sets the pool size; it must be at least 2 (1 for LISTEN/NOTIFY + 1 for queries).
+func NewPool(ctx context.Context, databaseURL string, maxConns int32) (*Pool, error) {
 	cfg, err := pgxpool.ParseConfig(databaseURL)
 	if err != nil {
 		return nil, fmt.Errorf("parsing database URL: %w", err)
@@ -27,7 +28,7 @@ func NewPool(ctx context.Context, databaseURL string) (*Pool, error) {
 
 	cfg.ConnConfig.RuntimeParams["statement_timeout"] = "30000"
 
-	cfg.MaxConns = 21 // 20 for queries + 1 for LISTEN/NOTIFY bridge
+	cfg.MaxConns = maxConns
 	cfg.MinConns = 2
 	cfg.MaxConnLifetime = 30 * time.Minute
 	cfg.MaxConnIdleTime = 5 * time.Minute

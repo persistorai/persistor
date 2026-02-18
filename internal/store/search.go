@@ -41,9 +41,10 @@ func (s *SearchStore) FullTextSearch(
 
 	defer tx.Rollback(ctx) //nolint:errcheck // best-effort rollback after commit.
 
-	sql := `SELECT ` + nodeColumns + `
-		FROM kg_nodes
-		WHERE label_tsv @@ plainto_tsquery('english', $1)
+	sql := `WITH q AS (SELECT plainto_tsquery('english', $1) AS tsq)
+		SELECT ` + nodeColumns + `
+		FROM kg_nodes, q
+		WHERE label_tsv @@ q.tsq
 			AND tenant_id = current_setting('app.tenant_id')::uuid`
 
 	args := []any{query}
@@ -61,8 +62,7 @@ func (s *SearchStore) FullTextSearch(
 		argIdx++
 	}
 
-	sql += fmt.Sprintf(` ORDER BY ts_rank(label_tsv,
-			plainto_tsquery('english', $1)) DESC, salience_score DESC LIMIT $%d`, argIdx)
+	sql += fmt.Sprintf(` ORDER BY ts_rank(label_tsv, q.tsq) DESC, salience_score DESC LIMIT $%d`, argIdx)
 	args = append(args, limit)
 
 	rows, err := tx.Query(ctx, sql, args...)
@@ -183,10 +183,11 @@ func (s *SearchStore) HybridSearch(
 
 	embeddingStr := formatEmbedding(embedding)
 
-	sql := `WITH fts AS (
-			SELECT id, tenant_id, ts_rank(label_tsv, plainto_tsquery('english', $1)) AS rank
-			FROM kg_nodes
-			WHERE label_tsv @@ plainto_tsquery('english', $1)
+	sql := `WITH q AS (SELECT plainto_tsquery('english', $1) AS tsq),
+		fts AS (
+			SELECT id, tenant_id, ts_rank(label_tsv, q.tsq) AS rank
+			FROM kg_nodes, q
+			WHERE label_tsv @@ q.tsq
 				AND tenant_id = current_setting('app.tenant_id')::uuid
 			ORDER BY rank DESC
 			LIMIT $3

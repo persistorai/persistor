@@ -126,6 +126,7 @@ func (p *VaultProvider) fetchKey(ctx context.Context, tenantID string) ([]byte, 
 	limitedBody := io.LimitReader(resp.Body, 1<<20)
 
 	if resp.StatusCode == http.StatusNotFound {
+		_, _ = io.Copy(io.Discard, limitedBody)
 		return nil, fmt.Errorf("crypto/vault: no encryption key found for tenant %q — create it in Vault at secret/persistor/tenant-keys/%s", tenantID, tenantID)
 	}
 

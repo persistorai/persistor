@@ -1,6 +1,6 @@
 -- +goose Up
 CREATE TABLE kg_audit_log (
-    id          UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+    id          BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     tenant_id   UUID NOT NULL,
     action      TEXT NOT NULL,
     entity_type TEXT NOT NULL,

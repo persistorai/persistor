@@ -28,20 +28,6 @@ func NewEdgeService(store EdgeStore, auditWorker AuditEnqueuer, log *logrus.Logg
 	return &EdgeService{store: store, auditWorker: auditWorker, log: log}
 }
 
-// auditAsync enqueues an audit entry via the AuditWorker (best-effort, non-blocking).
-func (s *EdgeService) auditAsync(tenantID, action, entityType, entityID string, detail map[string]any) {
-	if s.auditWorker == nil {
-		return
-	}
-	s.auditWorker.Enqueue(&AuditJob{
-		TenantID:   tenantID,
-		Action:     action,
-		EntityType: entityType,
-		EntityID:   entityID,
-		Detail:     detail,
-	})
-}
-
 // ListEdges returns a paginated list of edges (pass-through).
 func (s *EdgeService) ListEdges(
 	ctx context.Context, tenantID string, source, target, relation string, limit, offset int,
@@ -58,7 +44,7 @@ func (s *EdgeService) CreateEdge(
 		return nil, err
 	}
 
-	s.auditAsync(tenantID, "edge.create", "edge", edge.Source+"/"+edge.Target+"/"+edge.Relation,
+	auditAsync(s.auditWorker, tenantID, "edge.create", "edge", edge.Source+"/"+edge.Target+"/"+edge.Relation,
 		map[string]any{"source": edge.Source, "target": edge.Target, "relation": edge.Relation})
 
 	return edge, nil
@@ -73,7 +59,7 @@ func (s *EdgeService) UpdateEdge(
 		return nil, err
 	}
 
-	s.auditAsync(tenantID, "edge.update", "edge", source+"/"+target+"/"+relation,
+	auditAsync(s.auditWorker, tenantID, "edge.update", "edge", source+"/"+target+"/"+relation,
 		map[string]any{"source": source, "target": target, "relation": relation})
 
 	return edge, nil
@@ -88,7 +74,7 @@ func (s *EdgeService) PatchEdgeProperties(
 		return nil, err
 	}
 
-	s.auditAsync(tenantID, "edge.patch_properties", "edge", source+"/"+target+"/"+relation, nil)
+	auditAsync(s.auditWorker, tenantID, "edge.patch_properties", "edge", source+"/"+target+"/"+relation, nil)
 
 	return edge, nil
 }
@@ -97,7 +83,7 @@ func (s *EdgeService) PatchEdgeProperties(
 func (s *EdgeService) DeleteEdge(ctx context.Context, tenantID, source, target, relation string) error {
 	err := s.store.DeleteEdge(ctx, tenantID, source, target, relation)
 	if err == nil {
-		s.auditAsync(tenantID, "edge.delete", "edge", source+"/"+target+"/"+relation,
+		auditAsync(s.auditWorker, tenantID, "edge.delete", "edge", source+"/"+target+"/"+relation,
 			map[string]any{"source": source, "target": target, "relation": relation})
 	}
 	return err

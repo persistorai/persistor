@@ -1,4 +1,4 @@
-import { type PersistorEdge, type PersistorSearchResult } from './types.ts';
+import { type PersistorEdge, type PersistorSearchResult, type WrappedNeighbor } from './types.ts';
 
 const isRecord = (v: unknown): v is Record<string, unknown> =>
   v != null && typeof v === 'object' && !Array.isArray(v);
@@ -45,7 +45,7 @@ export interface PersistorNode {
 
 export interface PersistorContext {
   node: PersistorNode;
-  neighbors: (PersistorNode | { node: PersistorNode; edge: PersistorEdge; direction: string })[];
+  neighbors: (PersistorNode | WrappedNeighbor)[];
   edges?: PersistorEdge[];
 }
 

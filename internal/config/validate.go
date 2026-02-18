@@ -76,6 +76,19 @@ func (c *Config) validateNetwork() error {
 		return fmt.Errorf("LISTEN_HOST must be a loopback address (127.0.0.1, ::1, or localhost), got %q", c.ListenHost)
 	}
 
+	metricsPort, err := strconv.Atoi(c.MetricsPort)
+	if err != nil {
+		return fmt.Errorf("METRICS_PORT must be a valid integer: %w", err)
+	}
+
+	if metricsPort < 1 || metricsPort > 65535 {
+		return fmt.Errorf("METRICS_PORT must be between 1 and 65535")
+	}
+
+	if metricsPort == port {
+		return fmt.Errorf("METRICS_PORT must differ from PORT")
+	}
+
 	return nil
 }
 

@@ -65,14 +65,19 @@ export function resolveConfig(raw: Record<string, unknown>): PersistorPluginConf
   const isRecord = (v: unknown): v is Record<string, unknown> =>
     v != null && typeof v === 'object' && !Array.isArray(v);
 
-  // Safe cast: RawPersistorConfig has all-optional `unknown` fields, so any Record<string, unknown> satisfies it
-  const persistorRaw: RawPersistorConfig = isRecord(raw['persistor'])
-    ? (raw['persistor'] as RawPersistorConfig)
-    : {};
-  // Safe cast: RawWeightsConfig has all-optional `unknown` fields, so any Record<string, unknown> satisfies it
-  const weightsRaw: RawWeightsConfig = isRecord(raw['weights'])
-    ? (raw['weights'] as RawWeightsConfig)
-    : {};
+  const persistorObj = isRecord(raw['persistor']) ? raw['persistor'] : {};
+  const persistorRaw: RawPersistorConfig = {
+    url: persistorObj['url'],
+    apiKey: persistorObj['apiKey'],
+    timeout: persistorObj['timeout'],
+    searchMode: persistorObj['searchMode'],
+    searchLimit: persistorObj['searchLimit'],
+  };
+  const weightsObj = isRecord(raw['weights']) ? raw['weights'] : {};
+  const weightsRaw: RawWeightsConfig = {
+    file: weightsObj['file'],
+    persistor: weightsObj['persistor'],
+  };
 
   const rawUrl = persistorRaw.url;
   const url = typeof rawUrl === 'string' ? rawUrl : defaultConfig.persistor.url;

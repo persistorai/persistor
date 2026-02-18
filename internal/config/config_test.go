@@ -40,8 +40,20 @@ func TestLoad_ValidConfig(t *testing.T) {
 		t.Errorf("expected default embed workers 4, got %d", cfg.EmbedWorkers)
 	}
 
+	if cfg.DBMaxConns != 21 {
+		t.Errorf("expected default DB_MAX_CONNS 21, got %d", cfg.DBMaxConns)
+	}
+
 	if cfg.Addr() != "127.0.0.1:3030" {
 		t.Errorf("expected addr 127.0.0.1:3030, got %s", cfg.Addr())
+	}
+
+	if cfg.MetricsPort != "9091" {
+		t.Errorf("expected default metrics port 9091, got %s", cfg.MetricsPort)
+	}
+
+	if cfg.MetricsAddr() != "127.0.0.1:9091" {
+		t.Errorf("expected metrics addr 127.0.0.1:9091, got %s", cfg.MetricsAddr())
 	}
 }
 
@@ -158,6 +170,41 @@ func TestLoad_ErrorCases(t *testing.T) {
 			name:         "embed workers non-numeric",
 			envOverrides: map[string]string{"EMBED_WORKERS": "abc"},
 			wantErr:      "EMBED_WORKERS must be an integer between 1 and 16",
+		},
+		{
+			name:         "db max conns too low",
+			envOverrides: map[string]string{"DB_MAX_CONNS": "1"},
+			wantErr:      "DB_MAX_CONNS must be an integer between 2 and 200",
+		},
+		{
+			name:         "db max conns too high",
+			envOverrides: map[string]string{"DB_MAX_CONNS": "201"},
+			wantErr:      "DB_MAX_CONNS must be an integer between 2 and 200",
+		},
+		{
+			name:         "db max conns non-numeric",
+			envOverrides: map[string]string{"DB_MAX_CONNS": "abc"},
+			wantErr:      "DB_MAX_CONNS must be an integer between 2 and 200",
+		},
+		{
+			name:         "invalid METRICS_PORT zero",
+			envOverrides: map[string]string{"METRICS_PORT": "0"},
+			wantErr:      "METRICS_PORT must be between 1 and 65535",
+		},
+		{
+			name:         "invalid METRICS_PORT too high",
+			envOverrides: map[string]string{"METRICS_PORT": "99999"},
+			wantErr:      "METRICS_PORT must be between 1 and 65535",
+		},
+		{
+			name:         "invalid METRICS_PORT non-numeric",
+			envOverrides: map[string]string{"METRICS_PORT": "abc"},
+			wantErr:      "METRICS_PORT must be a valid integer",
+		},
+		{
+			name:         "METRICS_PORT same as PORT",
+			envOverrides: map[string]string{"METRICS_PORT": "3030"},
+			wantErr:      "METRICS_PORT must differ from PORT",
 		},
 	}
 

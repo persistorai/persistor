@@ -4,6 +4,7 @@ package api
 import (
 	"context"
 	"fmt"
+	"io"
 	"net/http"
 	"time"
 
@@ -163,7 +164,10 @@ func (h *HealthHandler) checkOllama() error {
 	if err != nil {
 		return fmt.Errorf("ollama unreachable: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() {
+		_, _ = io.Copy(io.Discard, resp.Body)
+		resp.Body.Close()
+	}()
 
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("ollama returned status %d", resp.StatusCode)

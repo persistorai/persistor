@@ -25,20 +25,22 @@ func (s Secret) Value() string { return string(s) }
 
 // Config holds all application configuration values.
 type Config struct {
-	DatabaseURL        Secret
-	Port               string
-	ListenHost         string
-	CORSOrigins        []string
-	OllamaURL          string
-	EmbeddingModel     string
+	DatabaseURL         Secret
+	Port                string
+	ListenHost          string
+	MetricsPort         string
+	CORSOrigins         []string
+	OllamaURL           string
+	EmbeddingModel      string
 	EmbeddingDimensions int
-	LogLevel           string
-	EncryptionProvider string
-	EncryptionKey      Secret
-	VaultAddr          string
-	VaultToken         Secret
-	EmbedWorkers       int
-	EnablePlayground   bool
+	LogLevel            string
+	EncryptionProvider  string
+	EncryptionKey       Secret
+	VaultAddr           string
+	VaultToken          Secret
+	EmbedWorkers        int
+	EnablePlayground    bool
+	DBMaxConns          int32
 }
 
 // Load reads configuration from environment variables with sensible defaults.
@@ -47,6 +49,7 @@ func Load() (*Config, error) {
 		DatabaseURL:        Secret(envOrDefault("DATABASE_URL", "")),
 		Port:               envOrDefault("PORT", "3030"),
 		ListenHost:         envOrDefault("LISTEN_HOST", "127.0.0.1"),
+		MetricsPort:        envOrDefault("METRICS_PORT", "9091"),
 		OllamaURL:          envOrDefault("OLLAMA_URL", "http://localhost:11434"),
 		EmbeddingModel:     envOrDefault("EMBEDDING_MODEL", "qwen3-embedding:0.6b"),
 		LogLevel:           envOrDefault("LOG_LEVEL", "info"),
@@ -69,6 +72,12 @@ func Load() (*Config, error) {
 	}
 	cfg.EmbedWorkers = embedWorkers
 
+	dbMaxConns, err := strconv.Atoi(envOrDefault("DB_MAX_CONNS", "21"))
+	if err != nil || dbMaxConns < 2 || dbMaxConns > 200 {
+		return nil, fmt.Errorf("DB_MAX_CONNS must be an integer between 2 and 200")
+	}
+	cfg.DBMaxConns = int32(dbMaxConns)
+
 	origins := envOrDefault("CORS_ORIGINS", "http://localhost:3002")
 	cfg.CORSOrigins = strings.Split(origins, ",")
 
@@ -86,6 +95,12 @@ func Load() (*Config, error) {
 // Addr returns the listen address in host:port format.
 func (c *Config) Addr() string {
 	return c.ListenHost + ":" + c.Port
+}
+
+// MetricsAddr returns the internal-only metrics listen address in host:port format.
+// The metrics listener always binds to loopback only.
+func (c *Config) MetricsAddr() string {
+	return "127.0.0.1:" + c.MetricsPort
 }
 
 func envOrDefault(key, fallback string) string {

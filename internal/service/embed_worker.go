@@ -1,4 +1,4 @@
-// Package services provides business logic for the persistor.
+// Package service provides business logic for the persistor.
 package service
 
 import (

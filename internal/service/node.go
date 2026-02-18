@@ -38,20 +38,6 @@ func NewNodeService(store NodeStore, embedWorker EmbedEnqueuer, auditWorker Audi
 	return &NodeService{store: store, embedWorker: embedWorker, auditWorker: auditWorker, log: log}
 }
 
-// auditAsync enqueues an audit entry via the AuditWorker (best-effort, non-blocking).
-func (s *NodeService) auditAsync(tenantID, action, entityType, entityID string, detail map[string]any) {
-	if s.auditWorker == nil {
-		return
-	}
-	s.auditWorker.Enqueue(&AuditJob{
-		TenantID:   tenantID,
-		Action:     action,
-		EntityType: entityType,
-		EntityID:   entityID,
-		Detail:     detail,
-	})
-}
-
 // ListNodes returns a paginated list of nodes (pass-through).
 func (s *NodeService) ListNodes(
 	ctx context.Context, tenantID, typeFilter string, minSalience float64, limit, offset int,
@@ -81,7 +67,7 @@ func (s *NodeService) CreateNode(
 		})
 	}
 
-	s.auditAsync(tenantID, "node.create", "node", node.ID, map[string]any{"type": node.Type, "label": node.Label})
+	auditAsync(s.auditWorker, tenantID, "node.create", "node", node.ID, map[string]any{"type": node.Type, "label": node.Label})
 
 	return node, nil
 }
@@ -105,7 +91,7 @@ func (s *NodeService) UpdateNode(
 		}
 	}
 
-	s.auditAsync(tenantID, "node.update", "node", node.ID, map[string]any{"type": node.Type, "label": node.Label})
+	auditAsync(s.auditWorker, tenantID, "node.update", "node", node.ID, map[string]any{"type": node.Type, "label": node.Label})
 
 	return node, nil
 }
@@ -119,7 +105,7 @@ func (s *NodeService) PatchNodeProperties(
 		return nil, err
 	}
 
-	s.auditAsync(tenantID, "node.patch_properties", "node", nodeID, map[string]any{"patched_keys": mapKeys(req.Properties)})
+	auditAsync(s.auditWorker, tenantID, "node.patch_properties", "node", nodeID, map[string]any{"patched_keys": mapKeys(req.Properties)})
 
 	return node, nil
 }
@@ -149,7 +135,7 @@ func (s *NodeService) MigrateNode(
 		s.embedWorker.Enqueue(EmbedJob{TenantID: tenantID, NodeID: result.NewID, Text: label})
 	}
 
-	s.auditAsync(tenantID, "node.migrate", "node", oldID, map[string]any{
+	auditAsync(s.auditWorker, tenantID, "node.migrate", "node", oldID, map[string]any{
 		"new_id":         result.NewID,
 		"outgoing_edges": result.OutgoingEdges,
 		"incoming_edges": result.IncomingEdges,
@@ -163,7 +149,7 @@ func (s *NodeService) MigrateNode(
 func (s *NodeService) DeleteNode(ctx context.Context, tenantID, nodeID string) error {
 	err := s.store.DeleteNode(ctx, tenantID, nodeID)
 	if err == nil {
-		s.auditAsync(tenantID, "node.delete", "node", nodeID, nil)
+		auditAsync(s.auditWorker, tenantID, "node.delete", "node", nodeID, nil)
 	}
 	return err
 }

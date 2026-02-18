@@ -56,10 +56,10 @@ func (s *GraphStore) Traverse( //nolint:funlen,gocyclo,cyclop,gocognit // BFS lo
 	frontier := []string{nodeID}
 
 	neighborSQL := `(SELECT DISTINCT source, target FROM kg_edges
-		WHERE source = ANY($1) AND tenant_id = current_setting('app.tenant_id')::uuid LIMIT ` + fmt.Sprintf("%d", bfsNeighborLimit) + `)
+		WHERE source = ANY($1) AND tenant_id = current_setting('app.tenant_id')::uuid ORDER BY source, target LIMIT ` + fmt.Sprintf("%d", bfsNeighborLimit) + `)
 		UNION
 		(SELECT DISTINCT source, target FROM kg_edges
-		WHERE target = ANY($1) AND tenant_id = current_setting('app.tenant_id')::uuid LIMIT ` + fmt.Sprintf("%d", bfsNeighborLimit) + `)`
+		WHERE target = ANY($1) AND tenant_id = current_setting('app.tenant_id')::uuid ORDER BY source, target LIMIT ` + fmt.Sprintf("%d", bfsNeighborLimit) + `)`
 
 	for hop := 0; hop < maxHops && len(frontier) > 0; hop++ {
 		rows, err := tx.Query(ctx, neighborSQL, frontier)
@@ -115,7 +115,7 @@ func (s *GraphStore) Traverse( //nolint:funlen,gocyclo,cyclop,gocognit // BFS lo
 	// Fetch all discovered nodes.
 	nodeSQL := `SELECT ` + nodeColumns + ` FROM kg_nodes
 		WHERE id = ANY($1) AND tenant_id = current_setting('app.tenant_id')::uuid
-		LIMIT ` + fmt.Sprintf("%d", traverseNodeLimit)
+		ORDER BY id LIMIT ` + fmt.Sprintf("%d", traverseNodeLimit)
 
 	nodeRows, err := tx.Query(ctx, nodeSQL, ids)
 	if err != nil {
@@ -133,7 +133,7 @@ func (s *GraphStore) Traverse( //nolint:funlen,gocyclo,cyclop,gocognit // BFS lo
 		FROM kg_edges
 		WHERE source = ANY($1) AND target = ANY($1)
 			AND tenant_id = current_setting('app.tenant_id')::uuid
-		LIMIT ` + fmt.Sprintf("%d", traverseEdgeLimit)
+		ORDER BY source, target LIMIT ` + fmt.Sprintf("%d", traverseEdgeLimit)
 
 	edgeRows, err := tx.Query(ctx, edgeSQL, ids)
 	if err != nil {

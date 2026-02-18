@@ -58,8 +58,11 @@ var (
 	)
 )
 
-func init() {
-	prometheus.MustRegister(
+// Register registers all metrics with the given registerer.
+// Call this once at startup (e.g. with prometheus.DefaultRegisterer).
+// Tests can pass prometheus.NewRegistry() to avoid conflicts.
+func Register(r prometheus.Registerer) {
+	r.MustRegister(
 		RequestDuration, RequestsTotal, ErrorsTotal,
 		EmbedQueueDepth, WSConnections,
 		NodeCount, EdgeCount,
