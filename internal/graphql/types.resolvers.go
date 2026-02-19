@@ -42,7 +42,7 @@ func (r *nodeResolver) Edges(ctx context.Context, obj *Node, relation *string, l
 		return nil, err
 	}
 	// Fetch edges where this node is the source.
-	edges, _, err := r.EdgeStore.ListEdges(ctx, tid, obj.ID, "", derefStr(relation), deref(limit, 50), 0)
+	edges, _, err := r.EdgeSvc.ListEdges(ctx, tid, obj.ID, "", derefStr(relation), deref(limit, 50), 0)
 	if err != nil {
 		return nil, err
 	}
@@ -55,7 +55,7 @@ func (r *nodeResolver) Neighbors(ctx context.Context, obj *Node, limit *int) ([]
 	if err != nil {
 		return nil, err
 	}
-	result, err := r.GraphStore.Neighbors(ctx, tid, obj.ID, deref(limit, 50))
+	result, err := r.GraphSvc.Neighbors(ctx, tid, obj.ID, deref(limit, 50))
 	if err != nil {
 		return nil, err
 	}

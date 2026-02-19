@@ -152,11 +152,11 @@ func registerRoutes(ctx context.Context, api *gin.RouterGroup, deps *RouterDeps)
 func registerGraphQL(api *gin.RouterGroup, deps *RouterDeps) {
 	gqlResolver := &gql.Resolver{
 		NodeSvc:     deps.Nodes,
-		EdgeStore:   deps.Edges,
+		EdgeSvc:   deps.Edges,
 		SearchSvc:   deps.Search,
-		GraphStore:  deps.Graph,
+		GraphSvc:  deps.Graph,
 		SalienceSvc: deps.Salience,
-		AuditStore:  deps.Audit,
+		AuditSvc:  deps.Audit,
 	}
 	gqlSrv := gqlhandler.NewDefaultServer(gql.NewExecutableSchema(gql.Config{Resolvers: gqlResolver}))
 	gqlGroup := api.Group("/graphql", gql.GinContextToTenantMiddleware())
