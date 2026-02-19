@@ -42,8 +42,11 @@ function extractFileResults(toolResult: unknown): FileSearchResult[] {
   const obj = payload;
   const results = Array.isArray(obj['results']) ? obj['results'] : [];
   return results.filter(isRecord).map((r) => ({
-    path: String(r['path'] ?? r['file'] ?? 'unknown'),
-    snippet: String(r['snippet'] ?? r['text'] ?? r['content'] ?? String(r)),
+    path: typeof (r['path'] ?? r['file']) === 'string' ? (r['path'] ?? r['file']) as string : 'unknown',
+    snippet:
+      typeof (r['snippet'] ?? r['text'] ?? r['content']) === 'string'
+        ? (r['snippet'] ?? r['text'] ?? r['content']) as string
+        : JSON.stringify(r),
     score: typeof r['score'] === 'number' ? r['score'] : DEFAULT_UNKNOWN_SCORE,
     line:
       typeof r['line'] === 'number'

@@ -1,3 +1,4 @@
+import { logger } from './logger.ts';
 import { isWrappedNeighbor } from './types.ts';
 
 import type { PersistorPluginConfig } from './config.ts';
@@ -57,7 +58,7 @@ async function getPersistorNode(
     const context = includeContext ? await client.getContext(id) : null;
     return formatNode(node, context);
   } catch (e: unknown) {
-    console.warn(`[memory-persistor] getPersistorNode error:`, e);
+    logger.warn('getPersistorNode error:', e);
     return null;
   }
 }

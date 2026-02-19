@@ -1,4 +1,9 @@
-import { type PersistorEdge, type PersistorSearchResult, type WrappedNeighbor } from './types.ts';
+import { logger } from './logger.ts';
+import {
+  type PersistorContext,
+  type PersistorNode,
+  type PersistorSearchResult,
+} from './types.ts';
 
 const isRecord = (v: unknown): v is Record<string, unknown> =>
   v != null && typeof v === 'object' && !Array.isArray(v);
@@ -33,21 +38,7 @@ function isPersistorContext(v: unknown): v is PersistorContext {
   return v != null && typeof v === 'object' && 'node' in v && 'neighbors' in v;
 }
 
-export interface PersistorNode {
-  id: string;
-  type: string;
-  label: string;
-  properties: Record<string, unknown>;
-  salience_score: number;
-  created_at: string;
-  updated_at: string;
-}
-
-export interface PersistorContext {
-  node: PersistorNode;
-  neighbors: (PersistorNode | WrappedNeighbor)[];
-  edges?: PersistorEdge[];
-}
+export type { PersistorContext, PersistorNode } from './types.ts';
 
 export interface PersistorClientConfig {
   url: string;
@@ -98,12 +89,12 @@ export class PersistorClient {
       });
       if (!res.ok) {
         const body = await res.text().catch(() => '');
-        console.warn(`[memory-persistor] ${path}: HTTP ${String(res.status)} ${body}`);
+        logger.warn(`${path}: HTTP ${String(res.status)} ${body}`);
         return null;
       }
       return res;
     } catch (e: unknown) {
-      console.warn(`[memory-persistor] Persistor ${path}:`, e);
+      logger.warn(`Persistor ${path}:`, e);
       return null;
     }
   }
@@ -130,7 +121,7 @@ export class PersistorClient {
       const body: unknown = await res.json();
       return extractArray(body).filter(isSearchResult);
     } catch (e: unknown) {
-      console.warn('[memory-persistor] Persistor search parse:', e);
+      logger.warn('Persistor search parse:', e);
       return [];
     }
   }
@@ -142,7 +133,7 @@ export class PersistorClient {
       const body: unknown = await res.json();
       return isPersistorNode(body) ? body : null;
     } catch (e: unknown) {
-      console.warn('[memory-persistor] Persistor getNode parse:', e);
+      logger.warn('Persistor getNode parse:', e);
       return null;
     }
   }
@@ -154,7 +145,7 @@ export class PersistorClient {
       const body: unknown = await res.json();
       return isPersistorContext(body) ? body : null;
     } catch (e: unknown) {
-      console.warn('[memory-persistor] Persistor getContext parse:', e);
+      logger.warn('Persistor getContext parse:', e);
       return null;
     }
   }

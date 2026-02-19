@@ -1,4 +1,5 @@
 import { resolveConfig } from './config.ts';
+import { logger } from './logger.ts';
 import { PersistorClient } from './persistor-client.ts';
 import { createUnifiedGetTool } from './unified-get.ts';
 import { createUnifiedSearchTool } from './unified-search.ts';
@@ -34,11 +35,7 @@ const memoryPersistorPlugin = {
     persistorClient
       .checkHealth()
       .then((ok) => {
-        console.debug(
-          ok
-            ? '[memory-persistor] [OK] Persistor connected'
-            : '[memory-persistor] [WARN] Persistor unreachable — file-only mode',
-        );
+        logger.debug(ok ? 'Persistor connected' : 'Persistor unreachable — file-only mode');
       })
       .catch(() => {
         /* health check is fire-and-forget */
