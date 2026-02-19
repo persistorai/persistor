@@ -40,8 +40,6 @@ func (h *NodeHandler) List(c *gin.Context) {
 		return
 	}
 
-	h.log.WithFields(logrus.Fields{"action": "node.list", "tenant_id": tenantID, "type": typeFilter, "count": len(nodes)}).Info("audit")
-
 	c.JSON(http.StatusOK, gin.H{"nodes": nodes, "has_more": hasMore})
 }
 
@@ -72,8 +70,6 @@ func (h *NodeHandler) Get(c *gin.Context) {
 
 		return
 	}
-
-	h.log.WithFields(logrus.Fields{"action": "node.get", "tenant_id": tenantID, "node_id": nodeID}).Info("audit")
 
 	c.JSON(http.StatusOK, node)
 }
@@ -111,8 +107,6 @@ func (h *NodeHandler) Create(c *gin.Context) {
 
 		return
 	}
-
-	h.log.WithFields(logrus.Fields{"action": "node.create", "tenant_id": tenantID, "node_id": node.ID}).Info("audit")
 
 	c.JSON(http.StatusCreated, node)
 }
@@ -158,8 +152,6 @@ func (h *NodeHandler) Update(c *gin.Context) {
 		return
 	}
 
-	h.log.WithFields(logrus.Fields{"action": "node.update", "tenant_id": tenantID, "node_id": nodeID}).Info("audit")
-
 	c.JSON(http.StatusOK, node)
 }
 
@@ -203,8 +195,6 @@ func (h *NodeHandler) PatchProperties(c *gin.Context) {
 
 		return
 	}
-
-	h.log.WithFields(logrus.Fields{"action": "node.patch_properties", "tenant_id": tenantID, "node_id": nodeID}).Info("audit")
 
 	c.JSON(http.StatusOK, node)
 }
@@ -256,11 +246,6 @@ func (h *NodeHandler) Migrate(c *gin.Context) {
 		return
 	}
 
-	h.log.WithFields(logrus.Fields{
-		"action": "node.migrate", "tenant_id": tenantID,
-		"old_id": nodeID, "new_id": req.NewID,
-	}).Info("audit")
-
 	c.JSON(http.StatusOK, result)
 }
 
@@ -291,8 +276,6 @@ func (h *NodeHandler) Delete(c *gin.Context) {
 
 		return
 	}
-
-	h.log.WithFields(logrus.Fields{"action": "node.delete", "tenant_id": tenantID, "node_id": nodeID}).Info("audit")
 
 	c.JSON(http.StatusOK, gin.H{"deleted": true})
 }

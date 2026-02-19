@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"sort"
 	"sync"
 	"time"
 
@@ -130,7 +131,7 @@ func (g *BruteForceGuard) cleanupLoop(ctx context.Context) {
 }
 
 // evictOldest removes n entries with the oldest firstFail times.
-// Caller must hold g.mu.
+// Caller must hold g.mu. Complexity: O(m log m) via sort.
 func (g *BruteForceGuard) evictOldest(n int) {
 	type entry struct {
 		key  string
@@ -140,15 +141,10 @@ func (g *BruteForceGuard) evictOldest(n int) {
 	for k, rec := range g.records {
 		entries = append(entries, entry{k, rec.firstFail})
 	}
-	for range n {
-		oldestIdx := 0
-		for i := 1; i < len(entries); i++ {
-			if entries[i].time.Before(entries[oldestIdx].time) {
-				oldestIdx = i
-			}
-		}
-		delete(g.records, entries[oldestIdx].key)
-		entries[oldestIdx] = entries[len(entries)-1]
-		entries = entries[:len(entries)-1]
+	sort.Slice(entries, func(i, j int) bool {
+		return entries[i].time.Before(entries[j].time)
+	})
+	for i := range n {
+		delete(g.records, entries[i].key)
 	}
 }

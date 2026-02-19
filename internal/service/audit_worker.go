@@ -2,9 +2,12 @@ package service
 
 import (
 	"context"
+	"time"
 
 	"github.com/sirupsen/logrus"
 )
+
+const drainTimeout = 5 * time.Second
 
 // AuditJob represents a single audit entry to be recorded.
 type AuditJob struct {
@@ -72,25 +75,32 @@ func (w *AuditWorker) Run(ctx context.Context) {
 			w.drain()
 			return
 		case job := <-w.jobs:
-			w.process(job)
+			w.process(ctx, job)
 		}
 	}
 }
 
+// drain flushes buffered jobs after shutdown. A timeout prevents indefinite blocking
+// if the auditor is slow or unresponsive during teardown.
 func (w *AuditWorker) drain() {
+	ctx, cancel := context.WithTimeout(context.Background(), drainTimeout)
+	defer cancel()
 	for {
 		select {
+		case <-ctx.Done():
+			w.log.WithField("remaining", len(w.jobs)).Warn("audit drain timed out, dropping remaining entries")
+			return
 		case job := <-w.jobs:
-			w.process(job)
+			w.process(ctx, job)
 		default:
 			return
 		}
 	}
 }
 
-func (w *AuditWorker) process(job *AuditJob) {
+func (w *AuditWorker) process(ctx context.Context, job *AuditJob) {
 	if err := w.auditor.RecordAudit(
-		context.Background(), job.TenantID, job.Action, job.EntityType, job.EntityID, job.Actor, job.Detail,
+		ctx, job.TenantID, job.Action, job.EntityType, job.EntityID, job.Actor, job.Detail,
 	); err != nil {
 		w.log.WithError(err).Warn("audit record failed")
 	}

@@ -262,14 +262,9 @@ func (s *NodeStore) DeleteNode(ctx context.Context, tenantID, nodeID string) err
 
 	defer tx.Rollback(ctx) //nolint:errcheck // best-effort rollback after commit.
 
-	_, err = tx.Exec(ctx, "DELETE FROM kg_edges WHERE tenant_id = current_setting('app.tenant_id')::uuid AND source = $1", nodeID)
+	_, err = tx.Exec(ctx, "DELETE FROM kg_edges WHERE tenant_id = current_setting('app.tenant_id')::uuid AND (source = $1 OR target = $1)", nodeID)
 	if err != nil {
-		return fmt.Errorf("deleting source edges for node: %w", err)
-	}
-
-	_, err = tx.Exec(ctx, "DELETE FROM kg_edges WHERE tenant_id = current_setting('app.tenant_id')::uuid AND target = $1", nodeID)
-	if err != nil {
-		return fmt.Errorf("deleting target edges for node: %w", err)
+		return fmt.Errorf("deleting edges for node: %w", err)
 	}
 
 	tag, err := tx.Exec(ctx, "DELETE FROM kg_nodes WHERE tenant_id = current_setting('app.tenant_id')::uuid AND id = $1", nodeID)

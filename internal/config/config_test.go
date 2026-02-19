@@ -111,8 +111,8 @@ func TestLoad_ErrorCases(t *testing.T) {
 		},
 		{
 			name:         "invalid LISTEN_HOST",
-			envOverrides: map[string]string{"LISTEN_HOST": "0.0.0.0"},
-			wantErr:      "LISTEN_HOST must be a loopback address",
+			envOverrides: map[string]string{"LISTEN_HOST": "192.168.1.1"},
+			wantErr:      "LISTEN_HOST must be a loopback address or 0.0.0.0/:: for containers",
 		},
 		{
 			name:         "CORS wildcard",
@@ -228,4 +228,49 @@ func TestLoad_ErrorCases(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestLoad_OllamaRemote(t *testing.T) {
+	t.Run("remote URL rejected without flag", func(t *testing.T) {
+		setValidEnv(t)
+		t.Setenv("OLLAMA_URL", "http://ollama.internal:11434")
+
+		_, err := config.Load()
+		if err == nil {
+			t.Fatal("expected error, got nil")
+		}
+		if !strings.Contains(err.Error(), "OLLAMA_ALLOW_REMOTE") {
+			t.Errorf("expected error to mention OLLAMA_ALLOW_REMOTE, got %q", err.Error())
+		}
+	})
+
+	t.Run("remote URL allowed with flag", func(t *testing.T) {
+		setValidEnv(t)
+		t.Setenv("OLLAMA_URL", "http://ollama.internal:11434")
+		t.Setenv("OLLAMA_ALLOW_REMOTE", "true")
+
+		cfg, err := config.Load()
+		if err != nil {
+			t.Fatalf("expected no error, got %v", err)
+		}
+		if !cfg.OllamaAllowRemote {
+			t.Error("expected OllamaAllowRemote=true")
+		}
+		if cfg.OllamaURL != "http://ollama.internal:11434" {
+			t.Errorf("unexpected OllamaURL: %s", cfg.OllamaURL)
+		}
+	})
+
+	t.Run("localhost URL still works without flag", func(t *testing.T) {
+		setValidEnv(t)
+		t.Setenv("OLLAMA_URL", "http://127.0.0.1:11434")
+
+		cfg, err := config.Load()
+		if err != nil {
+			t.Fatalf("expected no error, got %v", err)
+		}
+		if cfg.OllamaURL != "http://127.0.0.1:11434" {
+			t.Errorf("unexpected OllamaURL: %s", cfg.OllamaURL)
+		}
+	})
 }

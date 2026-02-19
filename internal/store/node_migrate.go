@@ -43,16 +43,7 @@ func (s *NodeStore) MigrateNode(
 		label = req.NewLabel
 	}
 
-	// 3. Read encrypted properties from old node (raw bytes for copying).
-	var rawProps []byte
-	err = tx.QueryRow(ctx,
-		`SELECT properties FROM kg_nodes WHERE tenant_id = current_setting('app.tenant_id')::uuid AND id = $1`,
-		oldID).Scan(&rawProps)
-	if err != nil {
-		return nil, fmt.Errorf("reading old node properties: %w", err)
-	}
-
-	// 4. Create new node copying all fields.
+	// 3. Create new node copying all fields.
 	_, err = tx.Exec(ctx,
 		`INSERT INTO kg_nodes (id, tenant_id, type, label, properties, salience_score, access_count, last_accessed, user_boosted)
 		 SELECT $1, tenant_id, type, $2, properties, salience_score, access_count, last_accessed, user_boosted
@@ -67,7 +58,7 @@ func (s *NodeStore) MigrateNode(
 		return nil, fmt.Errorf("creating new node: %w", err)
 	}
 
-	// 5. Copy embedding if present.
+	// 4. Copy embedding if present.
 	_, err = tx.Exec(ctx,
 		`UPDATE kg_nodes SET embedding = old.embedding
 		 FROM kg_nodes old
@@ -81,7 +72,7 @@ func (s *NodeStore) MigrateNode(
 		return nil, fmt.Errorf("copying embedding: %w", err)
 	}
 
-	// 6. Update outgoing edges.
+	// 5. Update outgoing edges.
 	tagOut, err := tx.Exec(ctx,
 		`UPDATE kg_edges SET source = $1 WHERE tenant_id = current_setting('app.tenant_id')::uuid AND source = $2`,
 		req.NewID, oldID)
@@ -89,7 +80,7 @@ func (s *NodeStore) MigrateNode(
 		return nil, fmt.Errorf("migrating outgoing edges: %w", err)
 	}
 
-	// 7. Update incoming edges.
+	// 6. Update incoming edges.
 	tagIn, err := tx.Exec(ctx,
 		`UPDATE kg_edges SET target = $1 WHERE tenant_id = current_setting('app.tenant_id')::uuid AND target = $2`,
 		req.NewID, oldID)
@@ -106,7 +97,7 @@ func (s *NodeStore) MigrateNode(
 		OldDeleted:    false,
 	}
 
-	// 8. Delete old node if requested.
+	// 7. Delete old node if requested.
 	if req.DeleteOld {
 		_, err = tx.Exec(ctx,
 			`DELETE FROM kg_nodes WHERE tenant_id = current_setting('app.tenant_id')::uuid AND id = $1`,

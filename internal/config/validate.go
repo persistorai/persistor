@@ -71,9 +71,18 @@ func (c *Config) validateNetwork() error {
 		return fmt.Errorf("PORT must be between 1 and 65535")
 	}
 
-	// Validate LISTEN_HOST is a loopback address to prevent accidental external exposure.
-	if c.ListenHost != "127.0.0.1" && c.ListenHost != "::1" && c.ListenHost != "localhost" {
-		return fmt.Errorf("LISTEN_HOST must be a loopback address (127.0.0.1, ::1, or localhost), got %q", c.ListenHost)
+	// Validate LISTEN_HOST is a known-safe address. Allow loopback addresses for
+	// local deployments and 0.0.0.0/:: for containerized deployments where the
+	// network boundary is enforced externally (e.g. Docker, Kubernetes).
+	validHosts := map[string]bool{
+		"127.0.0.1": true,
+		"::1":       true,
+		"localhost": true,
+		"0.0.0.0":   true,
+		"::":        true,
+	}
+	if !validHosts[c.ListenHost] {
+		return fmt.Errorf("LISTEN_HOST must be a loopback address or 0.0.0.0/:: for containers (got %q)", c.ListenHost)
 	}
 
 	metricsPort, err := strconv.Atoi(c.MetricsPort)
@@ -100,7 +109,9 @@ func (c *Config) validateOllama() error {
 
 	ollamaHost := ollamaURL.Hostname()
 	if ollamaHost != "localhost" && ollamaHost != "127.0.0.1" && ollamaHost != "::1" {
-		return fmt.Errorf("OLLAMA_URL must point to localhost (127.0.0.1, ::1, or localhost)")
+		if !c.OllamaAllowRemote {
+			return fmt.Errorf("OLLAMA_URL must point to localhost (set OLLAMA_ALLOW_REMOTE=true for distributed deployments)")
+		}
 	}
 
 	return nil

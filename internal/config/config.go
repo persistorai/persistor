@@ -41,6 +41,7 @@ type Config struct {
 	EmbedWorkers        int
 	EnablePlayground    bool
 	DBMaxConns          int32
+	OllamaAllowRemote   bool
 }
 
 // Load reads configuration from environment variables with sensible defaults.
@@ -58,6 +59,7 @@ func Load() (*Config, error) {
 		VaultAddr:          envOrDefault("VAULT_ADDR", "http://127.0.0.1:8200"),
 		VaultToken:         Secret(envOrDefault("VAULT_TOKEN", "")),
 		EnablePlayground:   envOrDefault("ENABLE_PLAYGROUND", "false") == "true",
+		OllamaAllowRemote:  envOrDefault("OLLAMA_ALLOW_REMOTE", "false") == "true",
 	}
 
 	embeddingDims, err := strconv.Atoi(envOrDefault("EMBEDDING_DIMENSIONS", "1024"))
