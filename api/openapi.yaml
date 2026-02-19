@@ -1,0 +1,717 @@
+openapi: "3.0.3"
+info:
+  title: Persistor API
+  description: Knowledge graph service with vector search, salience scoring, and audit logging.
+  version: "0.3.0"
+  license:
+    name: Proprietary
+
+servers:
+  - url: http://localhost:8081/api/v1
+    description: Local development
+  - url: "{scheme}://{host}/api/v1"
+    description: Custom
+    variables:
+      scheme:
+        default: https
+        enum: [http, https]
+      host:
+        default: localhost:8081
+
+security:
+  - BearerAuth: []
+
+tags:
+  - name: Health
+  - name: Nodes
+  - name: Edges
+  - name: Search
+  - name: Graph
+  - name: Bulk
+  - name: Salience
+  - name: Audit
+  - name: Admin
+  - name: Stats
+  - name: GraphQL
+  - name: WebSocket
+
+paths:
+  /health:
+    get:
+      tags: [Health]
+      summary: Liveness check
+      security: []
+      responses:
+        "200":
+          description: Service is alive
+  /ready:
+    get:
+      tags: [Health]
+      summary: Readiness check
+      security: []
+      responses:
+        "200":
+          description: Service is ready
+
+  /nodes:
+    get:
+      tags: [Nodes]
+      summary: List nodes
+      parameters:
+        - name: type
+          in: query
+          schema: { type: string }
+        - name: sort
+          in: query
+          schema: { type: string, enum: [created_at, updated_at, salience, label] }
+        - name: limit
+          in: query
+          schema: { type: integer, default: 50 }
+        - name: offset
+          in: query
+          schema: { type: integer, default: 0 }
+      responses:
+        "200":
+          description: Paginated node list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NodeListResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+    post:
+      tags: [Nodes]
+      summary: Create a node
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateNodeRequest"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Node"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "409":
+          $ref: "#/components/responses/Conflict"
+
+  /nodes/{id}:
+    parameters:
+      - $ref: "#/components/parameters/NodeID"
+    get:
+      tags: [Nodes]
+      summary: Get a node by ID
+      responses:
+        "200":
+          description: Node found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Node"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    put:
+      tags: [Nodes]
+      summary: Update a node
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateNodeRequest"
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Node"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    delete:
+      tags: [Nodes]
+      summary: Delete a node
+      responses:
+        "200":
+          description: Deleted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeletedResponse"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /nodes/{id}/properties:
+    parameters:
+      - $ref: "#/components/parameters/NodeID"
+    patch:
+      tags: [Nodes]
+      summary: Patch node properties
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PatchPropertiesRequest"
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Node"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /nodes/{id}/migrate:
+    parameters:
+      - $ref: "#/components/parameters/NodeID"
+    post:
+      tags: [Nodes]
+      summary: Migrate a node to a new ID
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MigrateNodeRequest"
+      responses:
+        "200":
+          description: Migration result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MigrateNodeResult"
+
+  /nodes/{id}/history:
+    parameters:
+      - $ref: "#/components/parameters/NodeID"
+    get:
+      tags: [Nodes]
+      summary: Get node change history
+      responses:
+        "200":
+          description: History entries
+
+  /edges:
+    get:
+      tags: [Edges]
+      summary: List edges
+      parameters:
+        - name: source
+          in: query
+          schema: { type: string }
+        - name: target
+          in: query
+          schema: { type: string }
+        - name: relation
+          in: query
+          schema: { type: string }
+        - name: limit
+          in: query
+          schema: { type: integer, default: 50 }
+        - name: offset
+          in: query
+          schema: { type: integer, default: 0 }
+      responses:
+        "200":
+          description: Paginated edge list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EdgeListResponse"
+    post:
+      tags: [Edges]
+      summary: Create an edge
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateEdgeRequest"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Edge"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+
+  /edges/{source}/{target}/{relation}:
+    parameters:
+      - name: source
+        in: path
+        required: true
+        schema: { type: string }
+      - name: target
+        in: path
+        required: true
+        schema: { type: string }
+      - name: relation
+        in: path
+        required: true
+        schema: { type: string }
+    put:
+      tags: [Edges]
+      summary: Update an edge
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateEdgeRequest"
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Edge"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    delete:
+      tags: [Edges]
+      summary: Delete an edge
+      responses:
+        "200":
+          description: Deleted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeletedResponse"
+
+  /edges/{source}/{target}/{relation}/properties:
+    parameters:
+      - name: source
+        in: path
+        required: true
+        schema: { type: string }
+      - name: target
+        in: path
+        required: true
+        schema: { type: string }
+      - name: relation
+        in: path
+        required: true
+        schema: { type: string }
+    patch:
+      tags: [Edges]
+      summary: Patch edge properties
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PatchPropertiesRequest"
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Edge"
+
+  /search:
+    get:
+      tags: [Search]
+      summary: Full-text search
+      parameters:
+        - name: q
+          in: query
+          required: true
+          schema: { type: string }
+        - name: type
+          in: query
+          schema: { type: string }
+        - name: limit
+          in: query
+          schema: { type: integer, default: 20 }
+      responses:
+        "200":
+          description: Search results
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NodeListResponse"
+
+  /search/semantic:
+    get:
+      tags: [Search]
+      summary: Semantic (vector) search
+      parameters:
+        - name: q
+          in: query
+          required: true
+          schema: { type: string }
+        - name: limit
+          in: query
+          schema: { type: integer, default: 20 }
+      responses:
+        "200":
+          description: Scored results
+  /search/hybrid:
+    get:
+      tags: [Search]
+      summary: Hybrid search (full-text + semantic)
+      parameters:
+        - name: q
+          in: query
+          required: true
+          schema: { type: string }
+        - name: limit
+          in: query
+          schema: { type: integer, default: 20 }
+      responses:
+        "200":
+          description: Scored results
+
+  /graph/neighbors/{id}:
+    parameters:
+      - $ref: "#/components/parameters/NodeID"
+    get:
+      tags: [Graph]
+      summary: Get neighbors of a node
+      parameters:
+        - name: limit
+          in: query
+          schema: { type: integer, default: 50 }
+      responses:
+        "200":
+          description: Neighbor subgraph
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NeighborResult"
+
+  /graph/traverse/{id}:
+    parameters:
+      - $ref: "#/components/parameters/NodeID"
+    get:
+      tags: [Graph]
+      summary: BFS traversal from a node
+      parameters:
+        - name: depth
+          in: query
+          schema: { type: integer, default: 2 }
+        - name: limit
+          in: query
+          schema: { type: integer, default: 100 }
+      responses:
+        "200":
+          description: Traversal subgraph
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TraverseResult"
+
+  /graph/context/{id}:
+    parameters:
+      - $ref: "#/components/parameters/NodeID"
+    get:
+      tags: [Graph]
+      summary: Get a node with its immediate neighborhood
+      responses:
+        "200":
+          description: Context result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ContextResult"
+
+  /graph/path/{from}/{to}:
+    parameters:
+      - name: from
+        in: path
+        required: true
+        schema: { type: string }
+      - name: to
+        in: path
+        required: true
+        schema: { type: string }
+    get:
+      tags: [Graph]
+      summary: Shortest path between two nodes
+      responses:
+        "200":
+          description: Path result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PathResult"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /bulk/nodes:
+    post:
+      tags: [Bulk]
+      summary: Bulk upsert nodes
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [nodes]
+              properties:
+                nodes:
+                  type: array
+                  items:
+                    $ref: "#/components/schemas/CreateNodeRequest"
+      responses:
+        "200":
+          description: Bulk result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BulkNodesResponse"
+
+  /bulk/edges:
+    post:
+      tags: [Bulk]
+      summary: Bulk upsert edges
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [edges]
+              properties:
+                edges:
+                  type: array
+                  items:
+                    $ref: "#/components/schemas/CreateEdgeRequest"
+      responses:
+        "200":
+          description: Bulk result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BulkEdgesResponse"
+
+  /salience/boost/{id}:
+    parameters:
+      - $ref: "#/components/parameters/NodeID"
+    post:
+      tags: [Salience]
+      summary: Boost a node's salience
+      responses:
+        "200":
+          description: Boosted node
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Node"
+
+  /salience/supersede:
+    post:
+      tags: [Salience]
+      summary: Supersede one node with another
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SupersedeRequest"
+      responses:
+        "200":
+          description: Superseded
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SupersededResponse"
+
+  /salience/recalc:
+    post:
+      tags: [Salience]
+      summary: Recalculate all salience scores
+      responses:
+        "200":
+          description: Recalculation result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RecalcResponse"
+
+  /audit:
+    get:
+      tags: [Audit]
+      summary: Query audit log
+      parameters:
+        - name: entity_id
+          in: query
+          schema: { type: string }
+        - name: action
+          in: query
+          schema: { type: string }
+        - name: limit
+          in: query
+          schema: { type: integer, default: 50 }
+        - name: offset
+          in: query
+          schema: { type: integer, default: 0 }
+      responses:
+        "200":
+          description: Audit entries
+    delete:
+      tags: [Audit]
+      summary: Purge old audit entries
+      parameters:
+        - name: retention_days
+          in: query
+          schema: { type: integer, default: 90 }
+      responses:
+        "200":
+          description: Purge result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuditPurgeResponse"
+
+  /stats:
+    get:
+      tags: [Stats]
+      summary: Get database statistics
+      responses:
+        "200":
+          description: Stats object
+
+  /admin/backfill-embeddings:
+    post:
+      tags: [Admin]
+      summary: Queue embedding generation for nodes without embeddings
+      responses:
+        "200":
+          description: Backfill queued
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BackfillResponse"
+
+  /graphql:
+    post:
+      tags: [GraphQL]
+      summary: GraphQL endpoint
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                query: { type: string }
+                variables: { type: object }
+                operationName: { type: string }
+      responses:
+        "200":
+          description: GraphQL response
+
+  /ws:
+    get:
+      tags: [WebSocket]
+      summary: WebSocket connection for real-time events
+      responses:
+        "101":
+          description: Switching protocols
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      description: API key passed as Bearer token.
+
+  parameters:
+    NodeID:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+        maxLength: 255
+      description: Node ID
+
+  responses:
+    BadRequest:
+      description: Invalid request
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    Unauthorized:
+      description: Missing or invalid authentication
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    Conflict:
+      description: Resource already exists
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+
+  schemas:
+    Error:
+      $ref: "./schemas/common.yaml#/Error"
+    DeletedResponse:
+      $ref: "./schemas/common.yaml#/DeletedResponse"
+    SupersededResponse:
+      $ref: "./schemas/common.yaml#/SupersededResponse"
+    PatchPropertiesRequest:
+      $ref: "./schemas/common.yaml#/PatchPropertiesRequest"
+    SupersedeRequest:
+      $ref: "./schemas/common.yaml#/SupersedeRequest"
+    BackfillResponse:
+      $ref: "./schemas/common.yaml#/BackfillResponse"
+    RecalcResponse:
+      $ref: "./schemas/common.yaml#/RecalcResponse"
+    AuditPurgeResponse:
+      $ref: "./schemas/common.yaml#/AuditPurgeResponse"
+    Node:
+      $ref: "./schemas/nodes.yaml#/Node"
+    ScoredNode:
+      $ref: "./schemas/nodes.yaml#/ScoredNode"
+    CreateNodeRequest:
+      $ref: "./schemas/nodes.yaml#/CreateNodeRequest"
+    UpdateNodeRequest:
+      $ref: "./schemas/nodes.yaml#/UpdateNodeRequest"
+    MigrateNodeRequest:
+      $ref: "./schemas/nodes.yaml#/MigrateNodeRequest"
+    MigrateNodeResult:
+      $ref: "./schemas/nodes.yaml#/MigrateNodeResult"
+    NodeListResponse:
+      $ref: "./schemas/nodes.yaml#/NodeListResponse"
+    BulkNodesResponse:
+      $ref: "./schemas/nodes.yaml#/BulkNodesResponse"
+    Edge:
+      $ref: "./schemas/edges.yaml#/Edge"
+    CreateEdgeRequest:
+      $ref: "./schemas/edges.yaml#/CreateEdgeRequest"
+    UpdateEdgeRequest:
+      $ref: "./schemas/edges.yaml#/UpdateEdgeRequest"
+    EdgeListResponse:
+      $ref: "./schemas/edges.yaml#/EdgeListResponse"
+    BulkEdgesResponse:
+      $ref: "./schemas/edges.yaml#/BulkEdgesResponse"
+    NeighborResult:
+      $ref: "./schemas/graph.yaml#/NeighborResult"
+    TraverseResult:
+      $ref: "./schemas/graph.yaml#/TraverseResult"
+    ContextResult:
+      $ref: "./schemas/graph.yaml#/ContextResult"
+    PathResult:
+      $ref: "./schemas/graph.yaml#/PathResult"
