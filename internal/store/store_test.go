@@ -41,7 +41,7 @@ func getTestEnv(t *testing.T) *testEnv {
 
 	ctx := context.Background()
 
-	pool, err := dbpool.NewPool(ctx, dbURL)
+	pool, err := dbpool.NewPool(ctx, dbURL, 5)
 	if err != nil {
 		t.Fatalf("connecting to test DB: %v", err)
 	}
