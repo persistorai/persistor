@@ -1,6 +1,10 @@
 package graphql
 
-import "github.com/persistorai/persistor/internal/models"
+import (
+	"strconv"
+
+	"github.com/persistorai/persistor/internal/models"
+)
 
 // nodeToGQL converts a models.Node to the GraphQL Node type.
 func nodeToGQL(n *models.Node) *Node {
@@ -63,7 +67,7 @@ func auditToGQL(a *models.AuditEntry) *AuditEntry {
 		return nil
 	}
 	entry := &AuditEntry{
-		ID:         a.ID,
+		ID:         strconv.FormatInt(a.ID, 10),
 		Action:     a.Action,
 		EntityType: a.EntityType,
 		EntityID:   a.EntityID,
