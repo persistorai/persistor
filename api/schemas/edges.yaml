@@ -1,0 +1,118 @@
+Edge:
+  type: object
+  required: [source, target, relation, properties, weight, access_count, salience_score, user_boosted, created_at, updated_at]
+  properties:
+    source:
+      type: string
+      maxLength: 255
+      description: ID of the source node.
+      example: node-a
+    target:
+      type: string
+      maxLength: 255
+      description: ID of the target node.
+      example: node-b
+    relation:
+      type: string
+      maxLength: 255
+      description: Relationship type label.
+      example: KNOWS
+    properties:
+      type: object
+      additionalProperties: {}
+      description: Arbitrary key-value metadata on the edge.
+    weight:
+      type: number
+      format: double
+      minimum: 0
+      maximum: 1000
+      description: Edge weight (0–1000; default 1).
+      example: 1.0
+    access_count:
+      type: integer
+      description: Number of times this edge has been traversed.
+    last_accessed:
+      type: string
+      format: date-time
+      nullable: true
+    salience_score:
+      type: number
+      format: double
+      description: Computed salience for this edge.
+    superseded_by:
+      type: string
+      nullable: true
+      description: Relation string of the superseding edge, if any.
+    user_boosted:
+      type: boolean
+    created_at:
+      type: string
+      format: date-time
+    updated_at:
+      type: string
+      format: date-time
+
+CreateEdgeRequest:
+  type: object
+  required: [source, target, relation]
+  properties:
+    source:
+      type: string
+      maxLength: 255
+      description: Source node ID (must exist).
+    target:
+      type: string
+      maxLength: 255
+      description: Target node ID (must exist).
+    relation:
+      type: string
+      maxLength: 255
+      description: Relationship type label.
+      example: DEPENDS_ON
+    properties:
+      type: object
+      additionalProperties: {}
+      description: Optional edge metadata (max 64 KiB serialized).
+    weight:
+      type: number
+      format: double
+      minimum: 0
+      maximum: 1000
+      description: Edge weight (defaults to 1 if omitted).
+
+UpdateEdgeRequest:
+  type: object
+  description: All fields are optional; only provided fields are updated.
+  properties:
+    properties:
+      type: object
+      additionalProperties: {}
+      description: Replaces the entire properties map.
+    weight:
+      type: number
+      format: double
+      minimum: 0
+      maximum: 1000
+
+EdgeListResponse:
+  type: object
+  required: [edges, has_more]
+  properties:
+    edges:
+      type: array
+      items:
+        $ref: '#/Edge'
+    has_more:
+      type: boolean
+
+BulkEdgesResponse:
+  type: object
+  required: [upserted, edges]
+  properties:
+    upserted:
+      type: integer
+      description: Number of edges created or updated.
+    edges:
+      type: array
+      items:
+        $ref: '#/Edge'

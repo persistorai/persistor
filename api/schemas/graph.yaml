@@ -1,0 +1,65 @@
+NeighborResult:
+  type: object
+  required: [nodes, edges]
+  description: >
+    All nodes directly connected to the queried node,
+    along with the edges connecting them.
+  properties:
+    nodes:
+      type: array
+      items:
+        $ref: './nodes.yaml#/Node'
+      description: Neighboring nodes (excludes the queried node itself).
+    edges:
+      type: array
+      items:
+        $ref: './edges.yaml#/Edge'
+      description: Edges incident on the queried node (both directions).
+
+TraverseResult:
+  type: object
+  required: [nodes, edges]
+  description: Subgraph discovered by BFS traversal up to maxHops.
+  properties:
+    nodes:
+      type: array
+      items:
+        $ref: './nodes.yaml#/Node'
+      description: All nodes discovered in the traversal.
+    edges:
+      type: array
+      items:
+        $ref: './edges.yaml#/Edge'
+      description: All edges traversed.
+
+ContextResult:
+  type: object
+  required: [node, neighbors, edges]
+  description: A node together with its immediate neighborhood.
+  properties:
+    node:
+      $ref: './nodes.yaml#/Node'
+      description: The queried node.
+    neighbors:
+      type: array
+      items:
+        $ref: './nodes.yaml#/Node'
+      description: Directly connected nodes.
+    edges:
+      type: array
+      items:
+        $ref: './edges.yaml#/Edge'
+      description: Edges connecting the node to its neighbors.
+
+PathResult:
+  type: object
+  required: [path]
+  description: Shortest path between two nodes.
+  properties:
+    path:
+      type: array
+      items:
+        $ref: './nodes.yaml#/Node'
+      description: >
+        Ordered list of nodes from source to destination.
+        Empty if no path exists (HTTP 404 is returned instead).

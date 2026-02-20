@@ -3,18 +3,34 @@ GO := /usr/local/go/bin/go
 GOLANGCI_LINT := $(HOME)/go/bin/golangci-lint
 GO_MODULE := github.com/persistorai/persistor
 GO_PACKAGES := ./...
-GO_BUILD_FLAGS := -ldflags="-s -w -X main.version=$$(cat VERSION)"
 GO_TEST_FLAGS := -v -race
-BINARY_NAME := persistor-server
 BINARY_DIR := bin
 
-.PHONY: build clean test test-race test-coverage lint lint-fix lint-md format vet ci run deps tidy setup-hooks
+VERSION    := $(shell git describe --tags --always --dirty 2>/dev/null || cat VERSION)
+COMMIT     := $(shell git rev-parse --short HEAD 2>/dev/null || echo "unknown")
+BUILD_DATE := $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
 
-## Build the binary.
-build:
-	@echo "Building $(BINARY_NAME)..."
+LDFLAGS := -s -w \
+	-X main.version=$(VERSION) \
+	-X main.commit=$(COMMIT) \
+	-X main.buildDate=$(BUILD_DATE)
+
+.PHONY: build build-server build-cli clean test test-race test-coverage lint lint-fix lint-md format vet ci run deps tidy setup-hooks install install-server install-cli
+
+## Build both binaries.
+build: build-server build-cli
+
+## Build the server binary.
+build-server:
+	@echo "Building persistor-server..."
 	@mkdir -p $(BINARY_DIR)
-	$(GO) build $(GO_BUILD_FLAGS) -o $(BINARY_DIR)/$(BINARY_NAME) ./cmd/server
+	$(GO) build -ldflags="$(LDFLAGS)" -o $(BINARY_DIR)/persistor-server ./cmd/server
+
+## Build the CLI binary.
+build-cli:
+	@echo "Building persistor..."
+	@mkdir -p $(BINARY_DIR)
+	$(GO) build -ldflags="$(LDFLAGS)" -o $(BINARY_DIR)/persistor ./cmd/persistor-cli
 
 ## Clean build artifacts.
 clean:
@@ -78,8 +94,22 @@ setup-hooks:
 	@echo "Pre-commit hook installed."
 
 ## Run the server (loads .env if present).
-run: build
-	@if [ -f .env ]; then set -a; . ./.env; set +a; fi; ./$(BINARY_DIR)/$(BINARY_NAME)
+run: build-server
+	@if [ -f .env ]; then set -a; . ./.env; set +a; fi; ./$(BINARY_DIR)/persistor-server
+
+## Install both binaries.
+install: install-server install-cli
+
+## Install the server binary and restart service.
+install-server: build-server
+	sudo cp bin/persistor-server /usr/local/bin/persistor-server
+	sudo systemctl restart persistor.service
+	@echo "Installed persistor-server and restarted persistor.service"
+
+## Install the CLI binary.
+install-cli: build-cli
+	sudo cp bin/persistor /usr/local/bin/persistor
+	@echo "Installed persistor to /usr/local/bin/persistor"
 
 ## Download dependencies.
 deps:
@@ -91,9 +121,3 @@ deps:
 tidy:
 	@echo "Tidying dependencies..."
 	$(GO) mod tidy
-
-## Install binary to /usr/local/bin and restart service.
-install: build
-	sudo cp bin/persistor-server /usr/local/bin/persistor-server
-	sudo systemctl restart persistor.service
-	@echo "Installed and restarted persistor.service"

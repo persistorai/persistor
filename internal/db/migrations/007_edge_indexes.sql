@@ -1,7 +1,8 @@
+-- +goose NO TRANSACTION
 -- +goose Up
 
 -- Composite index for edge listing queries that filter by source and sort by updated_at
-CREATE INDEX IF NOT EXISTS idx_edges_tenant_source_updated
+CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_edges_tenant_source_updated
     ON kg_edges (tenant_id, source, updated_at DESC);
 
 -- Optimize update triggers: only fire when row data actually changes.

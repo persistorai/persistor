@@ -1,0 +1,92 @@
+# docker-compose.yml — Local development stack for Persistor
+#
+# Prerequisites:
+#   1. Copy .env.example to .env and set ENCRYPTION_KEY (required):
+#        cp .env.example .env
+#        echo "ENCRYPTION_KEY=$(openssl rand -hex 32)" >> .env
+#   2. Ollama running on the host with the embedding model pulled:
+#        ollama pull qwen3-embedding:0.6b
+#
+# Usage:
+#   docker compose up -d          # start in background
+#   docker compose logs -f        # tail logs
+#   docker compose down -v        # stop and remove volumes
+
+services:
+
+  # ── PostgreSQL 18 with pgvector ──────────────────────────────────────────────
+  postgres:
+    image: pgvector/pgvector:pg18
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER:     persistor
+      POSTGRES_PASSWORD: changeme
+      POSTGRES_DB:       persistor
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      # Expose locally for psql / GUI clients; omit in production
+      - "127.0.0.1:5432:5432"
+    healthcheck:
+      test:         ["CMD-SHELL", "pg_isready -U persistor -d persistor"]
+      interval:     10s
+      timeout:      5s
+      retries:      5
+      start_period: 30s
+
+  # ── Persistor server ─────────────────────────────────────────────────────────
+  persistor:
+    build:
+      context: .
+      args:
+        VERSION:    dev
+        COMMIT:     local
+        BUILD_DATE: ""
+    restart: unless-stopped
+    ports:
+      - "3030:3030"
+    environment:
+      # ── Database ────────────────────────────────────────────────────────────
+      # sslmode=prefer: negotiates SSL when available; falls back to plain-text
+      # for the unencrypted dev Postgres container (sslmode=disable is blocked
+      # by the config validator for non-localhost hosts).
+      DATABASE_URL:  postgres://persistor:changeme@postgres:5432/persistor?sslmode=prefer
+      DB_MAX_CONNS:  "21"
+
+      # ── Server ──────────────────────────────────────────────────────────────
+      PORT:         "3030"
+      LISTEN_HOST:  "0.0.0.0"
+      METRICS_PORT: "9091"
+      CORS_ORIGINS: "http://localhost:3002"
+
+      # ── Embeddings ──────────────────────────────────────────────────────────
+      # Ollama runs on the host machine; host.docker.internal resolves via the
+      # extra_hosts entry below.  OLLAMA_ALLOW_REMOTE=true bypasses the
+      # localhost-only validator for this non-loopback hostname.
+      OLLAMA_URL:           "http://host.docker.internal:11434"
+      OLLAMA_ALLOW_REMOTE:  "true"
+      EMBEDDING_MODEL:      "qwen3-embedding:0.6b"
+      EMBEDDING_DIMENSIONS: "1024"
+      EMBED_WORKERS:        "4"
+
+      # ── Encryption ──────────────────────────────────────────────────────────
+      # ENCRYPTION_KEY must be 64 hex characters (32 bytes).
+      # Set it in your .env file: openssl rand -hex 32
+      ENCRYPTION_PROVIDER: "static"
+      ENCRYPTION_KEY:      "${ENCRYPTION_KEY}"
+
+      # ── Logging / Dev ───────────────────────────────────────────────────────
+      LOG_LEVEL:          "info"
+      ENABLE_PLAYGROUND:  "true"
+
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+    # Allows host.docker.internal to resolve to the host machine on Linux
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+volumes:
+  postgres_data:
+    driver: local

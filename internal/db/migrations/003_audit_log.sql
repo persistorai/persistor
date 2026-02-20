@@ -1,3 +1,4 @@
+-- +goose NO TRANSACTION
 -- +goose Up
 CREATE TABLE kg_audit_log (
     id          BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
@@ -18,9 +19,9 @@ CREATE POLICY tenant_isolation ON kg_audit_log
     WITH CHECK (tenant_id = current_setting('app.tenant_id')::uuid);
 
 -- Indexes for common queries
-CREATE INDEX idx_audit_tenant_created ON kg_audit_log(tenant_id, created_at DESC);
-CREATE INDEX idx_audit_entity ON kg_audit_log(tenant_id, entity_type, entity_id);
-CREATE INDEX idx_audit_action ON kg_audit_log(tenant_id, action);
+CREATE INDEX CONCURRENTLY idx_audit_tenant_created ON kg_audit_log(tenant_id, created_at DESC);
+CREATE INDEX CONCURRENTLY idx_audit_entity ON kg_audit_log(tenant_id, entity_type, entity_id);
+CREATE INDEX CONCURRENTLY idx_audit_action ON kg_audit_log(tenant_id, action);
 
 -- +goose Down
 DROP INDEX IF EXISTS idx_audit_action;

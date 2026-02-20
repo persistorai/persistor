@@ -6,9 +6,9 @@ import "github.com/persistorai/persistor/internal/domain"
 // All interfaces come from the domain package — no local redeclarations.
 type Resolver struct {
 	NodeSvc     domain.NodeService
-	EdgeStore   domain.EdgeService
+	EdgeSvc     domain.EdgeService
 	SearchSvc   domain.SearchService
-	GraphStore  domain.GraphService
+	GraphSvc    domain.GraphService
 	SalienceSvc domain.SalienceService
-	AuditStore  domain.AuditService
+	AuditSvc    domain.AuditService
 }

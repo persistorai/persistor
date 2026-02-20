@@ -10,13 +10,26 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+// Build-time variables set via ldflags.
 var (
-	version   = "dev"
+	version   = "0.6.0"
+	commit    = ""
+	buildDate = ""
+)
+
+var (
 	apiClient *client.Client
 	flagURL   string
 	flagKey   string
 	flagFmt   string
 )
+
+func versionString() string {
+	if commit != "" && buildDate != "" {
+		return fmt.Sprintf("persistor version %s (commit: %s, built: %s)", version, commit, buildDate)
+	}
+	return fmt.Sprintf("persistor version %s-dev", version)
+}
 
 type configFile struct {
 	// Flat format (legacy)
@@ -36,7 +49,7 @@ func main() {
 	rootCmd := &cobra.Command{
 		Use:     "persistor",
 		Short:   "Persistor CLI — knowledge graph memory for AI agents",
-		Version: version,
+		Version: versionString(),
 		PersistentPreRun: func(cmd *cobra.Command, args []string) {
 			resolveConfig()
 			var opts []client.Option
@@ -47,6 +60,7 @@ func main() {
 		},
 		SilenceUsage: true,
 	}
+	rootCmd.SetVersionTemplate("{{.Version}}\n")
 
 	rootCmd.PersistentFlags().StringVar(&flagURL, "url", "http://localhost:3030", "Persistor server URL (env: PERSISTOR_URL)")
 	rootCmd.PersistentFlags().StringVar(&flagKey, "api-key", "", "API key (env: PERSISTOR_API_KEY)")

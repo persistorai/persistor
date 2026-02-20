@@ -1,0 +1,94 @@
+Error:
+  type: object
+  required: [code, message]
+  properties:
+    code:
+      type: string
+      description: Machine-readable error code.
+      enum:
+        - invalid_request
+        - validation_error
+        - not_found
+        - conflict
+        - internal_error
+        - unauthorized
+      example: not_found
+    message:
+      type: string
+      description: Human-readable error description.
+      example: node not found
+
+DeletedResponse:
+  type: object
+  required: [deleted]
+  properties:
+    deleted:
+      type: boolean
+      example: true
+
+SupersededResponse:
+  type: object
+  required: [superseded]
+  properties:
+    superseded:
+      type: boolean
+      example: true
+
+PatchPropertiesRequest:
+  type: object
+  required: [properties]
+  properties:
+    properties:
+      type: object
+      additionalProperties: {}
+      description: >
+        Map of property keys to values. Non-null values are added or updated;
+        null values cause the key to be removed.
+      maxProperties: 1000
+      example:
+        status: active
+        legacy_field: null
+
+SupersedeRequest:
+  type: object
+  required: [old_id, new_id]
+  properties:
+    old_id:
+      type: string
+      maxLength: 255
+      description: ID of the node being superseded.
+    new_id:
+      type: string
+      maxLength: 255
+      description: ID of the replacement node.
+
+BackfillResponse:
+  type: object
+  required: [queued]
+  properties:
+    queued:
+      type: integer
+      description: Number of nodes queued for embedding generation.
+      example: 42
+
+RecalcResponse:
+  type: object
+  required: [updated]
+  properties:
+    updated:
+      type: integer
+      description: Number of nodes whose salience scores were updated.
+      example: 150
+
+AuditPurgeResponse:
+  type: object
+  required: [deleted, retention_days]
+  properties:
+    deleted:
+      type: integer
+      description: Number of audit entries deleted.
+      example: 1200
+    retention_days:
+      type: integer
+      description: Retention window used for this purge.
+      example: 90

@@ -79,7 +79,7 @@ func (r *mutationResolver) CreateEdge(ctx context.Context, input CreateEdgeInput
 	if err := req.Validate(); err != nil {
 		return nil, gqlErr(ctx, err)
 	}
-	e, err := r.EdgeStore.CreateEdge(ctx, tid, req)
+	e, err := r.EdgeSvc.CreateEdge(ctx, tid, req)
 	if err != nil {
 		return nil, gqlErr(ctx, err)
 	}
@@ -99,7 +99,7 @@ func (r *mutationResolver) UpdateEdge(ctx context.Context, source string, target
 	if err := req.Validate(); err != nil {
 		return nil, gqlErr(ctx, err)
 	}
-	e, err := r.EdgeStore.UpdateEdge(ctx, tid, source, target, relation, req)
+	e, err := r.EdgeSvc.UpdateEdge(ctx, tid, source, target, relation, req)
 	if err != nil {
 		return nil, gqlErr(ctx, err)
 	}
@@ -112,7 +112,7 @@ func (r *mutationResolver) DeleteEdge(ctx context.Context, source string, target
 	if err != nil {
 		return false, gqlErr(ctx, err)
 	}
-	if err := r.EdgeStore.DeleteEdge(ctx, tid, source, target, relation); err != nil {
+	if err := r.EdgeSvc.DeleteEdge(ctx, tid, source, target, relation); err != nil {
 		return false, gqlErr(ctx, err)
 	}
 	return true, nil

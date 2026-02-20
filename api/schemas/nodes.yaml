@@ -1,0 +1,172 @@
+Node:
+  type: object
+  required: [id, type, label, properties, access_count, salience_score, user_boosted, created_at, updated_at]
+  properties:
+    id:
+      type: string
+      maxLength: 255
+      description: Unique node identifier (UUID or custom string).
+      example: 550e8400-e29b-41d4-a716-446655440000
+    type:
+      type: string
+      maxLength: 100
+      description: Node type / entity category.
+      example: person
+    label:
+      type: string
+      maxLength: 10000
+      description: Human-readable label for the node.
+      example: Alice Smith
+    properties:
+      type: object
+      additionalProperties: {}
+      description: Arbitrary key-value metadata.
+    embedding:
+      type: array
+      items:
+        type: number
+        format: float
+      description: Vector embedding (omitted when not yet generated).
+    access_count:
+      type: integer
+      description: Number of times this node has been accessed.
+      example: 12
+    last_accessed:
+      type: string
+      format: date-time
+      nullable: true
+      description: Timestamp of last access (null if never accessed).
+    salience_score:
+      type: number
+      format: double
+      description: Computed relevance score; higher values are more salient.
+      example: 0.75
+    superseded_by:
+      type: string
+      nullable: true
+      description: ID of the node that supersedes this one, if any.
+    user_boosted:
+      type: boolean
+      description: Whether a user has manually boosted this node's salience.
+    created_at:
+      type: string
+      format: date-time
+    updated_at:
+      type: string
+      format: date-time
+
+ScoredNode:
+  allOf:
+    - $ref: '#/Node'
+    - type: object
+      required: [score]
+      properties:
+        score:
+          type: number
+          format: double
+          description: Similarity score from semantic search (0–1).
+          example: 0.92
+
+CreateNodeRequest:
+  type: object
+  required: [type, label]
+  properties:
+    id:
+      type: string
+      maxLength: 255
+      description: Optional node ID. A UUID is auto-generated if omitted.
+    type:
+      type: string
+      maxLength: 100
+      description: Node type / entity category.
+      example: document
+    label:
+      type: string
+      maxLength: 10000
+      description: Human-readable label.
+      example: Project proposal Q1
+    properties:
+      type: object
+      additionalProperties: {}
+      description: Arbitrary metadata (max 64 KiB serialized).
+
+UpdateNodeRequest:
+  type: object
+  description: All fields are optional; only provided fields are updated.
+  properties:
+    type:
+      type: string
+      maxLength: 100
+      description: New node type.
+    label:
+      type: string
+      maxLength: 10000
+      description: New label.
+    properties:
+      type: object
+      additionalProperties: {}
+      description: Replaces the entire properties map.
+
+MigrateNodeRequest:
+  type: object
+  required: [new_id]
+  properties:
+    new_id:
+      type: string
+      description: Target ID for the migrated node.
+    new_label:
+      type: string
+      description: Optional new label for the migrated node.
+    delete_old:
+      type: boolean
+      default: false
+      description: Delete the source node after migration.
+
+MigrateNodeResult:
+  type: object
+  required: [old_id, new_id, outgoing_edges, incoming_edges, salience, old_deleted, dry_run]
+  properties:
+    old_id:
+      type: string
+    new_id:
+      type: string
+    outgoing_edges:
+      type: integer
+      description: Number of outgoing edges re-pointed to new_id.
+    incoming_edges:
+      type: integer
+      description: Number of incoming edges re-pointed to new_id.
+    salience:
+      type: number
+      format: double
+      description: Salience score of the new node after migration.
+    old_deleted:
+      type: boolean
+      description: Whether the old node was deleted.
+    dry_run:
+      type: boolean
+      description: Whether this was a dry-run (no changes persisted).
+
+NodeListResponse:
+  type: object
+  required: [nodes, has_more]
+  properties:
+    nodes:
+      type: array
+      items:
+        $ref: '#/Node'
+    has_more:
+      type: boolean
+      description: Whether additional results exist beyond this page.
+
+BulkNodesResponse:
+  type: object
+  required: [upserted, nodes]
+  properties:
+    upserted:
+      type: integer
+      description: Number of nodes created or updated.
+    nodes:
+      type: array
+      items:
+        $ref: '#/Node'

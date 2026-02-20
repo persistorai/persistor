@@ -1,3 +1,4 @@
+-- +goose NO TRANSACTION
 -- +goose Up
 -- Property history tracking for knowledge graph nodes.
 
@@ -13,8 +14,8 @@ CREATE TABLE IF NOT EXISTS kg_property_history (
     changed_by      TEXT
 );
 
-CREATE INDEX idx_property_history_node ON kg_property_history (tenant_id, node_id, changed_at DESC);
-CREATE INDEX idx_property_history_key ON kg_property_history (tenant_id, node_id, property_key, changed_at DESC);
+CREATE INDEX CONCURRENTLY idx_property_history_node ON kg_property_history (tenant_id, node_id, changed_at DESC);
+CREATE INDEX CONCURRENTLY idx_property_history_key ON kg_property_history (tenant_id, node_id, property_key, changed_at DESC);
 
 ALTER TABLE kg_property_history ENABLE ROW LEVEL SECURITY;
 CREATE POLICY tenant_isolation_property_history ON kg_property_history

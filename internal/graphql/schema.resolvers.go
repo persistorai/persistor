@@ -43,7 +43,7 @@ func (r *queryResolver) Edges(ctx context.Context, source *string, target *strin
 	if err != nil {
 		return nil, gqlErr(ctx, err)
 	}
-	edges, hasMore, err := r.EdgeStore.ListEdges(ctx, tid, derefStr(source), derefStr(target), derefStr(relation), deref(limit, 50), deref(offset, 0))
+	edges, hasMore, err := r.EdgeSvc.ListEdges(ctx, tid, derefStr(source), derefStr(target), derefStr(relation), deref(limit, 50), deref(offset, 0))
 	if err != nil {
 		return nil, gqlErr(ctx, err)
 	}
@@ -95,7 +95,7 @@ func (r *queryResolver) Neighbors(ctx context.Context, id string, limit *int) (*
 	if err != nil {
 		return nil, gqlErr(ctx, err)
 	}
-	result, err := r.GraphStore.Neighbors(ctx, tid, id, deref(limit, 50))
+	result, err := r.GraphSvc.Neighbors(ctx, tid, id, deref(limit, 50))
 	if err != nil {
 		return nil, gqlErr(ctx, err)
 	}
@@ -108,7 +108,7 @@ func (r *queryResolver) Traverse(ctx context.Context, id string, maxHops *int) (
 	if err != nil {
 		return nil, gqlErr(ctx, err)
 	}
-	result, err := r.GraphStore.Traverse(ctx, tid, id, deref(maxHops, 2))
+	result, err := r.GraphSvc.Traverse(ctx, tid, id, deref(maxHops, 2))
 	if err != nil {
 		return nil, gqlErr(ctx, err)
 	}
@@ -121,7 +121,7 @@ func (r *queryResolver) Context(ctx context.Context, id string) (*ContextResult,
 	if err != nil {
 		return nil, gqlErr(ctx, err)
 	}
-	result, err := r.GraphStore.GraphContext(ctx, tid, id)
+	result, err := r.GraphSvc.GraphContext(ctx, tid, id)
 	if err != nil {
 		return nil, gqlErr(ctx, err)
 	}
@@ -138,7 +138,7 @@ func (r *queryResolver) Path(ctx context.Context, from string, to string) ([]*No
 	if err != nil {
 		return nil, gqlErr(ctx, err)
 	}
-	nodes, err := r.GraphStore.ShortestPath(ctx, tid, from, to)
+	nodes, err := r.GraphSvc.ShortestPath(ctx, tid, from, to)
 	if err != nil {
 		return nil, gqlErr(ctx, err)
 	}
@@ -165,7 +165,7 @@ func (r *queryResolver) Audit(ctx context.Context, entityType *string, entityID 
 		}
 		opts.Since = &t
 	}
-	entries, hasMore, err := r.AuditStore.QueryAudit(ctx, tid, opts)
+	entries, hasMore, err := r.AuditSvc.QueryAudit(ctx, tid, opts)
 	if err != nil {
 		return nil, gqlErr(ctx, err)
 	}
