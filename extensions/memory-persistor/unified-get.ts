@@ -1,8 +1,7 @@
 import { logger } from './logger.ts';
-import { isWrappedNeighbor } from './types.ts';
 
+import type { PersistorClient, PersistorNode, PersistorContext } from '@persistorai/sdk';
 import type { PersistorPluginConfig } from './config.ts';
-import type { PersistorClient, PersistorNode, PersistorContext } from './persistor-client.ts';
 import type { OpenClawTool, ToolResult } from './types.ts';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu;
@@ -34,8 +33,7 @@ function formatNode(node: PersistorNode, context?: PersistorContext | null): str
   if (context?.neighbors.length) {
     lines.push('', `Neighbors (${context.neighbors.length}):`);
     for (const n of context.neighbors) {
-      const innerNode: PersistorNode = isWrappedNeighbor(n) ? n.node : n;
-      lines.push(`  -> ${innerNode.label} (${innerNode.type})`);
+      lines.push(`  -> ${n.label} (${n.type})`);
     }
   }
   if (context?.edges?.length) {
@@ -54,7 +52,6 @@ async function getPersistorNode(
 ): Promise<string | null> {
   try {
     const node = await client.getNode(id);
-    if (!node) return null;
     const context = includeContext ? await client.getContext(id) : null;
     return formatNode(node, context);
   } catch (e: unknown) {
@@ -73,11 +70,8 @@ export function createUnifiedGetTool(
   persistorClient: PersistorClient,
   config: PersistorPluginConfig,
 ): OpenClawTool {
-  // bind is a no-op for arrow fns but kept for safety if execute is ever a method
   const originalExecute = fileGetTool.execute.bind(fileGetTool);
 
-  // Object.create clone preserves prototype chain + own property descriptors.
-  // Assumes no private class fields (WeakMap-based or #-private) on the tool.
   const wrappedTool = Object.create(
     Object.getPrototypeOf(fileGetTool) as object,
     Object.getOwnPropertyDescriptors(fileGetTool),

@@ -1,4 +1,4 @@
-/** Configuration for the memory-persistor plugin */
+/** Extension-level config that wraps SDK client config + extension-specific options */
 export interface PersistorPluginConfig {
   persistor: {
     url: string;

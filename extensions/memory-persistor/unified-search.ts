@@ -1,9 +1,12 @@
+import { PersistorClient } from '@persistorai/sdk';
+
+import { logger } from './logger.ts';
 import { mergeResults } from './result-merger.ts';
 
 import type { PersistorPluginConfig } from './config.ts';
-import type { PersistorClient } from './persistor-client.ts';
 import type { FileSearchResult } from './result-merger.ts';
-import type { OpenClawTool, PersistorSearchResult, ToolContentPart, ToolResult } from './types.ts';
+import type { PersistorSearchResult } from '@persistorai/sdk';
+import type { OpenClawTool, ToolContentPart, ToolResult } from './types.ts';
 import type { TextContent } from '@mariozechner/pi-ai';
 
 /**
@@ -65,6 +68,28 @@ function jsonResult(payload: unknown): ToolResult {
 }
 
 /**
+ * Search Persistor using the configured search mode.
+ * Truncates query to 500 chars for safety.
+ */
+async function searchPersistor(
+  client: PersistorClient,
+  query: string,
+  config: PersistorPluginConfig,
+): Promise<PersistorSearchResult[]> {
+  const safeQuery = query.length > 500 ? query.slice(0, 500) : query;
+  const params = { q: safeQuery, limit: config.persistor.searchLimit };
+  const mode = config.persistor.searchMode;
+  try {
+    if (mode === 'semantic') return await client.searchSemantic(params);
+    if (mode === 'text') return await client.search(params);
+    return await client.searchHybrid(params);
+  } catch (e: unknown) {
+    logger.warn('Persistor search failed:', e);
+    return [];
+  }
+}
+
+/**
  * Wraps the built-in file search tool, adding Persistor results.
  * Returns a cloned tool object that preserves all properties (including
  * non-enumerable ones) with only `execute` and `description` overridden.
@@ -74,11 +99,8 @@ export function createUnifiedSearchTool(
   persistorClient: PersistorClient,
   config: PersistorPluginConfig,
 ): OpenClawTool {
-  // bind is a no-op for arrow fns but kept for safety if execute is ever a method
   const originalExecute = fileSearchTool.execute.bind(fileSearchTool);
 
-  // Object.create clone preserves prototype chain + own property descriptors.
-  // Assumes no private class fields (WeakMap-based or #-private) on the tool.
   const wrappedTool = Object.create(
     Object.getPrototypeOf(fileSearchTool) as object,
     Object.getOwnPropertyDescriptors(fileSearchTool),
@@ -99,7 +121,7 @@ export function createUnifiedSearchTool(
 
     const [fileResult, persistorResult] = await Promise.allSettled([
       originalExecute(toolCallId, params),
-      persistorClient.search(query, { limit: config.persistor.searchLimit }),
+      searchPersistor(persistorClient, query, config),
     ]);
 
     const fileResults =

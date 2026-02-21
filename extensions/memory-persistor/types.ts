@@ -1,5 +1,13 @@
 import type { TextContent, ImageContent } from '@mariozechner/pi-ai';
 
+// Re-export SDK types for backward compatibility
+export type {
+  PersistorNode,
+  PersistorEdge,
+  PersistorSearchResult,
+  PersistorContext,
+} from '@persistorai/sdk';
+
 /** Content part within a tool result — re-exported from pi-ai for SDK compatibility. */
 export type ToolContentPart = TextContent | ImageContent;
 
@@ -21,54 +29,6 @@ export interface OpenClawTool {
     signal?: AbortSignal,
     onUpdate?: (partialResult: ToolResult) => void,
   ) => Promise<ToolResult>;
-}
-
-/** A node returned by the Persistor API (search, get, or context) */
-export interface PersistorNode {
-  id: string;
-  type: string;
-  label: string;
-  properties: Record<string, unknown>;
-  salience_score: number;
-  created_at: string;
-  updated_at: string;
-}
-
-/** A result from Persistor search API */
-export interface PersistorSearchResult {
-  id: string;
-  type: string;
-  label: string;
-  properties: Record<string, unknown>;
-  salience_score: number;
-  score?: number;
-}
-
-/** Edge in a Persistor context response */
-export interface PersistorEdge {
-  source: string;
-  target: string;
-  relation?: string;
-  type?: string;
-  weight?: number;
-}
-
-/** A neighbor entry that wraps node + edge + direction */
-export interface WrappedNeighbor {
-  node: PersistorNode;
-  edge: PersistorEdge;
-  direction: string;
-}
-
-export function isWrappedNeighbor(v: unknown): v is WrappedNeighbor {
-  return v != null && typeof v === 'object' && 'node' in v && 'edge' in v;
-}
-
-/** Context response from Persistor — node with neighbors and edges */
-export interface PersistorContext {
-  node: PersistorNode;
-  neighbors: (PersistorNode | WrappedNeighbor)[];
-  edges?: PersistorEdge[];
 }
 
 /** Unified result after merging */

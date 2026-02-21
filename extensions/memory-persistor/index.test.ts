@@ -2,7 +2,7 @@ import { resolveConfig, defaultConfig } from './config.ts';
 import { mergeResults } from './result-merger.ts';
 import { createUnifiedGetTool } from './unified-get.ts';
 
-import type { PersistorClient } from './persistor-client.ts';
+import type { PersistorClient } from '@persistorai/sdk';
 import type { OpenClawTool } from './types.ts';
 
 let passed = 0;

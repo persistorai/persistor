@@ -1,6 +1,7 @@
+import { PersistorClient } from '@persistorai/sdk';
+
 import { resolveConfig } from './config.ts';
 import { logger } from './logger.ts';
-import { PersistorClient } from './persistor-client.ts';
 import { createUnifiedGetTool } from './unified-get.ts';
 import { createUnifiedSearchTool } from './unified-search.ts';
 
@@ -29,16 +30,20 @@ const memoryPersistorPlugin = {
   register(api: OpenClawPluginApi) {
     const pluginConfig = getPluginConfig(api);
     const config = resolveConfig(pluginConfig);
-    const persistorClient = new PersistorClient(config.persistor);
+    const persistorClient = new PersistorClient({
+      url: config.persistor.url,
+      apiKey: config.persistor.apiKey,
+      timeout: config.persistor.timeout,
+    });
 
     // Fire-and-forget health check
     persistorClient
-      .checkHealth()
-      .then((ok) => {
-        logger.debug(ok ? 'Persistor connected' : 'Persistor unreachable — file-only mode');
+      .ready()
+      .then(() => {
+        logger.debug('Persistor connected');
       })
       .catch(() => {
-        /* health check is fire-and-forget */
+        logger.debug('Persistor unreachable — file-only mode');
       });
 
     api.registerTool(
@@ -71,26 +76,28 @@ const memoryPersistorPlugin = {
         kg.command('status')
           .description('Check Persistor health and stats')
           .action(async () => {
-            const healthy = await persistorClient.checkHealth();
-            // Intentional console.log — this is CLI output
-            console.log(
-              healthy
-                ? '[memory-persistor] [OK] Persistor is healthy'
-                : '[memory-persistor] [WARN] Persistor is unreachable',
-            );
+            try {
+              await persistorClient.ready();
+              console.log('[memory-persistor] [OK] Persistor is healthy');
+            } catch {
+              console.log('[memory-persistor] [WARN] Persistor is unreachable');
+            }
           });
 
         kg.command('search <query>')
           .description('Search Persistor directly')
           .action(async (query: string) => {
-            const results = await persistorClient.search(query);
-            // Intentional console.log — CLI output for search results
-            if (results.length === 0) {
-              console.log('[memory-persistor] No results.');
-              return;
-            }
-            for (const r of results) {
-              console.log(`[${r.type}] ${r.label} (salience: ${r.salience_score}) — ${r.id}`);
+            try {
+              const results = await persistorClient.search({ q: query });
+              if (results.length === 0) {
+                console.log('[memory-persistor] No results.');
+                return;
+              }
+              for (const r of results) {
+                console.log(`[${r.type}] ${r.label} (salience: ${r.salience_score}) — ${r.id}`);
+              }
+            } catch (e: unknown) {
+              console.log(`[memory-persistor] Search failed: ${e instanceof Error ? e.message : String(e)}`);
             }
           });
       },
