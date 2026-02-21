@@ -10,36 +10,92 @@
 </p>
 
 <p align="center">
+  <img alt="Version" src="https://img.shields.io/badge/version-0.6.0-green">
   <img alt="License" src="https://img.shields.io/badge/license-AGPL--3.0-blue">
   <img alt="Go" src="https://img.shields.io/badge/go-1.25+-00ADD8?logo=go&logoColor=white">
   <img alt="PostgreSQL" src="https://img.shields.io/badge/PostgreSQL-16+-336791?logo=postgresql&logoColor=white">
 </p>
 
-Persistent knowledge graph and vector memory for AI agents.
-Persistent knowledge graph and vector memory for AI agents. Durable, searchable,
-graph-structured memory across sessions.
+Durable, searchable, graph-structured memory across sessions. Designed for AI agents
+and the developers who build them.
 
 ## Architecture
 
 - **Go + Gin** — Fast, type-safe REST API
-- **PostgreSQL 18 + pgvector** — Knowledge graph storage with vector similarity search
+- **PostgreSQL 16+ + pgvector** — Knowledge graph storage with vector similarity search
+- **Hybrid search** — Reciprocal Rank Fusion combines full-text + vector results; falls back to text-only if embeddings are unavailable
+- **Salience scoring** — Every node tracks access patterns, recency, and user boosts to surface the most relevant memories automatically
 - **AES-256-GCM encryption** — All node/edge properties encrypted at rest, transparent to API consumers
-- **Ollama embeddings** — Automatic vector generation for semantic search (qwen3-embedding:0.6b)
-- **Row-Level Security** — Complete tenant isolation, one API key = one tenant
+- **Ollama embeddings** — Automatic vector generation (qwen3-embedding:0.6b)
+- **Row-Level Security** — Complete tenant isolation; one API key = one tenant
 - **WebSocket** — Real-time change notifications via PostgreSQL LISTEN/NOTIFY
+
+## CLI
+
+The `persistor` CLI is a first-class interface for interacting with your knowledge graph
+without writing a single HTTP request.
+
+```bash
+# Install
+make build-cli && sudo make install-cli   # installs to /usr/local/bin/persistor
+
+# Configure (stored in ~/.persistor/config.yaml)
+persistor init
+```
+
+**Key commands:**
+
+```bash
+# Nodes
+persistor node create --type person --label "Alice Smith" --id alice
+persistor node get alice
+persistor node list --type person --min-salience 0.5
+
+# Search
+persistor search "active projects"           # full-text
+persistor search --semantic "project risks"  # vector similarity
+persistor search --hybrid "database memory"  # text + vector (recommended)
+
+# Graph traversal
+persistor graph neighbors alice
+persistor graph traverse alice --hops 3
+persistor graph context alice              # node + neighbors + edges in one call
+
+# Salience
+persistor salience boost alice             # mark a node as important
+persistor salience recalc                  # recompute scores from access patterns
+
+# Admin & diagnostics
+persistor admin stats                      # knowledge graph statistics
+persistor doctor                           # check server connectivity and config
+```
+
+**Global flags:** `--url` (default `http://localhost:3030`, or `PERSISTOR_URL`),
+`--api-key` (or `PERSISTOR_API_KEY`), `--format json|table|quiet`.
+
+## Salience Scoring
+
+Every node and edge carries a `salience_score` that Persistor updates automatically:
+
+- **Access patterns** — nodes read frequently score higher
+- **Recency** — recently accessed nodes decay more slowly
+- **User boosts** — explicit `salience/boost` marks a node as important (`user_boosted: true`)
+- **Supersession** — outdated nodes link to their replacement via `superseded_by`
+- **Recalc** — `POST /salience/recalc` (or `persistor salience recalc`) refreshes all scores
+
+Query by minimum salience (`?min_salience=0.5`) to retrieve only what matters right now.
 
 ## Quick Start
 
 ### Prerequisites
 
 - Go 1.25+
-- PostgreSQL 18 with pgvector extension
+- PostgreSQL 16+ with pgvector extension
 - Ollama running locally (for embedding generation)
 
 ### Setup
 
 ```bash
-# Clone and build
 git clone https://github.com/persistorai/persistor.git
 cd persistor
 
@@ -90,17 +146,16 @@ with curl examples, data model documentation, and agent-specific usage patterns.
 | Group     | Endpoints                                                                                                    |
 | --------- | ------------------------------------------------------------------------------------------------------------ |
 | Health    | `GET /health`, `GET /ready`                                                                                  |
-| Nodes     | `GET/POST /nodes`, `GET/PUT/DELETE /nodes/:id`                                                               |
-| Edges     | `GET/POST /edges`, `PUT/DELETE /edges/:source/:target/:relation`                                             |
+| Nodes     | `GET/POST /nodes`, `GET/PUT/PATCH/DELETE /nodes/:id`                                                         |
+| Edges     | `GET/POST /edges`, `PUT/PATCH/DELETE /edges/:source/:target/:relation`                                       |
 | Search    | `GET /search`, `GET /search/semantic`, `GET /search/hybrid`                                                  |
 | Graph     | `GET /graph/neighbors/:id`, `GET /graph/traverse/:id`, `GET /graph/context/:id`, `GET /graph/path/:from/:to` |
 | Bulk      | `POST /bulk/nodes`, `POST /bulk/edges`                                                                       |
 | Salience  | `POST /salience/boost/:id`, `POST /salience/supersede`, `POST /salience/recalc`                              |
 | WebSocket | `GET /ws`                                                                                                    |
-| Admin     | `POST /admin/backfill-embeddings`                                                                            |
+| Admin     | `GET /stats`, `POST /admin/backfill-embeddings`                                                              |
 | Audit     | `GET /audit`, `DELETE /audit`                                                                                |
 | History   | `GET /nodes/:id/history`                                                                                     |
-| Stats     | `GET /stats`                                                                                                 |
 | Metrics   | `GET /metrics` (Prometheus, outside `/api/v1/`)                                                              |
 | GraphQL   | `POST /graphql`, `GET /graphql/playground`                                                                   |
 
@@ -109,21 +164,20 @@ All under `/api/v1/` unless noted.
 ## Development
 
 ```bash
-make build          # Build binary to bin/server
-make run            # Build and run
+make build          # Build server and CLI binaries
+make run            # Build and run the server
 make test           # Run tests with race detection
 make test-coverage  # Tests + HTML coverage report
 make lint           # golangci-lint
 make lint-fix       # Auto-fix lint issues
 make format         # gofmt + goimports
-make vet            # go vet
 make ci             # Full CI: format → vet → lint → test + coverage
-make deps           # Download dependencies
-make tidy           # go mod tidy
-make setup-hooks    # Install git pre-commit hook
 ```
 
 ## Deployment
+
+Persistor ships as a **Go binary + systemd service**. Docker is intentionally not supported —
+the binary is small, fast, and runs directly on the host alongside PostgreSQL and Ollama.
 
 ### systemd
 
@@ -150,15 +204,13 @@ Place environment variables in `/etc/persistor.env` (chmod 600, owned by root).
 
 ### Production Keys via Vault
 
-For production, use the Vault encryption provider instead of a static key:
-
 ```bash
 export ENCRYPTION_PROVIDER=vault
 export VAULT_ADDR=http://127.0.0.1:8200
 export VAULT_TOKEN=<your-vault-token>
 ```
 
-The service fetches the encryption key from Vault at startup, avoiding plaintext keys in environment variables.
+The service fetches the encryption key from Vault at startup, avoiding plaintext keys in environment files.
 
 ### Backup / Restore
 
@@ -170,4 +222,9 @@ The service fetches the encryption key from Vault at startup, avoiding plaintext
 
 ## License
 
-This project is licensed under AGPL-3.0. See [LICENSE](LICENSE) for details. The Go SDK (`client/`) is licensed under Apache-2.0 to allow unrestricted client integration.
+AGPL-3.0. See [LICENSE](LICENSE) for details. Commercial licensing is available for
+organizations that cannot use AGPL — contact [hello@persistor.ai](mailto:hello@persistor.ai).
+
+The Go SDK (`client/`) is Apache-2.0 to allow unrestricted client integration.
+
+See [CHANGELOG.md](CHANGELOG.md) for release history.
