@@ -14,7 +14,7 @@
     "quality": "npm run type-check && npm run lint && npm run format:check"
   },
   "dependencies": {
-    "@persistorai/sdk": "^0.1.0"
+    "@persistorai/sdk": "^0.1.1"
   },
   "devDependencies": {
     "@eslint/js": "^9.17.0",
@@ -22,14 +22,16 @@
     "eslint-config-prettier": "^9.1.0",
     "eslint-plugin-import": "^2.31.0",
     "prettier": "^3.7.0",
+    "tsx": "^4.0.0",
     "typescript": "^5.7.0",
-    "typescript-eslint": "^8.18.0",
-    "tsx": "^4.0.0"
+    "typescript-eslint": "^8.18.0"
   },
   "peerDependencies": {
     "openclaw": ">=2026.1.26"
   },
   "openclaw": {
-    "extensions": ["./index.ts"]
+    "extensions": [
+      "./index.ts"
+    ]
   }
 }
