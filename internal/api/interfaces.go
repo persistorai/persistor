@@ -13,6 +13,7 @@ type (
 	BulkService    = domain.BulkService
 	AuditService   = domain.AuditService
 	Auditor        = domain.Auditor
-	AdminService   = domain.AdminService
-	HistoryService = domain.HistoryService
+	AdminService         = domain.AdminService
+	HistoryService       = domain.HistoryService
+	ExportImportService  = domain.ExportImportService
 )

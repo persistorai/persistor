@@ -33,6 +33,7 @@ type RouterDeps struct {
 	Embedding        AdminService
 	History          HistoryService
 	Audit            AuditService
+	ExportImport     ExportImportService
 	TenantLookup     middleware.TenantLookup
 	EmbedWorker      *service.EmbedWorker // used by admin handler only
 	CORSOrigins      []string
@@ -84,6 +85,7 @@ func registerRoutes(ctx context.Context, api *gin.RouterGroup, deps *RouterDeps)
 	stats := NewStatsHandler(deps.Pool, log)
 	history := NewHistoryHandler(deps.History, log)
 	audit := NewAuditHandler(deps.Audit, log)
+	exportImport := NewExportImportHandler(deps.ExportImport, log)
 
 	// Health and readiness are unauthenticated.
 	api.GET("/health", health.Liveness)
@@ -140,6 +142,11 @@ func registerRoutes(ctx context.Context, api *gin.RouterGroup, deps *RouterDeps)
 
 	// Stats.
 	api.GET("/stats", stats.GetStats)
+
+	// Export / Import.
+	api.GET("/export", exportImport.Export)
+	api.POST("/import", exportImport.Import)
+	api.POST("/import/validate", exportImport.Validate)
 
 	// Admin.
 	api.POST("/admin/backfill-embeddings", admin.BackfillEmbeddings)
