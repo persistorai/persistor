@@ -80,3 +80,15 @@ type AdminService interface {
 type HistoryService interface {
 	GetPropertyHistory(ctx context.Context, tenantID, nodeID string, propertyKey string, limit, offset int) ([]models.PropertyChange, bool, error)
 }
+
+// ExportImportService defines backup and restore operations for the knowledge graph.
+// It is consumed by the openclaw-backup plugin and any administrative tooling.
+type ExportImportService interface {
+	// Export serialises all nodes and edges for a tenant into a portable format.
+	Export(ctx context.Context, tenantID string) (*models.ExportFormat, error)
+	// Import ingests a previously exported payload into the tenant's graph.
+	Import(ctx context.Context, tenantID string, data *models.ExportFormat, opts models.ImportOptions) (*models.ImportResult, error)
+	// ValidateImport checks an export payload for consistency errors without writing
+	// anything to the database. Returns a list of human-readable error descriptions.
+	ValidateImport(ctx context.Context, tenantID string, data *models.ExportFormat) ([]string, error)
+}
