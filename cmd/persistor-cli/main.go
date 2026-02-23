@@ -81,6 +81,8 @@ func main() {
 	rootCmd.AddCommand(newAdminCmd())
 	rootCmd.AddCommand(newAuditCmd())
 	rootCmd.AddCommand(newImportCmd())
+	rootCmd.AddCommand(newExportCmd())
+	rootCmd.AddCommand(newImportKGCmd())
 
 	if err := rootCmd.Execute(); err != nil {
 		os.Exit(1)

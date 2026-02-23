@@ -67,16 +67,25 @@ func upsertNodeOverwrite(
 ) (string, error) {
 	var wasInserted bool
 
+	var embeddingVal any
+	if len(node.Embedding) > 0 {
+		embeddingVal = formatEmbedding(node.Embedding)
+	}
+
 	err := tx.QueryRow(ctx, `
 		INSERT INTO kg_nodes
 			(id, tenant_id, type, label, properties,
+			 embedding, access_count, last_accessed,
 			 salience_score, user_boosted, superseded_by,
 			 created_at, updated_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+		VALUES ($1, $2, $3, $4, $5, $6::vector, $7, $8, $9, $10, $11, $12, $13)
 		ON CONFLICT (tenant_id, id) DO UPDATE SET
 			type          = EXCLUDED.type,
 			label         = EXCLUDED.label,
 			properties    = EXCLUDED.properties,
+			embedding     = EXCLUDED.embedding,
+			access_count  = EXCLUDED.access_count,
+			last_accessed = EXCLUDED.last_accessed,
 			salience_score = EXCLUDED.salience_score,
 			user_boosted  = EXCLUDED.user_boosted,
 			superseded_by = EXCLUDED.superseded_by,
@@ -84,6 +93,7 @@ func upsertNodeOverwrite(
 		RETURNING (xmax = 0) AS was_inserted
 	`,
 		node.ID, tenantID, node.Type, node.Label, propsJSON,
+		embeddingVal, node.AccessCount, node.LastAccessed,
 		node.SalienceScore, node.UserBoosted, node.SupersededBy,
 		node.CreatedAt, node.UpdatedAt,
 	).Scan(&wasInserted)
@@ -105,15 +115,22 @@ func upsertNodeSkip(
 	node models.ExportNode,
 	propsJSON []byte,
 ) (string, error) {
+	var embeddingVal any
+	if len(node.Embedding) > 0 {
+		embeddingVal = formatEmbedding(node.Embedding)
+	}
+
 	tag, err := tx.Exec(ctx, `
 		INSERT INTO kg_nodes
 			(id, tenant_id, type, label, properties,
+			 embedding, access_count, last_accessed,
 			 salience_score, user_boosted, superseded_by,
 			 created_at, updated_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+		VALUES ($1, $2, $3, $4, $5, $6::vector, $7, $8, $9, $10, $11, $12, $13)
 		ON CONFLICT (tenant_id, id) DO NOTHING
 	`,
 		node.ID, tenantID, node.Type, node.Label, propsJSON,
+		embeddingVal, node.AccessCount, node.LastAccessed,
 		node.SalienceScore, node.UserBoosted, node.SupersededBy,
 		node.CreatedAt, node.UpdatedAt,
 	)
@@ -188,16 +205,20 @@ func upsertEdgeOverwrite(
 	err := tx.QueryRow(ctx, `
 		INSERT INTO kg_edges
 			(tenant_id, source, target, relation, properties,
-			 weight, created_at, updated_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+			 weight, access_count, last_accessed,
+			 created_at, updated_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
 		ON CONFLICT (tenant_id, source, target, relation) DO UPDATE SET
-			properties = EXCLUDED.properties,
-			weight     = EXCLUDED.weight,
-			updated_at = EXCLUDED.updated_at
+			properties    = EXCLUDED.properties,
+			weight        = EXCLUDED.weight,
+			access_count  = EXCLUDED.access_count,
+			last_accessed = EXCLUDED.last_accessed,
+			updated_at    = EXCLUDED.updated_at
 		RETURNING (xmax = 0) AS was_inserted
 	`,
 		tenantID, edge.Source, edge.Target, edge.Relation, propsJSON,
-		edge.Weight, edge.CreatedAt, edge.UpdatedAt,
+		edge.Weight, edge.AccessCount, edge.LastAccessed,
+		edge.CreatedAt, edge.UpdatedAt,
 	).Scan(&wasInserted)
 	if err != nil {
 		return "", fmt.Errorf("upserting edge: %w", err)
@@ -220,12 +241,14 @@ func upsertEdgeSkip(
 	tag, err := tx.Exec(ctx, `
 		INSERT INTO kg_edges
 			(tenant_id, source, target, relation, properties,
-			 weight, created_at, updated_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+			 weight, access_count, last_accessed,
+			 created_at, updated_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
 		ON CONFLICT (tenant_id, source, target, relation) DO NOTHING
 	`,
 		tenantID, edge.Source, edge.Target, edge.Relation, propsJSON,
-		edge.Weight, edge.CreatedAt, edge.UpdatedAt,
+		edge.Weight, edge.AccessCount, edge.LastAccessed,
+		edge.CreatedAt, edge.UpdatedAt,
 	)
 	if err != nil {
 		return "", fmt.Errorf("inserting edge: %w", err)

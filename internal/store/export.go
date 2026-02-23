@@ -3,9 +3,34 @@ package store
 import (
 	"context"
 	"fmt"
+	"strconv"
+	"strings"
 
 	"github.com/persistorai/persistor/internal/models"
 )
+
+// parseEmbedding converts a pgvector string "[0.1,0.2,...]" back to []float32.
+func parseEmbedding(s string) []float32 {
+	s = strings.TrimPrefix(s, "[")
+	s = strings.TrimSuffix(s, "]")
+	if s == "" {
+		return nil
+	}
+
+	parts := strings.Split(s, ",")
+	out := make([]float32, 0, len(parts))
+
+	for _, p := range parts {
+		v, err := strconv.ParseFloat(strings.TrimSpace(p), 32)
+		if err != nil {
+			continue
+		}
+
+		out = append(out, float32(v))
+	}
+
+	return out
+}
 
 // ExportStore handles export and import operations for the knowledge graph.
 type ExportStore struct {
@@ -17,8 +42,9 @@ func NewExportStore(base Base) *ExportStore {
 	return &ExportStore{Base: base}
 }
 
-// ExportAllNodes reads all nodes for a tenant, excluding embeddings.
+// ExportAllNodes reads all nodes for a tenant with full fidelity.
 // Properties are decrypted before returning for portable export.
+// Embeddings and access metrics are included for backup/restore.
 // Returns nodes sorted by created_at, id for deterministic exports.
 func (s *ExportStore) ExportAllNodes(ctx context.Context, tenantID string) ([]models.ExportNode, error) {
 	ctx, cancel := withTimeout(ctx)
@@ -33,6 +59,7 @@ func (s *ExportStore) ExportAllNodes(ctx context.Context, tenantID string) ([]mo
 
 	rows, err := tx.Query(ctx, `
 		SELECT id, type, label, properties,
+		       embedding, access_count, last_accessed,
 		       salience_score, user_boosted, superseded_by,
 		       created_at, updated_at
 		FROM kg_nodes
@@ -50,13 +77,19 @@ func (s *ExportStore) ExportAllNodes(ctx context.Context, tenantID string) ([]mo
 	for rows.Next() {
 		var n models.ExportNode
 		var propsBytes []byte
+		var embeddingStr *string
 
 		if err := rows.Scan(
 			&n.ID, &n.Type, &n.Label, &propsBytes,
+			&embeddingStr, &n.AccessCount, &n.LastAccessed,
 			&n.SalienceScore, &n.UserBoosted, &n.SupersededBy,
 			&n.CreatedAt, &n.UpdatedAt,
 		); err != nil {
 			return nil, fmt.Errorf("scanning export node: %w", err)
+		}
+
+		if embeddingStr != nil {
+			n.Embedding = parseEmbedding(*embeddingStr)
 		}
 
 		props, err := s.decryptPropertiesRaw(ctx, tenantID, propsBytes)
@@ -95,7 +128,8 @@ func (s *ExportStore) ExportAllEdges(ctx context.Context, tenantID string) ([]mo
 
 	rows, err := tx.Query(ctx, `
 		SELECT source, target, relation, properties,
-		       weight, created_at, updated_at
+		       weight, access_count, last_accessed,
+		       created_at, updated_at
 		FROM kg_edges
 		WHERE tenant_id = current_setting('app.tenant_id')::uuid
 		ORDER BY source, target, relation
@@ -114,7 +148,8 @@ func (s *ExportStore) ExportAllEdges(ctx context.Context, tenantID string) ([]mo
 
 		if err := rows.Scan(
 			&e.Source, &e.Target, &e.Relation, &propsBytes,
-			&e.Weight, &e.CreatedAt, &e.UpdatedAt,
+			&e.Weight, &e.AccessCount, &e.LastAccessed,
+			&e.CreatedAt, &e.UpdatedAt,
 		); err != nil {
 			return nil, fmt.Errorf("scanning export edge: %w", err)
 		}
