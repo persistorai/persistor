@@ -83,6 +83,7 @@ func main() {
 	rootCmd.AddCommand(newImportCmd())
 	rootCmd.AddCommand(newExportCmd())
 	rootCmd.AddCommand(newImportKGCmd())
+	rootCmd.AddCommand(newSchemaCmd())
 
 	if err := rootCmd.Execute(); err != nil {
 		os.Exit(1)

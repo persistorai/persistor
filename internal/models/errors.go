@@ -17,8 +17,10 @@ var (
 
 // Sentinel errors for entity lookups.
 var (
-	ErrNodeNotFound = errors.New("node not found")
-	ErrEdgeNotFound = errors.New("edge not found")
+	ErrNodeNotFound            = errors.New("node not found")
+	ErrEdgeNotFound            = errors.New("edge not found")
+	ErrRelationTypeNotFound    = errors.New("relation type not found")
+	ErrUnknownRelationNotFound = errors.New("unknown relation not found")
 )
 
 // ErrDuplicateKey indicates a unique constraint violation (maps to HTTP 409 Conflict).
