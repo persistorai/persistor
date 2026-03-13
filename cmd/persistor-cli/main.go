@@ -85,6 +85,23 @@ func main() {
 	rootCmd.AddCommand(newImportKGCmd())
 	rootCmd.AddCommand(newSchemaCmd())
 
+	ingestCmd := newIngestCmd()
+	ingestCmd.PersistentPreRun = func(cmd *cobra.Command, args []string) {
+		// review-unknown and resolve don't need a running server.
+		reviewUnknown, _ := cmd.Flags().GetBool("review-unknown")
+		resolveID, _ := cmd.Flags().GetString("resolve")
+		if reviewUnknown || resolveID != "" {
+			return
+		}
+		resolveConfig()
+		var opts []client.Option
+		if flagKey != "" {
+			opts = append(opts, client.WithAPIKey(flagKey))
+		}
+		apiClient = client.New(flagURL, opts...)
+	}
+	rootCmd.AddCommand(ingestCmd)
+
 	if err := rootCmd.Execute(); err != nil {
 		os.Exit(1)
 	}
