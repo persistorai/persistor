@@ -28,32 +28,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## [0.8.0] — 2026-03-14
-
-### Features
-
-- **Temporal edges** — edges now support time-bounded relationships
-  - `date_start` and `date_end` fields (EDTF format: exact, month, year, approximate, decades)
-  - `is_current` flag for ongoing relationships
-  - Server-computed `date_lower`, `date_upper`, and `date_qualifier` bounds for querying
-- **EDTF date parser** (`internal/edtf/`) — Extended Date/Time Format parser with bounds calculation
-  - Supports: exact dates (`2019-10-15`), month precision (`2009-05`), year (`1983`), approximate (`~1983`), decades (`199X`), unknown (`..`)
-- **Temporal queries** in CLI:
-  - `persistor edge list --active-on 2019-10-15` — find edges active at a point in time
-  - `persistor edge list --current` — find all current/ongoing relationships
-  - `persistor edge create/update --date-start/--date-end/--current` flags
-- **Temporal extraction in ingest** — LLM extractor now pulls date information from text during `persistor ingest`
-- GraphQL schema updated with temporal edge fields
-- Go client (`client/`) updated with temporal field support
-
-### Technical
-
-- Migration 012: adds `date_start`, `date_end`, `date_lower`, `date_upper`, `is_current`, `date_qualifier` columns to `kg_edges`
-- Temporal fields are plain columns (not encrypted) for queryability
-- Edge store refactored: `edge_patch.go`, `edge_temporal.go` split out for maintainability
-- 32 files changed, +1,270 lines across migration, parser, model, store, API, GraphQL, CLI, client, and ingest
-- 238 new EDTF parser tests, 118 new extractor tests, expanded CLI/format tests
-
 ## [0.7.0] — 2026-02-16
 
 Initial public release.
