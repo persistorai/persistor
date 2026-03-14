@@ -12,6 +12,7 @@ import (
 // mockGraphClient implements ingest.GraphClient for testing.
 type mockGraphClient struct {
 	labelNodes   map[string]*client.Node
+	searchNodes  []client.Node
 	createdNodes []client.CreateNodeRequest
 	patchedProps map[string]map[string]any
 	createdEdges []client.CreateEdgeRequest
@@ -28,6 +29,10 @@ func newMockGraphClient() *mockGraphClient {
 
 func (m *mockGraphClient) GetNodeByLabel(_ context.Context, label string) (*client.Node, error) {
 	return m.labelNodes[label], nil
+}
+
+func (m *mockGraphClient) SearchNodes(_ context.Context, _ string, _ int) ([]client.Node, error) {
+	return m.searchNodes, nil
 }
 
 func (m *mockGraphClient) CreateNode(_ context.Context, req *client.CreateNodeRequest) (*client.Node, error) {

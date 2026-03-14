@@ -22,6 +22,15 @@ func (p *persistorClient) GetNodeByLabel(ctx context.Context, label string) (*cl
 	return p.c.Nodes.GetByLabel(ctx, label)
 }
 
+// SearchNodes performs a full-text search returning up to limit nodes.
+func (p *persistorClient) SearchNodes(
+	ctx context.Context,
+	query string,
+	limit int,
+) ([]client.Node, error) {
+	return p.c.Search.FullText(ctx, query, &client.SearchOptions{Limit: limit})
+}
+
 // CreateNode creates a new node via the API.
 func (p *persistorClient) CreateNode(
 	ctx context.Context,

@@ -10,6 +10,7 @@ import (
 // GraphClient abstracts the Persistor API operations needed by the writer.
 type GraphClient interface {
 	GetNodeByLabel(ctx context.Context, label string) (*client.Node, error)
+	SearchNodes(ctx context.Context, query string, limit int) ([]client.Node, error)
 	CreateNode(ctx context.Context, req *client.CreateNodeRequest) (*client.Node, error)
 	UpdateNode(ctx context.Context, id string, req *client.UpdateNodeRequest) (*client.Node, error)
 	PatchNodeProperties(ctx context.Context, id string, properties map[string]any) (*client.Node, error)

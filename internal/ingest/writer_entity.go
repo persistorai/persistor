@@ -33,14 +33,19 @@ func (w *Writer) writeEntity(
 	return id, actionCreated, nil
 }
 
-// findByName looks up a node by exact label match (case-insensitive).
+// findByName looks up a node by exact label match first, then falls back to
+// fuzzy matching via full-text search if no exact match is found.
 func (w *Writer) findByName(ctx context.Context, name string) (*client.Node, error) {
 	node, err := w.graph.GetNodeByLabel(ctx, name)
 	if err != nil {
 		return nil, fmt.Errorf("looking up node by label %q: %w", name, err)
 	}
+	if node != nil {
+		return node, nil
+	}
 
-	return node, nil
+	// Fall back to fuzzy search
+	return w.findByNameFuzzy(ctx, name)
 }
 
 // createEntity creates a new node for the extracted entity.
