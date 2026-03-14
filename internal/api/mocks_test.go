@@ -23,6 +23,10 @@ func (m *mockNodeRepo) GetNode(ctx context.Context, tenantID, nodeID string) (*m
 	return m.getFn(ctx, tenantID, nodeID)
 }
 
+func (m *mockNodeRepo) GetNodeByLabel(_ context.Context, _, _ string) (*models.Node, error) {
+	return nil, nil
+}
+
 func (m *mockNodeRepo) CreateNode(ctx context.Context, tenantID string, req models.CreateNodeRequest) (*models.Node, error) {
 	return m.createFn(ctx, tenantID, req)
 }

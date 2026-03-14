@@ -11,23 +11,23 @@ import (
 
 // mockGraphClient implements ingest.GraphClient for testing.
 type mockGraphClient struct {
-	searchResults map[string][]client.Node
-	createdNodes  []client.CreateNodeRequest
-	patchedProps  map[string]map[string]any
-	createdEdges  []client.CreateEdgeRequest
-	nodeIDSeq     int
-	createErr     error
+	labelNodes   map[string]*client.Node
+	createdNodes []client.CreateNodeRequest
+	patchedProps map[string]map[string]any
+	createdEdges []client.CreateEdgeRequest
+	nodeIDSeq    int
+	createErr    error
 }
 
 func newMockGraphClient() *mockGraphClient {
 	return &mockGraphClient{
-		searchResults: make(map[string][]client.Node),
-		patchedProps:  make(map[string]map[string]any),
+		labelNodes:   make(map[string]*client.Node),
+		patchedProps: make(map[string]map[string]any),
 	}
 }
 
-func (m *mockGraphClient) SearchNodes(_ context.Context, query string, _ int) ([]client.Node, error) {
-	return m.searchResults[query], nil
+func (m *mockGraphClient) GetNodeByLabel(_ context.Context, label string) (*client.Node, error) {
+	return m.labelNodes[label], nil
 }
 
 func (m *mockGraphClient) CreateNode(_ context.Context, req *client.CreateNodeRequest) (*client.Node, error) {
@@ -82,9 +82,7 @@ func TestWriteEntities_CreatesNewNodes(t *testing.T) {
 
 func TestWriteEntities_UpdatesExistingNode(t *testing.T) {
 	gc := newMockGraphClient()
-	gc.searchResults["Alice"] = []client.Node{
-		{ID: "existing-1", Label: "Alice", Properties: map[string]any{"role": "manager"}},
-	}
+	gc.labelNodes["Alice"] = &client.Node{ID: "existing-1", Label: "Alice", Properties: map[string]any{"role": "manager"}}
 	w := ingest.NewWriter(gc, "test-source")
 
 	entities := []ingest.ExtractedEntity{

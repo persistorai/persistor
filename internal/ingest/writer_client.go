@@ -16,13 +16,10 @@ func NewPersistorClient(c *client.Client) GraphClient {
 	return &persistorClient{c: c}
 }
 
-// SearchNodes performs a full-text search for nodes.
-func (p *persistorClient) SearchNodes(
-	ctx context.Context,
-	query string,
-	limit int,
-) ([]client.Node, error) {
-	return p.c.Search.FullText(ctx, query, &client.SearchOptions{Limit: limit})
+// GetNodeByLabel returns the node whose label matches exactly (case-insensitive),
+// or nil if no match is found.
+func (p *persistorClient) GetNodeByLabel(ctx context.Context, label string) (*client.Node, error) {
+	return p.c.Nodes.GetByLabel(ctx, label)
 }
 
 // CreateNode creates a new node via the API.

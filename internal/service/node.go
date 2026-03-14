@@ -50,6 +50,12 @@ func (s *NodeService) GetNode(ctx context.Context, tenantID, nodeID string) (*mo
 	return s.store.GetNode(ctx, tenantID, nodeID)
 }
 
+// GetNodeByLabel returns the first node whose label matches exactly (case-insensitive).
+// Returns nil, nil when no match is found.
+func (s *NodeService) GetNodeByLabel(ctx context.Context, tenantID, label string) (*models.Node, error) {
+	return s.store.GetNodeByLabel(ctx, tenantID, label)
+}
+
 // CreateNode creates a node and enqueues an embedding job.
 func (s *NodeService) CreateNode(
 	ctx context.Context, tenantID string, req models.CreateNodeRequest,

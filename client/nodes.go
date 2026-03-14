@@ -42,6 +42,24 @@ func (s *NodeService) List(ctx context.Context, opts *NodeListOptions) ([]Node, 
 	return resp.Nodes, resp.HasMore, nil
 }
 
+// GetByLabel returns the node whose label matches exactly (case-insensitive),
+// or nil if no match is found.
+func (s *NodeService) GetByLabel(ctx context.Context, label string) (*Node, error) {
+	params := url.Values{}
+	params.Set("label", label)
+
+	var resp nodeListResponse
+	if err := s.c.get(ctx, "/api/v1/nodes", params, &resp); err != nil {
+		return nil, err
+	}
+
+	if len(resp.Nodes) == 0 {
+		return nil, nil
+	}
+
+	return &resp.Nodes[0], nil
+}
+
 // Get returns a single node by ID.
 func (s *NodeService) Get(ctx context.Context, id string) (*Node, error) {
 	var node Node

@@ -3,7 +3,6 @@ package ingest
 import (
 	"context"
 	"fmt"
-	"strings"
 	"time"
 
 	"github.com/persistorai/persistor/client"
@@ -34,20 +33,14 @@ func (w *Writer) writeEntity(
 	return id, actionCreated, nil
 }
 
-// findByName searches for a node matching the entity name (case-insensitive).
+// findByName looks up a node by exact label match (case-insensitive).
 func (w *Writer) findByName(ctx context.Context, name string) (*client.Node, error) {
-	nodes, err := w.graph.SearchNodes(ctx, name, 5)
+	node, err := w.graph.GetNodeByLabel(ctx, name)
 	if err != nil {
-		return nil, fmt.Errorf("searching nodes: %w", err)
+		return nil, fmt.Errorf("looking up node by label %q: %w", name, err)
 	}
 
-	for i := range nodes {
-		if strings.EqualFold(nodes[i].Label, name) {
-			return &nodes[i], nil
-		}
-	}
-
-	return nil, nil
+	return node, nil
 }
 
 // createEntity creates a new node for the extracted entity.

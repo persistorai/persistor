@@ -100,6 +100,47 @@ func (s *NodeStore) ListNodes(
 	return nodes, hasMore, nil
 }
 
+// GetNodeByLabel retrieves a node whose label matches exactly (case-insensitive).
+// Returns nil, nil when no match is found.
+func (s *NodeStore) GetNodeByLabel(ctx context.Context, tenantID, label string) (*models.Node, error) {
+	ctx, cancel := withTimeout(ctx)
+	defer cancel()
+
+	tx, err := s.beginReadTx(ctx, tenantID)
+	if err != nil {
+		return nil, fmt.Errorf("getting node by label: %w", err)
+	}
+
+	defer tx.Rollback(ctx) //nolint:errcheck // best-effort rollback after commit.
+
+	query := `SELECT ` + nodeColumns + ` FROM kg_nodes
+		WHERE tenant_id = current_setting('app.tenant_id')::uuid
+		  AND LOWER(label) = LOWER($1)
+		ORDER BY salience_score DESC
+		LIMIT 1`
+
+	row := tx.QueryRow(ctx, query, label)
+
+	n, err := scanNode(row.Scan)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, nil
+		}
+
+		return nil, fmt.Errorf("scanning node by label: %w", err)
+	}
+
+	if err := s.decryptNode(ctx, tenantID, n); err != nil {
+		return nil, err
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return nil, fmt.Errorf("committing get node by label: %w", err)
+	}
+
+	return n, nil
+}
+
 // GetNode retrieves a single node by ID (pure read, no side effects).
 func (s *NodeStore) GetNode(ctx context.Context, tenantID, nodeID string) (*models.Node, error) {
 	ctx, cancel := withTimeout(ctx)

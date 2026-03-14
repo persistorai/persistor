@@ -22,11 +22,19 @@ func NewNodeHandler(repo NodeService, log *logrus.Logger) *NodeHandler {
 }
 
 // List handles GET /api/nodes.
+// When the ?label= query param is present, performs an exact (case-insensitive)
+// label lookup and returns at most one node. All other filters are ignored.
 func (h *NodeHandler) List(c *gin.Context) {
 	tenantID := getTenantID(c)
 	if tenantID == "" {
 		return
 	}
+
+	if labelFilter := c.Query("label"); labelFilter != "" {
+		h.getByLabel(c, tenantID, labelFilter)
+		return
+	}
+
 	typeFilter := c.Query("type")
 	minSalience := parseFloat(c.DefaultQuery("min_salience", "0"))
 	limit := parseInt(c.DefaultQuery("limit", "50"), 50)
@@ -41,6 +49,24 @@ func (h *NodeHandler) List(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"nodes": nodes, "has_more": hasMore})
+}
+
+// getByLabel is called by List when the ?label= param is present.
+func (h *NodeHandler) getByLabel(c *gin.Context, tenantID, label string) {
+	node, err := h.repo.GetNodeByLabel(c.Request.Context(), tenantID, label)
+	if err != nil {
+		h.log.WithError(err).Error("getting node by label")
+		respondError(c, http.StatusInternalServerError, ErrCodeInternalError, "internal server error")
+
+		return
+	}
+
+	nodes := make([]models.Node, 0, 1)
+	if node != nil {
+		nodes = append(nodes, *node)
+	}
+
+	c.JSON(http.StatusOK, gin.H{"nodes": nodes, "has_more": false})
 }
 
 // Get handles GET /api/nodes/:id.

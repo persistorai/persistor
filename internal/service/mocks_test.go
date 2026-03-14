@@ -35,6 +35,11 @@ func (m *mockNodeStore) GetNode(ctx context.Context, tenantID, nodeID string) (*
 	return m.getNode(ctx, tenantID, nodeID)
 }
 
+func (m *mockNodeStore) GetNodeByLabel(_ context.Context, _, _ string) (*models.Node, error) {
+	m.record("GetNodeByLabel")
+	return nil, nil
+}
+
 func (m *mockNodeStore) CreateNode(ctx context.Context, tenantID string, req models.CreateNodeRequest) (*models.Node, error) {
 	m.record("CreateNode")
 	return m.createNode(ctx, tenantID, req)

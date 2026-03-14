@@ -13,6 +13,7 @@ import (
 type NodeService interface {
 	ListNodes(ctx context.Context, tenantID string, typeFilter string, minSalience float64, limit, offset int) ([]models.Node, bool, error)
 	GetNode(ctx context.Context, tenantID, nodeID string) (*models.Node, error)
+	GetNodeByLabel(ctx context.Context, tenantID, label string) (*models.Node, error)
 	CreateNode(ctx context.Context, tenantID string, req models.CreateNodeRequest) (*models.Node, error)
 	UpdateNode(ctx context.Context, tenantID string, nodeID string, req models.UpdateNodeRequest) (*models.Node, error)
 	PatchNodeProperties(ctx context.Context, tenantID string, nodeID string, req models.PatchPropertiesRequest) (*models.Node, error)
