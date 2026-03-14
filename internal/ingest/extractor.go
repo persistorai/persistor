@@ -69,6 +69,15 @@ var entityTypeAliases = map[string]string{
 	"creature":      "animal",
 	"pet":           "animal",
 	"wildlife":      "animal",
+	"media":         "concept",
+	"model":         "technology",
+	"database":      "technology",
+	"platform":      "technology",
+	"protocol":      "technology",
+	"api":           "technology",
+	"plugin":        "technology",
+	"extension":     "technology",
+	"agent":         "project",
 }
 
 // Extract processes a text chunk and returns structured extraction results.
