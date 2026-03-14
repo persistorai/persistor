@@ -7,6 +7,8 @@ import (
 	"os"
 	"strings"
 	"testing"
+
+	"github.com/persistorai/persistor/client"
 )
 
 // captureStdout replaces os.Stdout with a pipe, calls f, then returns the
@@ -187,6 +189,70 @@ func TestOutputTableFallback(t *testing.T) {
 	var out map[string]string
 	if err := json.Unmarshal([]byte(got), &out); err != nil {
 		t.Fatalf("expected JSON fallback for table format: %v\noutput: %s", err, got)
+	}
+}
+
+// TestEdgeTableRowNilTemporalFields verifies that nil temporal fields render as "-".
+func TestEdgeTableRowNilTemporalFields(t *testing.T) {
+	e := &client.Edge{
+		Source:   "src-1",
+		Target:   "tgt-1",
+		Relation: "KNOWS",
+		Weight:   0.75,
+	}
+	row := edgeTableRow(e)
+	if len(row) != 7 {
+		t.Fatalf("expected 7 columns, got %d", len(row))
+	}
+	if row[4] != "-" {
+		t.Errorf("DATE_START: got %q, want %q", row[4], "-")
+	}
+	if row[5] != "-" {
+		t.Errorf("DATE_END: got %q, want %q", row[5], "-")
+	}
+	if row[6] != "-" {
+		t.Errorf("CURRENT: got %q, want %q", row[6], "-")
+	}
+}
+
+// TestEdgeTableRowWithTemporalFields verifies that set temporal fields render correctly.
+func TestEdgeTableRowWithTemporalFields(t *testing.T) {
+	ds := "~1983"
+	de := "2022-07"
+	cur := true
+	e := &client.Edge{
+		Source:    "src-1",
+		Target:    "tgt-1",
+		Relation:  "KNOWS",
+		Weight:    1.0,
+		DateStart: &ds,
+		DateEnd:   &de,
+		IsCurrent: &cur,
+	}
+	row := edgeTableRow(e)
+	if row[4] != "~1983" {
+		t.Errorf("DATE_START: got %q, want %q", row[4], "~1983")
+	}
+	if row[5] != "2022-07" {
+		t.Errorf("DATE_END: got %q, want %q", row[5], "2022-07")
+	}
+	if row[6] != "true" {
+		t.Errorf("CURRENT: got %q, want %q", row[6], "true")
+	}
+}
+
+// TestEdgeTableRowCurrentFalse verifies is_current=false renders as "false" not "-".
+func TestEdgeTableRowCurrentFalse(t *testing.T) {
+	cur := false
+	e := &client.Edge{
+		Source:    "a",
+		Target:    "b",
+		Relation:  "WORKED_AT",
+		IsCurrent: &cur,
+	}
+	row := edgeTableRow(e)
+	if row[6] != "false" {
+		t.Errorf("CURRENT: got %q, want %q", row[6], "false")
 	}
 }
 

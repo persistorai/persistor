@@ -288,11 +288,54 @@ func TestNodeListFlagDefaults(t *testing.T) {
 func TestEdgeListFlagDefaults(t *testing.T) {
 	cmd := edgeListCmd()
 
-	flags := []string{"source", "target", "relation", "limit"}
+	flags := []string{"source", "target", "relation", "limit", "active-on", "current"}
 	for _, name := range flags {
 		f := cmd.Flags().Lookup(name)
 		if f == nil {
 			t.Errorf("--%s flag not found on edge list", name)
+		}
+	}
+}
+
+// TestEdgeListTemporalFlags verifies --active-on and --current are registered.
+func TestEdgeListTemporalFlags(t *testing.T) {
+	cmd := edgeListCmd()
+
+	activeOn := cmd.Flags().Lookup("active-on")
+	if activeOn == nil {
+		t.Fatal("--active-on flag not found on edge list")
+	}
+	if activeOn.DefValue != "" {
+		t.Errorf("--active-on default: got %q, want empty string", activeOn.DefValue)
+	}
+
+	current := cmd.Flags().Lookup("current")
+	if current == nil {
+		t.Fatal("--current flag not found on edge list")
+	}
+	if current.DefValue != "false" {
+		t.Errorf("--current default: got %q, want %q", current.DefValue, "false")
+	}
+}
+
+// TestEdgeCreateTemporalFlags verifies temporal flags are registered on edge create.
+func TestEdgeCreateTemporalFlags(t *testing.T) {
+	cmd := edgeCreateCmd()
+
+	for _, name := range []string{"date-start", "date-end", "current"} {
+		if cmd.Flags().Lookup(name) == nil {
+			t.Errorf("--%s flag not found on edge create", name)
+		}
+	}
+}
+
+// TestEdgeUpdateTemporalFlags verifies temporal flags are registered on edge update.
+func TestEdgeUpdateTemporalFlags(t *testing.T) {
+	cmd := edgeUpdateCmd()
+
+	for _, name := range []string{"date-start", "date-end", "current"} {
+		if cmd.Flags().Lookup(name) == nil {
+			t.Errorf("--%s flag not found on edge update", name)
 		}
 	}
 }
