@@ -5,6 +5,25 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.0] — 2026-03-14
+
+### Features
+
+- **Multi-provider LLM support for ingest** — extraction no longer limited to local Ollama
+  - New `OpenAIClient` supports any OpenAI-compatible API (xAI/Grok, OpenAI, Together, etc.)
+  - Factory function `NewLLMClient()` auto-selects provider based on environment
+  - Set `INGEST_LLM_URL`, `INGEST_LLM_MODEL`, `INGEST_LLM_API_KEY` for cloud providers
+  - No env vars set → Ollama (existing behavior, fully backward compatible)
+  - CLI prints active provider/model at startup
+
+### Technical
+
+- `internal/ingest/openai_client.go` — OpenAI-compatible chat client (300s timeout, temp 0.3, 4096 max tokens)
+- `internal/ingest/llm.go` — Provider factory and naming helpers
+- 8 new tests (openai_client_test.go + llm_test.go)
+
+---
+
 ## [0.8.0] — 2026-03-14
 
 ### Features
