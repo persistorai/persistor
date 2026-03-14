@@ -72,8 +72,9 @@ var entityTypeAliases = map[string]string{
 }
 
 // Extract processes a text chunk and returns structured extraction results.
-func (e *Extractor) Extract(ctx context.Context, chunk string) (*ExtractionResult, error) {
-	prompt := buildPrompt(chunk)
+// knownEntities is an optional list of entity names to guide consistent naming.
+func (e *Extractor) Extract(ctx context.Context, chunk string, knownEntities ...string) (*ExtractionResult, error) {
+	prompt := buildPrompt(chunk, knownEntities)
 
 	raw, err := e.llm.Chat(ctx, prompt)
 	if err != nil {
@@ -123,91 +124,79 @@ func filterValidEntities(entities []ExtractedEntity, log *logrus.Logger) []Extra
 	return valid
 }
 
-func buildPrompt(chunk string) string {
-	return strings.Replace(extractionPrompt, "{text}", chunk, 1)
+func buildPrompt(chunk string, knownEntities []string) string {
+	prompt := extractionPrompt
+
+	// Inject known entities section if available
+	textSection := ""
+	if len(knownEntities) > 0 {
+		textSection = "KNOWN ENTITIES (use these exact names if they appear in the text):\n"
+		for _, name := range knownEntities {
+			textSection += "- " + name + "\n"
+		}
+		textSection += "\n"
+	}
+	prompt = strings.Replace(prompt, "{text_section}", textSection, 1)
+	prompt = strings.Replace(prompt, "{text}", chunk, 1)
+	return prompt
 }
 
-const extractionPrompt = `Extract entities, relationships, and facts from the following text.
+const extractionPrompt = `You are a knowledge graph extraction engine. Extract entities, relationships, and facts from text into structured JSON.
 
-Output ONLY valid JSON (no markdown fences, no explanation, no thinking):
+CRITICAL RULES FOR ENTITY NAMES:
+- Use SHORT, CLEAN names only. Never put descriptions in names.
+  GOOD: "PostgreSQL", "DeerPrint", "Brian Colinger"
+  BAD: "PostgreSQL — relational database", "DeerPrint — AI deer identification system"
+- Use the FULL PROPER NAME of a person, not just first name. "Brian Colinger" not "Brian".
+- Use the CANONICAL name of a project/product. "DeerPrint" not "DeerPrint Platform" or "DeerPrint Production".
+- Do NOT create separate entities for aspects of the same thing:
+  BAD: "DeerPrint API", "DeerPrint Frontend", "DeerPrint Database" (these are parts, not entities)
+  GOOD: "DeerPrint" (one entity, with facts about its components)
+- Service names and systemd units are NOT entities. "persistor.service" is just how Persistor runs.
+- Only extract entities that are INDEPENDENTLY NOTABLE — something you would write a reference page about.
+
+Output ONLY valid JSON:
 {
   "entities": [
-    {
-      "name": "Entity Name",
-      "type": "person|project|company|technology|event|decision|concept|place|animal",
-      "properties": {},
-      "description": "One sentence description"
-    }
+    {"name": "Short Name", "type": "person|project|company|technology|event|decision|concept|place|animal|service", "properties": {}, "description": "One sentence"}
   ],
   "relationships": [
-    {
-      "source": "Entity A name",
-      "target": "Entity B name",
-      "relation": "relationship_type",
-      "confidence": 0.9
-    }
+    {"source": "Entity A", "target": "Entity B", "relation": "type", "confidence": 0.9}
   ],
   "facts": [
-    {
-      "subject": "Entity Name",
-      "property": "key",
-      "value": "value"
-    }
+    {"subject": "Entity Name", "property": "key", "value": "value"}
   ]
 }
 
-Relationship types — use the MOST SPECIFIC one that fits:
-- "created" — A built/founded/authored B
-- "founded" — A founded/established B (for organizations)
-- "works_at" — A is currently employed by B
-- "worked_at" — A was formerly employed by B
-- "works_on" — A works on project/task B (NOT employment)
-- "leads" — A leads/directs B
-- "owns" — A owns B
-- "part_of" — A is a component/member of B
-- "product_of" — A is a product of company B
-- "deployed_on" — A is deployed/hosted on B
-- "runs_on" — A runs on platform/infra B
-- "uses" — A uses/utilizes B
-- "depends_on" — A requires/depends on B
-- "implements" — A implements pattern/interface B
-- "extends" — A extends/builds upon B
-- "replaced_by" — A was replaced/superseded by B
-- "enables" — A enables/powers B
-- "supports" — A supports/is compatible with B
-- "parent_of" — A is parent of B
-- "child_of" — A is child of B
-- "sibling_of" — A is sibling of B
-- "married_to" — A is married to B
-- "friend_of" — A is friend of B
-- "mentored" — A mentored/taught B
-- "located_in" — A is physically located in B
-- "learned" — A learned/studied B
-- "decided" — A made decision B
-- "inspired" — A inspired/motivated B
-- "prefers" — A prefers/favors B
-- "competes_with" — A competes with B
-- "acquired" — A acquired/purchased B
-- "funded" — A gave money/resources to B
-- "partners_with" — A partners/collaborates with B
-- "affected_by" — A was impacted by event/thing B
-- "achieved" — A achieved milestone/goal B
-- "detected_in" — A was detected/found in B
-- "experienced" — A experienced event B
+ENTITY NAME CONSISTENCY:
+If the text mentions the same entity by different names or variations, pick ONE canonical name and use it everywhere. For example, if text says "Brian" and "Brian Colinger", always use "Brian Colinger".
 
-Rules:
-- Maximum 15 entities. Prioritize people, then projects, then companies, then events.
-- Only extract specific, named entities — not generic nouns like "the project" or "code"
-- Entity types MUST be one of: person, project, company, technology, event, decision, concept, place, animal
-- Keep descriptions to one short sentence
-- Include dates in properties when mentioned (e.g. "date": "2026-03-12")
-- Relationships must reference entities by exact name from your entities list
-- Direction matters: "Alice created ProjectX" not "ProjectX created Alice"
-- Do NOT use "related_to" — always pick a more specific relationship type
-- Confidence: 0.9+ for explicit statements, 0.6-0.8 for implied/inferred
-- Facts should capture specific values: amounts, dates, measurements, statuses
-- Output ONLY the JSON object — no text before or after it
+ENTITY TYPES must be one of: person, project, company, technology, event, decision, concept, place, animal, service
 
+RELATIONSHIP TYPES — use ONLY these:
+created, founded, works_at, worked_at, works_on, leads, owns, part_of, product_of, deployed_on, runs_on, uses, depends_on, implements, extends, replaced_by, enables, supports, parent_of, child_of, sibling_of, married_to, friend_of, mentored, located_in, learned, decided, inspired, prefers, competes_with, acquired, funded, partners_with, affected_by, achieved, detected_in, experienced
+
+WHAT TO EXTRACT:
+- Real people with names (not "the team" or "users")
+- Named projects, products, companies, organizations
+- Specific technologies, languages, frameworks (PostgreSQL, Go, PyTorch — not "the database")
+- Named places (cities, states, properties — not "the office")
+- Significant events with names or dates
+- Concrete decisions with consequences
+- Key facts: dates, amounts, measurements, versions, statuses
+
+WHAT NOT TO EXTRACT:
+- Generic nouns: "code", "the system", "the project", "production", "the database"
+- Subcomponents of a named entity (use facts instead): "DeerPrint's API" → fact on DeerPrint
+- Process descriptions: "deploying", "testing", "refactoring"
+- Temporary states: "the bug", "the fix", "the PR"
+- Obvious/trivial relationships: a project uses its own components
+
+Maximum 10 entities. Quality over quantity. Every entity should be something worth remembering.
+Confidence: 0.9+ for explicit statements, 0.7-0.85 for implied/inferred, skip if below 0.6.
+Output ONLY the JSON object — no text before or after it.
+
+{text_section}
 Text:
 ---
 {text}

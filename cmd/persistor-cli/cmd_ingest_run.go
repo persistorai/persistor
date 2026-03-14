@@ -70,7 +70,8 @@ func ingestStdin(
 	}
 
 	w := ingest.NewWriter(gc, source)
-	ing := ingest.NewIngester(ext, w)
+	fetcher := ingest.NewClientEntityFetcher(apiClient)
+	ing := ingest.NewIngester(ext, w, fetcher)
 
 	report, err := ing.Ingest(ctx, os.Stdin, ingest.IngestOpts{
 		Source: source,
@@ -145,7 +146,8 @@ func ingestFile(
 
 	source := filepath.Base(path)
 	w := ingest.NewWriter(gc, source)
-	ing := ingest.NewIngester(ext, w)
+	fetcher := ingest.NewClientEntityFetcher(apiClient)
+	ing := ingest.NewIngester(ext, w, fetcher)
 
 	report, err := ing.Ingest(ctx, f, ingest.IngestOpts{
 		Source: source,

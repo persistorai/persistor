@@ -27,7 +27,7 @@ func TestIngest_DryRun(t *testing.T) {
 	gc := newMockGraphClient()
 	ext := ingest.NewExtractor(llm)
 	w := ingest.NewWriter(gc, "test")
-	ing := ingest.NewIngester(ext, w)
+	ing := ingest.NewIngester(ext, w, nil)
 
 	report, err := ing.Ingest(context.Background(), strings.NewReader("Alice uses Go."), ingest.IngestOpts{
 		DryRun: true,
@@ -69,7 +69,7 @@ func TestIngest_FullPipeline(t *testing.T) {
 	gc := newMockGraphClient()
 	ext := ingest.NewExtractor(llm)
 	w := ingest.NewWriter(gc, "test")
-	ing := ingest.NewIngester(ext, w)
+	ing := ingest.NewIngester(ext, w, nil)
 
 	report, err := ing.Ingest(context.Background(), strings.NewReader("Alice works on Persistor."), ingest.IngestOpts{})
 	if err != nil {
@@ -97,7 +97,7 @@ func TestIngest_LLMError(t *testing.T) {
 	gc := newMockGraphClient()
 	ext := ingest.NewExtractor(llm)
 	w := ingest.NewWriter(gc, "test")
-	ing := ingest.NewIngester(ext, w)
+	ing := ingest.NewIngester(ext, w, nil)
 
 	report, err := ing.Ingest(context.Background(), strings.NewReader("some text"), ingest.IngestOpts{})
 	if err != nil {
@@ -115,7 +115,7 @@ func TestIngest_EmptyInput(t *testing.T) {
 	gc := newMockGraphClient()
 	ext := ingest.NewExtractor(llm)
 	w := ingest.NewWriter(gc, "test")
-	ing := ingest.NewIngester(ext, w)
+	ing := ingest.NewIngester(ext, w, nil)
 
 	report, err := ing.Ingest(context.Background(), strings.NewReader(""), ingest.IngestOpts{})
 	if err != nil {
