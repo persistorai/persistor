@@ -191,11 +191,31 @@ RELATIONSHIP TYPES — use ONLY these:
 created, founded, works_at, worked_at, works_on, leads, owns, part_of, product_of, deployed_on, runs_on, uses, depends_on, implements, extends, replaced_by, enables, supports, parent_of, child_of, sibling_of, married_to, friend_of, mentored, located_in, learned, decided, inspired, prefers, competes_with, acquired, funded, partners_with, affected_by, achieved, detected_in, experienced
 
 TEMPORAL DATA ON RELATIONSHIPS:
-- Extract temporal data when mentioned: "worked at X from 2009 to 2022" → date_start: "2009", date_end: "2022", is_current: false
-- Use EDTF notation: exact dates "2006-01-21", year-only "2006", approximate "~1989", decade "198x"
-- If a relationship is described as current/ongoing, set is_current: true and date_end: null
-- If no temporal info is available, omit date_start, date_end, and is_current entirely (do not include null values)
-- Use today's date ({today}) to judge whether a relationship described as present-tense is current
+Always extract dates when the text mentions when a relationship started, ended, or whether it is ongoing.
+
+EDTF date format rules (use the most precise format the text supports):
+  Exact date:       "2019-10-15"
+  Month precision:  "2009-05"
+  Year precision:   "1983"
+  Approximate:      "~1983"   (use when text says "around", "circa", "roughly")
+  Decade:           "199X"    (use when text says "in the 1990s" or "the nineties")
+  Unknown:          ".."      (use when one bound is explicitly unknown)
+
+Examples of temporal extraction:
+  "worked at Acme from 2009 to 2022"         → date_start: "2009",    date_end: "2022",    is_current: false
+  "married since 1983"                        → date_start: "1983",    date_end: null,      is_current: true
+  "lives in Seattle (current)"               → date_start: null,      date_end: null,      is_current: true
+  "joined Google in May 2012, still there"   → date_start: "2012-05", date_end: null,      is_current: true
+  "CEO until 2019-10-15"                     → date_start: null,      date_end: "2019-10-15", is_current: false
+  "grew up in London in the nineties"        → date_start: "199X",    date_end: "199X",    is_current: false
+  "started around 1983"                      → date_start: "~1983",   date_end: null,      is_current: false
+
+Rules:
+- Set is_current: true when the relationship is described as ongoing/present/current/still active
+- Set is_current: false when the relationship has ended
+- Omit is_current entirely when temporal status is unknown
+- If no temporal info exists, omit date_start, date_end, and is_current entirely (do not output null fields)
+- Use today's date ({today}) to decide if a present-tense relationship is current
 
 WHAT TO EXTRACT:
 - Real people with names (not "the team" or "users")
