@@ -39,6 +39,36 @@ var allowedEntityTypes = map[string]bool{
 	"concept":    true,
 	"place":      true,
 	"animal":     true,
+	"service":    true,
+}
+
+// entityTypeAliases maps common LLM-generated types to canonical types.
+var entityTypeAliases = map[string]string{
+	"location":      "place",
+	"lesson":        "concept",
+	"milestone":     "event",
+	"component":     "technology",
+	"endpoint":      "technology",
+	"tool":          "technology",
+	"software":      "technology",
+	"framework":     "technology",
+	"library":       "technology",
+	"language":      "technology",
+	"organization":  "company",
+	"org":           "company",
+	"institution":   "company",
+	"skill":         "concept",
+	"pattern":       "concept",
+	"principle":     "concept",
+	"idea":          "concept",
+	"feature":       "concept",
+	"goal":          "concept",
+	"metric":        "concept",
+	"process":       "concept",
+	"strategy":      "concept",
+	"creature":      "animal",
+	"pet":           "animal",
+	"wildlife":      "animal",
 }
 
 // Extract processes a text chunk and returns structured extraction results.
@@ -75,6 +105,12 @@ func filterValidEntities(entities []ExtractedEntity, log *logrus.Logger) []Extra
 
 	for _, ent := range entities {
 		entityType := strings.ToLower(ent.Type)
+
+		// Normalize aliases to canonical types
+		if canonical, ok := entityTypeAliases[entityType]; ok {
+			entityType = canonical
+		}
+
 		if !allowedEntityTypes[entityType] {
 			log.Warnf("filtering entity %q: invalid type %q", ent.Name, ent.Type)
 			continue
