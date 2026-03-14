@@ -72,12 +72,20 @@ func (s *EdgeStore) CreateEdge(
 		weight = *req.Weight
 	}
 
-	query := `INSERT INTO kg_edges (tenant_id, source, target, relation, properties, weight)
-		VALUES ($1, $2, $3, $4, $5, $6)
+	dateLower, dateUpper, dateQualifier, err := parseTemporalBounds(req.DateStart, req.DateEnd)
+	if err != nil {
+		return nil, fmt.Errorf("parsing temporal bounds: %w", err)
+	}
+
+	query := `INSERT INTO kg_edges
+		(tenant_id, source, target, relation, properties, weight,
+		 date_start, date_end, date_lower, date_upper, is_current, date_qualifier)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
 		RETURNING ` + edgeColumns
 
 	row := tx.QueryRow(ctx, query,
 		tenantID, req.Source, req.Target, req.Relation, propsJSON, weight,
+		req.DateStart, req.DateEnd, dateLower, dateUpper, req.IsCurrent, dateQualifier,
 	)
 
 	e, err := scanEdge(row.Scan)
@@ -120,25 +128,9 @@ func (s *EdgeStore) UpdateEdge(
 
 	defer tx.Rollback(ctx) //nolint:errcheck // best-effort rollback after commit.
 
-	setClauses := make([]string, 0, 2)
-	args := make([]any, 0, 5)
-	argIdx := 1
-
-	if req.Properties != nil {
-		propsJSON, err := s.encryptProperties(ctx, tenantID, req.Properties)
-		if err != nil {
-			return nil, fmt.Errorf("preparing edge properties: %w", err)
-		}
-
-		setClauses = append(setClauses, fmt.Sprintf("properties = $%d", argIdx))
-		args = append(args, propsJSON)
-		argIdx++
-	}
-
-	if req.Weight != nil {
-		setClauses = append(setClauses, fmt.Sprintf("weight = $%d", argIdx))
-		args = append(args, *req.Weight)
-		argIdx++
+	setClauses, args, argIdx, err := s.buildEdgeUpdateClauses(ctx, tenantID, req)
+	if err != nil {
+		return nil, err
 	}
 
 	if len(setClauses) == 0 {
@@ -188,112 +180,55 @@ func (s *EdgeStore) UpdateEdge(
 	return e, nil
 }
 
-// PatchEdgeProperties merges patch properties into existing edge properties.
-func (s *EdgeStore) PatchEdgeProperties(
+// buildEdgeUpdateClauses builds the SET clause list and args for UpdateEdge.
+func (s *EdgeStore) buildEdgeUpdateClauses(
 	ctx context.Context,
 	tenantID string,
-	source, target, relation string,
-	req models.PatchPropertiesRequest,
-) (*models.Edge, error) {
-	ctx, cancel := withTimeout(ctx)
-	defer cancel()
+	req models.UpdateEdgeRequest,
+) (setClauses []string, args []any, argIdx int, err error) {
+	setClauses = make([]string, 0, 8)
+	args = make([]any, 0, 10)
+	argIdx = 1
 
-	tx, err := s.beginTx(ctx, tenantID)
-	if err != nil {
-		return nil, fmt.Errorf("patching edge properties: %w", err)
-	}
-
-	defer tx.Rollback(ctx) //nolint:errcheck // best-effort rollback after commit.
-
-	// Fetch existing properties.
-	var propsBytes []byte
-
-	err = tx.QueryRow(ctx,
-		`SELECT properties FROM kg_edges WHERE tenant_id = current_setting('app.tenant_id')::uuid AND source = $1 AND target = $2 AND relation = $3`,
-		source, target, relation,
-	).Scan(&propsBytes)
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, models.ErrEdgeNotFound
+	if req.Properties != nil {
+		propsJSON, encErr := s.encryptProperties(ctx, tenantID, req.Properties)
+		if encErr != nil {
+			return nil, nil, 0, fmt.Errorf("preparing edge properties: %w", encErr)
 		}
 
-		return nil, fmt.Errorf("fetching edge properties: %w", err)
+		setClauses = append(setClauses, fmt.Sprintf("properties = $%d", argIdx))
+		args = append(args, propsJSON)
+		argIdx++
 	}
 
-	oldProps, err := s.decryptPropertiesRaw(ctx, tenantID, propsBytes)
-	if err != nil {
-		return nil, fmt.Errorf("decrypting edge properties: %w", err)
+	if req.Weight != nil {
+		setClauses = append(setClauses, fmt.Sprintf("weight = $%d", argIdx))
+		args = append(args, *req.Weight)
+		argIdx++
 	}
 
-	merged := models.MergeProperties(oldProps, req.Properties)
-
-	encProps, err := s.encryptProperties(ctx, tenantID, merged)
-	if err != nil {
-		return nil, fmt.Errorf("preparing patched edge properties: %w", err)
-	}
-
-	query := fmt.Sprintf(
-		"UPDATE kg_edges SET properties = $1 WHERE tenant_id = current_setting('app.tenant_id')::uuid AND source = $2 AND target = $3 AND relation = $4 RETURNING %s",
-		edgeColumns,
-	)
-
-	row := tx.QueryRow(ctx, query, encProps, source, target, relation)
-
-	e, err := scanEdge(row.Scan)
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, models.ErrEdgeNotFound
+	if req.DateStart != nil || req.DateEnd != nil {
+		dateLower, dateUpper, dateQualifier, parseErr := parseTemporalBounds(req.DateStart, req.DateEnd)
+		if parseErr != nil {
+			return nil, nil, 0, fmt.Errorf("parsing temporal bounds: %w", parseErr)
 		}
 
-		return nil, fmt.Errorf("scanning patched edge: %w", err)
+		setClauses = append(setClauses,
+			fmt.Sprintf("date_start = $%d", argIdx),
+			fmt.Sprintf("date_end = $%d", argIdx+1),
+			fmt.Sprintf("date_lower = $%d", argIdx+2),
+			fmt.Sprintf("date_upper = $%d", argIdx+3),
+			fmt.Sprintf("date_qualifier = $%d", argIdx+4),
+		)
+		args = append(args, req.DateStart, req.DateEnd, dateLower, dateUpper, dateQualifier)
+		argIdx += 5
 	}
 
-	if err := s.decryptEdge(ctx, tenantID, e); err != nil {
-		return nil, err
+	if req.IsCurrent != nil {
+		setClauses = append(setClauses, fmt.Sprintf("is_current = $%d", argIdx))
+		args = append(args, *req.IsCurrent)
+		argIdx++
 	}
 
-	if err := tx.Commit(ctx); err != nil {
-		return nil, fmt.Errorf("committing patch edge properties: %w", err)
-	}
-
-	s.notify("kg_edges", "update", tenantID)
-
-	return e, nil
-}
-
-// DeleteEdge removes an edge by its composite key.
-func (s *EdgeStore) DeleteEdge(
-	ctx context.Context,
-	tenantID string,
-	source, target, relation string,
-) error {
-	ctx, cancel := withTimeout(ctx)
-	defer cancel()
-
-	tx, err := s.beginTx(ctx, tenantID)
-	if err != nil {
-		return fmt.Errorf("deleting edge: %w", err)
-	}
-
-	defer tx.Rollback(ctx) //nolint:errcheck // best-effort rollback after commit.
-
-	tag, err := tx.Exec(ctx,
-		"DELETE FROM kg_edges WHERE tenant_id = $1 AND source = $2 AND target = $3 AND relation = $4",
-		tenantID, source, target, relation,
-	)
-	if err != nil {
-		return fmt.Errorf("executing edge delete: %w", err)
-	}
-
-	if tag.RowsAffected() == 0 {
-		return models.ErrEdgeNotFound
-	}
-
-	if err := tx.Commit(ctx); err != nil {
-		return fmt.Errorf("committing delete edge: %w", err)
-	}
-
-	s.notify("kg_edges", "delete", tenantID)
-
-	return nil
+	return setClauses, args, argIdx, nil
 }

@@ -19,7 +19,8 @@ const nodeColumns = `id, tenant_id, type, label, properties,
 // edgeColumns lists the columns selected for edge queries.
 const edgeColumns = `tenant_id, source, target, relation, properties,
 	weight, access_count, last_accessed, salience_score, superseded_by,
-	user_boosted, created_at, updated_at`
+	user_boosted, date_start, date_end, date_lower, date_upper, is_current,
+	date_qualifier, created_at, updated_at`
 
 // scanNode scans a single row into a models.Node.
 func scanNode(scan func(dest ...any) error) (*models.Node, error) {
@@ -78,6 +79,12 @@ func scanEdge(scan func(dest ...any) error) (*models.Edge, error) {
 		&e.Salience,
 		&supersededBy,
 		&e.UserBoosted,
+		&e.DateStart,
+		&e.DateEnd,
+		&e.DateLower,
+		&e.DateUpper,
+		&e.IsCurrent,
+		&e.DateQualifier,
 		&e.CreatedAt,
 		&e.UpdatedAt,
 	)

@@ -69,6 +69,10 @@ func TestCreateEdgeRequest_Validate(t *testing.T) {
 		{name: "weight too high", req: models.CreateEdgeRequest{Source: "a", Target: "b", Relation: "r", Weight: ptr(1001.0)}, wantErr: "weight must be between"},
 		{name: "weight negative", req: models.CreateEdgeRequest{Source: "a", Target: "b", Relation: "r", Weight: ptr(-1.0)}, wantErr: "weight must be between"},
 		{name: "source too long", req: models.CreateEdgeRequest{Source: strings.Repeat("x", 256), Target: "b", Relation: "r"}, wantErr: "exceeds maximum length"},
+		{name: "valid date_start", req: models.CreateEdgeRequest{Source: "a", Target: "b", Relation: "r", DateStart: ptr("2020-01-01")}},
+		{name: "valid date_start and date_end", req: models.CreateEdgeRequest{Source: "a", Target: "b", Relation: "r", DateStart: ptr("2020-01-01"), DateEnd: ptr("2025-12-31")}},
+		{name: "invalid date_start", req: models.CreateEdgeRequest{Source: "a", Target: "b", Relation: "r", DateStart: ptr("not-a-date")}, wantErr: "date_start"},
+		{name: "invalid date_end", req: models.CreateEdgeRequest{Source: "a", Target: "b", Relation: "r", DateEnd: ptr("bad")}, wantErr: "date_end"},
 	}
 
 	for _, tc := range tests {
@@ -109,6 +113,9 @@ func TestUpdateNodeRequest_Validate(t *testing.T) {
 func TestUpdateEdgeRequest_Validate(t *testing.T) {
 	assertNoError(t, (&models.UpdateEdgeRequest{Weight: ptr(500.0)}).Validate())
 	assertErrorContains(t, (&models.UpdateEdgeRequest{Weight: ptr(1001.0)}).Validate(), "weight must be between")
+	assertNoError(t, (&models.UpdateEdgeRequest{DateStart: ptr("2020-01-01"), DateEnd: ptr("2025")}).Validate())
+	assertErrorContains(t, (&models.UpdateEdgeRequest{DateStart: ptr("not-a-date")}).Validate(), "date_start")
+	assertErrorContains(t, (&models.UpdateEdgeRequest{DateEnd: ptr("bad")}).Validate(), "date_end")
 }
 
 func TestSupersedeRequest_Validate(t *testing.T) {
