@@ -79,6 +79,19 @@ var entityTypeAliases = map[string]string{
 	"plugin":       "technology",
 	"extension":    "technology",
 	"agent":        "project",
+	"product":      "project",
+	"application":  "project",
+	"app":          "project",
+	"equipment":    "technology",
+	"machine":      "technology",
+	"hardware":     "technology",
+	"device":       "technology",
+	"sensor":       "technology",
+	"entity":       "concept",
+	"data":         "concept",
+	"dataset":      "concept",
+	"resource":     "concept",
+	"domain":       "concept",
 }
 
 // Extract processes a text chunk and returns structured extraction results.

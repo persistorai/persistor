@@ -58,6 +58,10 @@ func (m *mockGraphClient) CreateEdge(_ context.Context, req *client.CreateEdgeRe
 	return &client.Edge{Source: req.Source, Target: req.Target, Relation: req.Relation}, nil
 }
 
+func (m *mockGraphClient) UpdateEdge(_ context.Context, source, target, relation string, _ *client.UpdateEdgeRequest) (*client.Edge, error) {
+	return &client.Edge{Source: source, Target: target, Relation: relation}, nil
+}
+
 func TestWriteEntities_CreatesNewNodes(t *testing.T) {
 	gc := newMockGraphClient()
 	w := ingest.NewWriter(gc, "test-source")

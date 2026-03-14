@@ -57,6 +57,15 @@ func (p *persistorClient) PatchNodeProperties(
 	return p.c.Nodes.PatchProperties(ctx, id, properties)
 }
 
+// UpdateEdge updates an existing edge via the API.
+func (p *persistorClient) UpdateEdge(
+	ctx context.Context,
+	source, target, relation string,
+	req *client.UpdateEdgeRequest,
+) (*client.Edge, error) {
+	return p.c.Edges.Update(ctx, source, target, relation, req)
+}
+
 // CreateEdge creates a new edge via the API.
 func (p *persistorClient) CreateEdge(
 	ctx context.Context,

@@ -15,6 +15,7 @@ type GraphClient interface {
 	UpdateNode(ctx context.Context, id string, req *client.UpdateNodeRequest) (*client.Node, error)
 	PatchNodeProperties(ctx context.Context, id string, properties map[string]any) (*client.Node, error)
 	CreateEdge(ctx context.Context, req *client.CreateEdgeRequest) (*client.Edge, error)
+	UpdateEdge(ctx context.Context, source, target, relation string, req *client.UpdateEdgeRequest) (*client.Edge, error)
 }
 
 // WriteReport summarizes the results of writing entities and edges.

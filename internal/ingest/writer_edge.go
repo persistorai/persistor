@@ -62,7 +62,8 @@ func (w *Writer) writeRelationship(
 	report.CreatedEdges++
 }
 
-// createEdge creates a single edge via the graph client.
+// createEdge creates or updates an edge via the graph client.
+// On 409 conflict (edge exists), falls back to updating the existing edge.
 func (w *Writer) createEdge(
 	ctx context.Context,
 	sourceID, targetID string,
@@ -82,8 +83,37 @@ func (w *Writer) createEdge(
 	}
 
 	_, err := w.graph.CreateEdge(ctx, req)
-	if err != nil {
+	if err == nil {
+		return nil
+	}
+
+	// If edge already exists (409), update it with new data
+	if !strings.Contains(err.Error(), "409") {
 		return fmt.Errorf("creating edge %s->%s: %w", rel.Source, rel.Target, err)
+	}
+
+	return w.updateExistingEdge(ctx, sourceID, targetID, rel)
+}
+
+// updateExistingEdge updates an existing edge with new temporal and property data.
+func (w *Writer) updateExistingEdge(
+	ctx context.Context,
+	sourceID, targetID string,
+	rel *ExtractedRelationship,
+) error {
+	updateReq := &client.UpdateEdgeRequest{
+		Properties: map[string]any{
+			"_confidence":    rel.Confidence,
+			"_ingested_from": w.source,
+		},
+		DateStart: rel.DateStart,
+		DateEnd:   rel.DateEnd,
+		IsCurrent: rel.IsCurrent,
+	}
+
+	_, err := w.graph.UpdateEdge(ctx, sourceID, targetID, rel.Relation, updateReq)
+	if err != nil {
+		return fmt.Errorf("updating edge %s->%s: %w", rel.Source, rel.Target, err)
 	}
 
 	return nil
