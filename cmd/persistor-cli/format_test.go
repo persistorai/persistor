@@ -8,6 +8,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/persistorai/persistor/internal/config"
+
 	"github.com/persistorai/persistor/client"
 )
 
@@ -266,8 +268,8 @@ func TestVersionString(t *testing.T) {
 	if !strings.HasSuffix(s, "-dev") {
 		t.Errorf("expected -dev suffix for dev build, got %q", s)
 	}
-	if !strings.Contains(s, version) {
-		t.Errorf("version string missing version %q: %s", version, s)
+	if !strings.Contains(s, config.Version) {
+		t.Errorf("version string missing version %q: %s", config.Version, s)
 	}
 }
 

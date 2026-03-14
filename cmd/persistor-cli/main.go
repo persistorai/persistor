@@ -6,13 +6,13 @@ import (
 	"path/filepath"
 
 	"github.com/persistorai/persistor/client"
+	"github.com/persistorai/persistor/internal/config"
 	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v3"
 )
 
 // Build-time variables set via ldflags.
 var (
-	version   = "0.6.0"
 	commit    = ""
 	buildDate = ""
 )
@@ -26,9 +26,9 @@ var (
 
 func versionString() string {
 	if commit != "" && buildDate != "" {
-		return fmt.Sprintf("persistor version %s (commit: %s, built: %s)", version, commit, buildDate)
+		return fmt.Sprintf("persistor version %s (commit: %s, built: %s)", config.Version, commit, buildDate)
 	}
-	return fmt.Sprintf("persistor version %s-dev", version)
+	return fmt.Sprintf("persistor version %s-dev", config.Version)
 }
 
 type configFile struct {
