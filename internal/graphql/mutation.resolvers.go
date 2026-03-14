@@ -64,7 +64,7 @@ func (r *mutationResolver) DeleteNode(ctx context.Context, id string) (bool, err
 }
 
 // CreateEdge is the resolver for the createEdge field.
-func (r *mutationResolver) CreateEdge(ctx context.Context, input CreateEdgeInput) (*Edge, error) {
+func (r *mutationResolver) CreateEdge(ctx context.Context, input CreateEdgeInput) (*Edge, error) { //nolint:gocritic // hugeParam: generated resolver signature, accepted by design
 	tid, err := TenantIDFromContext(ctx)
 	if err != nil {
 		return nil, gqlErr(ctx, err)
@@ -75,6 +75,9 @@ func (r *mutationResolver) CreateEdge(ctx context.Context, input CreateEdgeInput
 		Relation:   input.Relation,
 		Properties: input.Properties,
 		Weight:     input.Weight,
+		DateStart:  input.DateStart,
+		DateEnd:    input.DateEnd,
+		IsCurrent:  input.IsCurrent,
 	}
 	if err := req.Validate(); err != nil {
 		return nil, gqlErr(ctx, err)
@@ -87,7 +90,7 @@ func (r *mutationResolver) CreateEdge(ctx context.Context, input CreateEdgeInput
 }
 
 // UpdateEdge is the resolver for the updateEdge field.
-func (r *mutationResolver) UpdateEdge(ctx context.Context, source string, target string, relation string, input UpdateEdgeInput) (*Edge, error) {
+func (r *mutationResolver) UpdateEdge(ctx context.Context, source, target, relation string, input UpdateEdgeInput) (*Edge, error) {
 	tid, err := TenantIDFromContext(ctx)
 	if err != nil {
 		return nil, gqlErr(ctx, err)
@@ -95,6 +98,9 @@ func (r *mutationResolver) UpdateEdge(ctx context.Context, source string, target
 	req := models.UpdateEdgeRequest{
 		Properties: input.Properties,
 		Weight:     input.Weight,
+		DateStart:  input.DateStart,
+		DateEnd:    input.DateEnd,
+		IsCurrent:  input.IsCurrent,
 	}
 	if err := req.Validate(); err != nil {
 		return nil, gqlErr(ctx, err)
@@ -107,7 +113,7 @@ func (r *mutationResolver) UpdateEdge(ctx context.Context, source string, target
 }
 
 // DeleteEdge is the resolver for the deleteEdge field.
-func (r *mutationResolver) DeleteEdge(ctx context.Context, source string, target string, relation string) (bool, error) {
+func (r *mutationResolver) DeleteEdge(ctx context.Context, source, target, relation string) (bool, error) {
 	tid, err := TenantIDFromContext(ctx)
 	if err != nil {
 		return false, gqlErr(ctx, err)
@@ -132,7 +138,7 @@ func (r *mutationResolver) BoostNode(ctx context.Context, id string) (*Node, err
 }
 
 // SupersedeNode is the resolver for the supersedeNode field.
-func (r *mutationResolver) SupersedeNode(ctx context.Context, oldID string, newID string) (bool, error) {
+func (r *mutationResolver) SupersedeNode(ctx context.Context, oldID, newID string) (bool, error) {
 	tid, err := TenantIDFromContext(ctx)
 	if err != nil {
 		return false, gqlErr(ctx, err)

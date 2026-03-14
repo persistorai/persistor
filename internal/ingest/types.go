@@ -21,6 +21,9 @@ type ExtractedRelationship struct {
 	Target     string  `json:"target"`
 	Relation   string  `json:"relation"`
 	Confidence float64 `json:"confidence"`
+	DateStart  *string `json:"date_start,omitempty"`
+	DateEnd    *string `json:"date_end,omitempty"`
+	IsCurrent  *bool   `json:"is_current,omitempty"`
 }
 
 // ExtractedFact is a key-value fact about an entity.

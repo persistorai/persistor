@@ -42,7 +42,7 @@ func (r *nodeResolver) Edges(ctx context.Context, obj *Node, relation *string, l
 		return nil, err
 	}
 	// Fetch edges where this node is the source.
-	edges, _, err := r.EdgeSvc.ListEdges(ctx, tid, obj.ID, "", derefStr(relation), deref(limit, 50), 0)
+	edges, _, err := r.EdgeSvc.ListEdges(ctx, tid, obj.ID, "", derefStr(relation), deref(limit, 50), 0, nil, nil)
 	if err != nil {
 		return nil, err
 	}

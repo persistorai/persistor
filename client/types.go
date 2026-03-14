@@ -29,18 +29,24 @@ type ScoredNode struct {
 
 // Edge represents a directed relationship between two nodes.
 type Edge struct {
-	Source       string         `json:"source"`
-	Target       string         `json:"target"`
-	Relation     string         `json:"relation"`
-	Properties   map[string]any `json:"properties"`
-	Weight       float64        `json:"weight"`
-	AccessCount  int            `json:"access_count"`
-	LastAccessed *time.Time     `json:"last_accessed,omitempty"`
-	Salience     float64        `json:"salience_score"`
-	SupersededBy *string        `json:"superseded_by,omitempty"`
-	UserBoosted  bool           `json:"user_boosted"`
-	CreatedAt    time.Time      `json:"created_at"`
-	UpdatedAt    time.Time      `json:"updated_at"`
+	Source        string         `json:"source"`
+	Target        string         `json:"target"`
+	Relation      string         `json:"relation"`
+	Properties    map[string]any `json:"properties"`
+	Weight        float64        `json:"weight"`
+	AccessCount   int            `json:"access_count"`
+	LastAccessed  *time.Time     `json:"last_accessed,omitempty"`
+	Salience      float64        `json:"salience_score"`
+	SupersededBy  *string        `json:"superseded_by,omitempty"`
+	UserBoosted   bool           `json:"user_boosted"`
+	DateStart     *string        `json:"date_start,omitempty"`
+	DateEnd       *string        `json:"date_end,omitempty"`
+	DateLower     *time.Time     `json:"date_lower,omitempty"`
+	DateUpper     *time.Time     `json:"date_upper,omitempty"`
+	IsCurrent     *bool          `json:"is_current,omitempty"`
+	DateQualifier *string        `json:"date_qualifier,omitempty"`
+	CreatedAt     time.Time      `json:"created_at"`
+	UpdatedAt     time.Time      `json:"updated_at"`
 }
 
 // CreateNodeRequest is the payload for creating a node.
@@ -65,6 +71,9 @@ type CreateEdgeRequest struct {
 	Relation   string         `json:"relation"`
 	Properties map[string]any `json:"properties,omitempty"`
 	Weight     *float64       `json:"weight,omitempty"`
+	DateStart  *string        `json:"date_start,omitempty"`
+	DateEnd    *string        `json:"date_end,omitempty"`
+	IsCurrent  *bool          `json:"is_current,omitempty"`
 }
 
 // PatchPropertiesRequest is the payload for partially updating properties.
@@ -76,6 +85,9 @@ type PatchPropertiesRequest struct {
 type UpdateEdgeRequest struct {
 	Properties map[string]any `json:"properties,omitempty"`
 	Weight     *float64       `json:"weight,omitempty"`
+	DateStart  *string        `json:"date_start,omitempty"`
+	DateEnd    *string        `json:"date_end,omitempty"`
+	IsCurrent  *bool          `json:"is_current,omitempty"`
 }
 
 // SupersedeRequest is the payload for superseding one node with another.
@@ -163,6 +175,8 @@ type EdgeListOptions struct {
 	Relation string
 	Limit    int
 	Offset   int
+	ActiveOn *time.Time
+	Current  *bool
 }
 
 // SearchOptions holds parameters for search queries.

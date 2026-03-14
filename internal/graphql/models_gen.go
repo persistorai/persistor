@@ -29,6 +29,9 @@ type CreateEdgeInput struct {
 	Relation   string         `json:"relation"`
 	Properties map[string]any `json:"properties,omitempty"`
 	Weight     *float64       `json:"weight,omitempty"`
+	DateStart  *string        `json:"dateStart,omitempty"`
+	DateEnd    *string        `json:"dateEnd,omitempty"`
+	IsCurrent  *bool          `json:"isCurrent,omitempty"`
 }
 
 type CreateNodeInput struct {
@@ -47,6 +50,12 @@ type Edge struct {
 	AccessCount   int            `json:"accessCount"`
 	SalienceScore float64        `json:"salienceScore"`
 	UserBoosted   bool           `json:"userBoosted"`
+	DateStart     *string        `json:"dateStart,omitempty"`
+	DateEnd       *string        `json:"dateEnd,omitempty"`
+	DateLower     *string        `json:"dateLower,omitempty"`
+	DateUpper     *string        `json:"dateUpper,omitempty"`
+	IsCurrent     *bool          `json:"isCurrent,omitempty"`
+	DateQualifier *string        `json:"dateQualifier,omitempty"`
 	CreatedAt     string         `json:"createdAt"`
 	UpdatedAt     string         `json:"updatedAt"`
 	SourceNode    *Node          `json:"sourceNode,omitempty"`
@@ -101,6 +110,9 @@ type TraverseResult struct {
 type UpdateEdgeInput struct {
 	Properties map[string]any `json:"properties,omitempty"`
 	Weight     *float64       `json:"weight,omitempty"`
+	DateStart  *string        `json:"dateStart,omitempty"`
+	DateEnd    *string        `json:"dateEnd,omitempty"`
+	IsCurrent  *bool          `json:"isCurrent,omitempty"`
 }
 
 type UpdateNodeInput struct {

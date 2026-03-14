@@ -5,6 +5,7 @@ package domain
 
 import (
 	"context"
+	"time"
 
 	"github.com/persistorai/persistor/internal/models"
 )
@@ -23,7 +24,7 @@ type NodeService interface {
 
 // EdgeService defines all edge operations.
 type EdgeService interface {
-	ListEdges(ctx context.Context, tenantID string, source, target, relation string, limit, offset int) ([]models.Edge, bool, error)
+	ListEdges(ctx context.Context, tenantID string, source, target, relation string, limit, offset int, activeOn *time.Time, current *bool) ([]models.Edge, bool, error)
 	CreateEdge(ctx context.Context, tenantID string, req models.CreateEdgeRequest) (*models.Edge, error)
 	UpdateEdge(ctx context.Context, tenantID string, source, target, relation string, req models.UpdateEdgeRequest) (*models.Edge, error)
 	PatchEdgeProperties(ctx context.Context, tenantID string, source, target, relation string, req models.PatchPropertiesRequest) (*models.Edge, error)

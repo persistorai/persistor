@@ -43,7 +43,7 @@ func (r *queryResolver) Edges(ctx context.Context, source *string, target *strin
 	if err != nil {
 		return nil, gqlErr(ctx, err)
 	}
-	edges, hasMore, err := r.EdgeSvc.ListEdges(ctx, tid, derefStr(source), derefStr(target), derefStr(relation), deref(limit, 50), deref(offset, 0))
+	edges, hasMore, err := r.EdgeSvc.ListEdges(ctx, tid, derefStr(source), derefStr(target), derefStr(relation), deref(limit, 50), deref(offset, 0), nil, nil)
 	if err != nil {
 		return nil, gqlErr(ctx, err)
 	}

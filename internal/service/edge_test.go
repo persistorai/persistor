@@ -147,13 +147,13 @@ func TestEdgeService_DeleteEdge(t *testing.T) {
 
 func TestEdgeService_ListEdges(t *testing.T) {
 	store := &mockEdgeStore{
-		listEdges: func(_ context.Context, _, _, _, _ string, _, _ int) ([]models.Edge, bool, error) {
+		listEdges: func(_ context.Context, _, _, _, _ string, _, _ int, _ *time.Time, _ *bool) ([]models.Edge, bool, error) {
 			return []models.Edge{{Source: "a", Target: "b", Relation: "knows"}}, false, nil
 		},
 	}
 	svc := NewEdgeService(store, nil, testLogger())
 
-	edges, hasMore, err := svc.ListEdges(context.Background(), "t1", "", "", "", 10, 0)
+	edges, hasMore, err := svc.ListEdges(context.Background(), "t1", "", "", "", 10, 0, nil, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

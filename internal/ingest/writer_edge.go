@@ -17,8 +17,8 @@ func (w *Writer) WriteRelationships(
 ) (*WriteReport, error) {
 	report := &WriteReport{}
 
-	for _, rel := range relationships {
-		w.writeRelationship(ctx, rel, nodeMap, report)
+	for i := range relationships {
+		w.writeRelationship(ctx, &relationships[i], nodeMap, report)
 	}
 
 	return report, nil
@@ -27,7 +27,7 @@ func (w *Writer) WriteRelationships(
 // writeRelationship processes a single relationship.
 func (w *Writer) writeRelationship(
 	ctx context.Context,
-	rel ExtractedRelationship,
+	rel *ExtractedRelationship,
 	nodeMap map[string]string,
 	report *WriteReport,
 ) {
@@ -48,7 +48,7 @@ func (w *Writer) writeRelationship(
 	}
 
 	if !models.IsCanonicalRelation(rel.Relation) {
-		report.UnknownRelations = append(report.UnknownRelations, rel)
+		report.UnknownRelations = append(report.UnknownRelations, *rel)
 		report.SkippedEdges++
 		return
 	}
@@ -66,7 +66,7 @@ func (w *Writer) writeRelationship(
 func (w *Writer) createEdge(
 	ctx context.Context,
 	sourceID, targetID string,
-	rel ExtractedRelationship,
+	rel *ExtractedRelationship,
 ) error {
 	req := &client.CreateEdgeRequest{
 		Source:   sourceID,
@@ -76,6 +76,9 @@ func (w *Writer) createEdge(
 			"_confidence":    rel.Confidence,
 			"_ingested_from": w.source,
 		},
+		DateStart: rel.DateStart,
+		DateEnd:   rel.DateEnd,
+		IsCurrent: rel.IsCurrent,
 	}
 
 	_, err := w.graph.CreateEdge(ctx, req)

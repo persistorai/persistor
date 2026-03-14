@@ -3,6 +3,7 @@ package api
 import (
 	"errors"
 	"net/http"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/sirupsen/logrus"
@@ -22,6 +23,7 @@ func NewEdgeHandler(repo EdgeService, log *logrus.Logger) *EdgeHandler {
 }
 
 // List handles GET /api/edges.
+// Supports optional temporal filters: active_on (date) and current (bool).
 func (h *EdgeHandler) List(c *gin.Context) {
 	tenantID := getTenantID(c)
 	if tenantID == "" {
@@ -33,7 +35,23 @@ func (h *EdgeHandler) List(c *gin.Context) {
 	limit := parseInt(c.DefaultQuery("limit", "50"), 50)
 	offset := parseOffset(c.DefaultQuery("offset", "0"))
 
-	edges, hasMore, err := h.repo.ListEdges(c.Request.Context(), tenantID, source, target, relation, limit, offset)
+	var activeOn *time.Time
+	if raw := c.Query("active_on"); raw != "" {
+		t, err := time.Parse("2006-01-02", raw)
+		if err != nil {
+			respondError(c, http.StatusBadRequest, ErrCodeInvalidRequest, "active_on must be a date in YYYY-MM-DD format")
+			return
+		}
+		activeOn = &t
+	}
+
+	var current *bool
+	if raw := c.Query("current"); raw != "" {
+		v := raw == "true" || raw == "1"
+		current = &v
+	}
+
+	edges, hasMore, err := h.repo.ListEdges(c.Request.Context(), tenantID, source, target, relation, limit, offset, activeOn, current)
 	if err != nil {
 		h.log.WithError(err).Error("listing edges")
 		respondError(c, http.StatusInternalServerError, ErrCodeInternalError, "internal server error")

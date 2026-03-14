@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/sirupsen/logrus"
 )
@@ -44,40 +45,40 @@ var allowedEntityTypes = map[string]bool{
 
 // entityTypeAliases maps common LLM-generated types to canonical types.
 var entityTypeAliases = map[string]string{
-	"location":      "place",
-	"lesson":        "concept",
-	"milestone":     "event",
-	"component":     "technology",
-	"endpoint":      "technology",
-	"tool":          "technology",
-	"software":      "technology",
-	"framework":     "technology",
-	"library":       "technology",
-	"language":      "technology",
-	"organization":  "company",
-	"org":           "company",
-	"institution":   "company",
-	"skill":         "concept",
-	"pattern":       "concept",
-	"principle":     "concept",
-	"idea":          "concept",
-	"feature":       "concept",
-	"goal":          "concept",
-	"metric":        "concept",
-	"process":       "concept",
-	"strategy":      "concept",
-	"creature":      "animal",
-	"pet":           "animal",
-	"wildlife":      "animal",
-	"media":         "concept",
-	"model":         "technology",
-	"database":      "technology",
-	"platform":      "technology",
-	"protocol":      "technology",
-	"api":           "technology",
-	"plugin":        "technology",
-	"extension":     "technology",
-	"agent":         "project",
+	"location":     "place",
+	"lesson":       "concept",
+	"milestone":    "event",
+	"component":    "technology",
+	"endpoint":     "technology",
+	"tool":         "technology",
+	"software":     "technology",
+	"framework":    "technology",
+	"library":      "technology",
+	"language":     "technology",
+	"organization": "company",
+	"org":          "company",
+	"institution":  "company",
+	"skill":        "concept",
+	"pattern":      "concept",
+	"principle":    "concept",
+	"idea":         "concept",
+	"feature":      "concept",
+	"goal":         "concept",
+	"metric":       "concept",
+	"process":      "concept",
+	"strategy":     "concept",
+	"creature":     "animal",
+	"pet":          "animal",
+	"wildlife":     "animal",
+	"media":        "concept",
+	"model":        "technology",
+	"database":     "technology",
+	"platform":     "technology",
+	"protocol":     "technology",
+	"api":          "technology",
+	"plugin":       "technology",
+	"extension":    "technology",
+	"agent":        "project",
 }
 
 // Extract processes a text chunk and returns structured extraction results.
@@ -145,12 +146,16 @@ func buildPrompt(chunk string, knownEntities []string) string {
 		}
 		textSection += "\n"
 	}
+	today := time.Now().UTC().Format("2006-01-02")
+	prompt = strings.Replace(prompt, "{today}", today, 1)
 	prompt = strings.Replace(prompt, "{text_section}", textSection, 1)
 	prompt = strings.Replace(prompt, "{text}", chunk, 1)
 	return prompt
 }
 
 const extractionPrompt = `You are a knowledge graph extraction engine. Extract entities, relationships, and facts from text into structured JSON.
+
+Today's date: {today}
 
 CRITICAL RULES FOR ENTITY NAMES:
 - Use SHORT, CLEAN names only. Never put descriptions in names.
@@ -170,7 +175,7 @@ Output ONLY valid JSON:
     {"name": "Short Name", "type": "person|project|company|technology|event|decision|concept|place|animal|service", "properties": {}, "description": "One sentence"}
   ],
   "relationships": [
-    {"source": "Entity A", "target": "Entity B", "relation": "type", "confidence": 0.9}
+    {"source": "Entity A", "target": "Entity B", "relation": "type", "confidence": 0.9, "date_start": "EDTF date or null", "date_end": "EDTF date or null", "is_current": true}
   ],
   "facts": [
     {"subject": "Entity Name", "property": "key", "value": "value"}
@@ -184,6 +189,13 @@ ENTITY TYPES must be one of: person, project, company, technology, event, decisi
 
 RELATIONSHIP TYPES — use ONLY these:
 created, founded, works_at, worked_at, works_on, leads, owns, part_of, product_of, deployed_on, runs_on, uses, depends_on, implements, extends, replaced_by, enables, supports, parent_of, child_of, sibling_of, married_to, friend_of, mentored, located_in, learned, decided, inspired, prefers, competes_with, acquired, funded, partners_with, affected_by, achieved, detected_in, experienced
+
+TEMPORAL DATA ON RELATIONSHIPS:
+- Extract temporal data when mentioned: "worked at X from 2009 to 2022" → date_start: "2009", date_end: "2022", is_current: false
+- Use EDTF notation: exact dates "2006-01-21", year-only "2006", approximate "~1989", decade "198x"
+- If a relationship is described as current/ongoing, set is_current: true and date_end: null
+- If no temporal info is available, omit date_start, date_end, and is_current entirely (do not include null values)
+- Use today's date ({today}) to judge whether a relationship described as present-tense is current
 
 WHAT TO EXTRACT:
 - Real people with names (not "the team" or "users")

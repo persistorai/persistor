@@ -21,6 +21,12 @@ type Edge {
   accessCount: Int!
   salienceScore: Float!
   userBoosted: Boolean!
+  dateStart: String
+  dateEnd: String
+  dateLower: String
+  dateUpper: String
+  isCurrent: Boolean
+  dateQualifier: String
   createdAt: String!
   updatedAt: String!
   sourceNode: Node
@@ -87,11 +93,17 @@ input CreateEdgeInput {
   relation: String!
   properties: JSON
   weight: Float
+  dateStart: String
+  dateEnd: String
+  isCurrent: Boolean
 }
 
 input UpdateEdgeInput {
   properties: JSON
   weight: Float
+  dateStart: String
+  dateEnd: String
+  isCurrent: Boolean
 }
 
 type SearchResult {

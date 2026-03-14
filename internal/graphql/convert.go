@@ -38,7 +38,7 @@ func edgeToGQL(e *models.Edge) *Edge {
 	if e == nil {
 		return nil
 	}
-	return &Edge{
+	gql := &Edge{
 		Source:        e.Source,
 		Target:        e.Target,
 		Relation:      e.Relation,
@@ -47,9 +47,22 @@ func edgeToGQL(e *models.Edge) *Edge {
 		AccessCount:   e.AccessCount,
 		SalienceScore: e.Salience,
 		UserBoosted:   e.UserBoosted,
+		DateStart:     e.DateStart,
+		DateEnd:       e.DateEnd,
+		IsCurrent:     e.IsCurrent,
+		DateQualifier: e.DateQualifier,
 		CreatedAt:     e.CreatedAt.Format("2006-01-02T15:04:05Z07:00"),
 		UpdatedAt:     e.UpdatedAt.Format("2006-01-02T15:04:05Z07:00"),
 	}
+	if e.DateLower != nil {
+		s := e.DateLower.Format("2006-01-02")
+		gql.DateLower = &s
+	}
+	if e.DateUpper != nil {
+		s := e.DateUpper.Format("2006-01-02")
+		gql.DateUpper = &s
+	}
+	return gql
 }
 
 // edgesToGQL converts a slice of models.Edge to GraphQL Edge pointers.

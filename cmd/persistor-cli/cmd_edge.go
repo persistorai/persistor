@@ -4,9 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"time"
+
+	"github.com/spf13/cobra"
 
 	"github.com/persistorai/persistor/client"
-	"github.com/spf13/cobra"
 )
 
 func newEdgeCmd() *cobra.Command {
@@ -23,7 +25,8 @@ func newEdgeCmd() *cobra.Command {
 }
 
 func edgeCreateCmd() *cobra.Command {
-	var relation, propsJSON string
+	var relation, propsJSON, dateStart, dateEnd string
+	var isCurrent bool
 	cmd := &cobra.Command{
 		Use:   "create <source> <target>",
 		Short: "Create an edge",
@@ -39,6 +42,15 @@ func edgeCreateCmd() *cobra.Command {
 					fatal("parse props", err)
 				}
 			}
+			if dateStart != "" {
+				req.DateStart = &dateStart
+			}
+			if dateEnd != "" {
+				req.DateEnd = &dateEnd
+			}
+			if cmd.Flags().Changed("current") {
+				req.IsCurrent = &isCurrent
+			}
 			edge, err := apiClient.Edges.Create(context.Background(), req)
 			if err != nil {
 				fatal("create edge", err)
@@ -48,13 +60,17 @@ func edgeCreateCmd() *cobra.Command {
 	}
 	cmd.Flags().StringVar(&relation, "relation", "", "Relation type")
 	cmd.Flags().StringVar(&propsJSON, "props", "", "Properties as JSON")
-	_ = cmd.MarkFlagRequired("relation")
+	cmd.Flags().StringVar(&dateStart, "date-start", "", "Start date in EDTF format (e.g. ~1983, 2009-05)")
+	cmd.Flags().StringVar(&dateEnd, "date-end", "", "End date in EDTF format (e.g. ~1983, 2022-07)")
+	cmd.Flags().BoolVar(&isCurrent, "current", false, "Whether this edge represents a current relationship")
+	_ = cmd.MarkFlagRequired("relation") //nolint:errcheck // flag was just registered; MarkFlagRequired only fails on unknown flags
 	return cmd
 }
 
 func edgeListCmd() *cobra.Command {
-	var source, target, relation string
+	var source, target, relation, activeOn string
 	var limit int
+	var isCurrent bool
 	cmd := &cobra.Command{
 		Use:   "list",
 		Short: "List edges",
@@ -65,22 +81,32 @@ func edgeListCmd() *cobra.Command {
 				Relation: relation,
 				Limit:    limit,
 			}
+			if activeOn != "" {
+				t, err := time.Parse("2006-01-02", activeOn)
+				if err != nil {
+					fatal("parse active-on date", fmt.Errorf("must be YYYY-MM-DD format: %w", err))
+				}
+				opts.ActiveOn = &t
+			}
+			if cmd.Flags().Changed("current") {
+				opts.Current = &isCurrent
+			}
 			edges, _, err := apiClient.Edges.List(context.Background(), opts)
 			if err != nil {
 				fatal("list edges", err)
 			}
 			if flagFmt == "table" {
-				headers := []string{"SOURCE", "TARGET", "RELATION", "WEIGHT"}
-				var rows [][]string
-				for _, e := range edges {
-					rows = append(rows, []string{e.Source, e.Target, e.Relation, fmt.Sprintf("%.2f", e.Weight)})
+				headers := []string{"SOURCE", "TARGET", "RELATION", "WEIGHT", "DATE_START", "DATE_END", "CURRENT"}
+				rows := make([][]string, len(edges))
+				for i := range edges {
+					rows[i] = edgeTableRow(&edges[i])
 				}
 				formatTable(headers, rows)
 				return
 			}
 			if flagFmt == "quiet" {
-				for _, e := range edges {
-					fmt.Printf("%s->%s:%s\n", e.Source, e.Target, e.Relation)
+				for i := range edges {
+					fmt.Printf("%s->%s:%s\n", edges[i].Source, edges[i].Target, edges[i].Relation)
 				}
 				return
 			}
@@ -91,11 +117,14 @@ func edgeListCmd() *cobra.Command {
 	cmd.Flags().StringVar(&target, "target", "", "Filter by target")
 	cmd.Flags().StringVar(&relation, "relation", "", "Filter by relation")
 	cmd.Flags().IntVar(&limit, "limit", 0, "Max results")
+	cmd.Flags().StringVar(&activeOn, "active-on", "", "Return edges active on this date (YYYY-MM-DD)")
+	cmd.Flags().BoolVar(&isCurrent, "current", false, "Return only edges where is_current = true (or false if --current=false)")
 	return cmd
 }
 
 func edgeUpdateCmd() *cobra.Command {
-	var propsJSON string
+	var propsJSON, dateStart, dateEnd string
+	var isCurrent bool
 	cmd := &cobra.Command{
 		Use:   "update <source> <target> <relation>",
 		Short: "Update an edge",
@@ -107,6 +136,15 @@ func edgeUpdateCmd() *cobra.Command {
 					fatal("parse props", err)
 				}
 			}
+			if dateStart != "" {
+				req.DateStart = &dateStart
+			}
+			if dateEnd != "" {
+				req.DateEnd = &dateEnd
+			}
+			if cmd.Flags().Changed("current") {
+				req.IsCurrent = &isCurrent
+			}
 			edge, err := apiClient.Edges.Update(context.Background(), args[0], args[1], args[2], req)
 			if err != nil {
 				fatal("update edge", err)
@@ -115,6 +153,9 @@ func edgeUpdateCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&propsJSON, "props", "", "Properties as JSON")
+	cmd.Flags().StringVar(&dateStart, "date-start", "", "Start date in EDTF format (e.g. ~1983, 2009-05)")
+	cmd.Flags().StringVar(&dateEnd, "date-end", "", "End date in EDTF format (e.g. ~1983, 2022-07)")
+	cmd.Flags().BoolVar(&isCurrent, "current", false, "Whether this edge represents a current relationship")
 	return cmd
 }
 
@@ -156,4 +197,25 @@ func edgeDeleteCmd() *cobra.Command {
 			fmt.Println("deleted")
 		},
 	}
+}
+
+// edgeTableRow formats a single edge as a table row with temporal fields.
+func edgeTableRow(e *client.Edge) []string {
+	ds := "-"
+	if e.DateStart != nil {
+		ds = *e.DateStart
+	}
+	de := "-"
+	if e.DateEnd != nil {
+		de = *e.DateEnd
+	}
+	cur := "-"
+	if e.IsCurrent != nil {
+		if *e.IsCurrent {
+			cur = "true"
+		} else {
+			cur = "false"
+		}
+	}
+	return []string{e.Source, e.Target, e.Relation, fmt.Sprintf("%.2f", e.Weight), ds, de, cur}
 }

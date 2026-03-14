@@ -186,3 +186,121 @@ func TestExtract_EntityTypeCaseInsensitive(t *testing.T) {
 		t.Errorf("expected normalized type 'company', got %q", result.Entities[0].Type)
 	}
 }
+
+func TestExtract_TemporalRelationshipFields(t *testing.T) {
+	llm := &mockLLM{
+		response: `{
+			"entities": [
+				{"name": "Alice", "type": "person", "properties": {}, "description": "A developer"}
+			],
+			"relationships": [
+				{"source": "Alice", "target": "Acme", "relation": "worked_at", "confidence": 0.95, "date_start": "2009", "date_end": "2022", "is_current": false}
+			],
+			"facts": []
+		}`,
+	}
+
+	ext := ingest.NewExtractor(llm)
+	result, err := ext.Extract(context.Background(), "Alice worked at Acme from 2009 to 2022.")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if len(result.Relationships) != 1 {
+		t.Fatalf("expected 1 relationship, got %d", len(result.Relationships))
+	}
+
+	rel := result.Relationships[0]
+
+	if rel.DateStart == nil || *rel.DateStart != "2009" {
+		t.Errorf("expected date_start '2009', got %v", rel.DateStart)
+	}
+
+	if rel.DateEnd == nil || *rel.DateEnd != "2022" {
+		t.Errorf("expected date_end '2022', got %v", rel.DateEnd)
+	}
+
+	if rel.IsCurrent == nil {
+		t.Fatal("expected is_current to be set")
+	}
+
+	if *rel.IsCurrent {
+		t.Error("expected is_current false")
+	}
+}
+
+func TestExtract_CurrentRelationshipFields(t *testing.T) {
+	llm := &mockLLM{
+		response: `{
+			"entities": [
+				{"name": "Bob", "type": "person", "properties": {}, "description": "An engineer"}
+			],
+			"relationships": [
+				{"source": "Bob", "target": "Widgets Inc", "relation": "works_at", "confidence": 0.9, "date_start": "2020", "is_current": true}
+			],
+			"facts": []
+		}`,
+	}
+
+	ext := ingest.NewExtractor(llm)
+	result, err := ext.Extract(context.Background(), "Bob currently works at Widgets Inc since 2020.")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if len(result.Relationships) != 1 {
+		t.Fatalf("expected 1 relationship, got %d", len(result.Relationships))
+	}
+
+	rel := result.Relationships[0]
+
+	if rel.DateStart == nil || *rel.DateStart != "2020" {
+		t.Errorf("expected date_start '2020', got %v", rel.DateStart)
+	}
+
+	if rel.DateEnd != nil {
+		t.Errorf("expected date_end nil for current relationship, got %v", rel.DateEnd)
+	}
+
+	if rel.IsCurrent == nil || !*rel.IsCurrent {
+		t.Error("expected is_current true for current relationship")
+	}
+}
+
+func TestExtract_NoTemporalFields(t *testing.T) {
+	llm := &mockLLM{
+		response: `{
+			"entities": [
+				{"name": "Carol", "type": "person", "properties": {}, "description": "A designer"}
+			],
+			"relationships": [
+				{"source": "Carol", "target": "DesignCo", "relation": "works_at", "confidence": 0.8}
+			],
+			"facts": []
+		}`,
+	}
+
+	ext := ingest.NewExtractor(llm)
+	result, err := ext.Extract(context.Background(), "Carol works at DesignCo.")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if len(result.Relationships) != 1 {
+		t.Fatalf("expected 1 relationship, got %d", len(result.Relationships))
+	}
+
+	rel := result.Relationships[0]
+
+	if rel.DateStart != nil {
+		t.Errorf("expected nil date_start, got %v", rel.DateStart)
+	}
+
+	if rel.DateEnd != nil {
+		t.Errorf("expected nil date_end, got %v", rel.DateEnd)
+	}
+
+	if rel.IsCurrent != nil {
+		t.Errorf("expected nil is_current, got %v", rel.IsCurrent)
+	}
+}

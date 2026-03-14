@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"time"
 
 	"github.com/sirupsen/logrus"
 
@@ -31,13 +32,14 @@ func NewEdgeService(store EdgeStore, auditWorker AuditEnqueuer, log *logrus.Logg
 // ListEdges returns a paginated list of edges (pass-through).
 func (s *EdgeService) ListEdges(
 	ctx context.Context, tenantID string, source, target, relation string, limit, offset int,
+	activeOn *time.Time, current *bool,
 ) ([]models.Edge, bool, error) {
-	return s.store.ListEdges(ctx, tenantID, source, target, relation, limit, offset)
+	return s.store.ListEdges(ctx, tenantID, source, target, relation, limit, offset, activeOn, current)
 }
 
 // CreateEdge creates an edge and records an audit entry.
 func (s *EdgeService) CreateEdge(
-	ctx context.Context, tenantID string, req models.CreateEdgeRequest,
+	ctx context.Context, tenantID string, req models.CreateEdgeRequest, //nolint:gocritic // hugeParam: interface signature is fixed; struct size accepted by design
 ) (*models.Edge, error) {
 	edge, err := s.store.CreateEdge(ctx, tenantID, req)
 	if err != nil {

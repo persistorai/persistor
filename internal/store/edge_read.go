@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 
@@ -11,9 +12,9 @@ import (
 )
 
 // buildEdgeListQuery constructs the filtered SELECT query and arguments for ListEdges.
-func buildEdgeListQuery(source, target, relation string, limit, offset int) (query string, args []any) {
+func buildEdgeListQuery(source, target, relation string, limit, offset int, activeOn *time.Time, current *bool) (query string, args []any) {
 	where := " WHERE tenant_id = current_setting('app.tenant_id')::uuid"
-	filterArgs := make([]any, 0, 3)
+	filterArgs := make([]any, 0, 5)
 	argIdx := 1
 
 	if source != "" {
@@ -34,6 +35,18 @@ func buildEdgeListQuery(source, target, relation string, limit, offset int) (que
 		argIdx++
 	}
 
+	if activeOn != nil {
+		where += fmt.Sprintf(" AND (date_lower IS NULL OR date_lower <= $%d) AND (date_upper IS NULL OR date_upper >= $%d)", argIdx, argIdx+1)
+		filterArgs = append(filterArgs, activeOn, activeOn)
+		argIdx += 2
+	}
+
+	if current != nil {
+		where += fmt.Sprintf(" AND is_current = $%d", argIdx)
+		filterArgs = append(filterArgs, *current)
+		argIdx++
+	}
+
 	query = "SELECT " + edgeColumns + " FROM kg_edges" + where
 	query += " ORDER BY updated_at DESC"
 	query += fmt.Sprintf(" LIMIT $%d OFFSET $%d", argIdx, argIdx+1)
@@ -44,12 +57,14 @@ func buildEdgeListQuery(source, target, relation string, limit, offset int) (que
 	return query, args
 }
 
-// ListEdges returns edges for a tenant with optional source, target, and relation filters.
+// ListEdges returns edges for a tenant with optional filters including temporal constraints.
 func (s *EdgeStore) ListEdges(
 	ctx context.Context,
 	tenantID string,
 	source, target, relation string,
 	limit, offset int,
+	activeOn *time.Time,
+	current *bool,
 ) ([]models.Edge, bool, error) {
 	if limit <= 0 {
 		limit = 50
@@ -73,7 +88,7 @@ func (s *EdgeStore) ListEdges(
 
 	defer tx.Rollback(ctx) //nolint:errcheck // best-effort rollback after commit.
 
-	query, args := buildEdgeListQuery(source, target, relation, limit, offset)
+	query, args := buildEdgeListQuery(source, target, relation, limit, offset, activeOn, current)
 
 	rows, err := tx.Query(ctx, query, args...)
 	if err != nil {

@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"sync"
+	"time"
 
 	"github.com/persistorai/persistor/internal/models"
 )
@@ -70,7 +71,7 @@ type mockEdgeStore struct {
 	mu    sync.Mutex
 	calls []string
 
-	listEdges  func(ctx context.Context, tenantID, source, target, relation string, limit, offset int) ([]models.Edge, bool, error)
+	listEdges  func(ctx context.Context, tenantID, source, target, relation string, limit, offset int, activeOn *time.Time, current *bool) ([]models.Edge, bool, error)
 	createEdge func(ctx context.Context, tenantID string, req models.CreateEdgeRequest) (*models.Edge, error)
 	updateEdge func(ctx context.Context, tenantID, source, target, relation string, req models.UpdateEdgeRequest) (*models.Edge, error)
 	deleteEdge func(ctx context.Context, tenantID, source, target, relation string) error
@@ -82,12 +83,12 @@ func (m *mockEdgeStore) record(name string) {
 	m.calls = append(m.calls, name)
 }
 
-func (m *mockEdgeStore) ListEdges(ctx context.Context, tenantID, source, target, relation string, limit, offset int) ([]models.Edge, bool, error) {
+func (m *mockEdgeStore) ListEdges(ctx context.Context, tenantID, source, target, relation string, limit, offset int, activeOn *time.Time, current *bool) ([]models.Edge, bool, error) {
 	m.record("ListEdges")
-	return m.listEdges(ctx, tenantID, source, target, relation, limit, offset)
+	return m.listEdges(ctx, tenantID, source, target, relation, limit, offset, activeOn, current)
 }
 
-func (m *mockEdgeStore) CreateEdge(ctx context.Context, tenantID string, req models.CreateEdgeRequest) (*models.Edge, error) {
+func (m *mockEdgeStore) CreateEdge(ctx context.Context, tenantID string, req models.CreateEdgeRequest) (*models.Edge, error) { //nolint:gocritic // hugeParam: matches domain.EdgeService interface signature
 	m.record("CreateEdge")
 	return m.createEdge(ctx, tenantID, req)
 }

@@ -102,7 +102,7 @@ func TestListEdges(t *testing.T) {
 	}
 
 	// All edges.
-	all, _, err := es.ListEdges(ctx, tenantID, "", "", "", 50, 0)
+	all, _, err := es.ListEdges(ctx, tenantID, "", "", "", 50, 0, nil, nil)
 	if err != nil {
 		t.Fatalf("ListEdges all: %v", err)
 	}
@@ -111,7 +111,7 @@ func TestListEdges(t *testing.T) {
 	}
 
 	// Filter by source.
-	bySource, _, err := es.ListEdges(ctx, tenantID, a.ID, "", "", 50, 0)
+	bySource, _, err := es.ListEdges(ctx, tenantID, a.ID, "", "", 50, 0, nil, nil)
 	if err != nil {
 		t.Fatalf("ListEdges by source: %v", err)
 	}
@@ -120,7 +120,7 @@ func TestListEdges(t *testing.T) {
 	}
 
 	// Filter by relation.
-	byRel, _, err := es.ListEdges(ctx, tenantID, "", "", "likes", 50, 0)
+	byRel, _, err := es.ListEdges(ctx, tenantID, "", "", "likes", 50, 0, nil, nil)
 	if err != nil {
 		t.Fatalf("ListEdges by relation: %v", err)
 	}

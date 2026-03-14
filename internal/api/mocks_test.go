@@ -2,6 +2,7 @@ package api_test
 
 import (
 	"context"
+	"time"
 
 	"github.com/persistorai/persistor/internal/models"
 )
@@ -49,17 +50,17 @@ func (m *mockNodeRepo) MigrateNode(_ context.Context, _, _ string, _ models.Migr
 
 // mockEdgeRepo implements api.EdgeService for testing.
 type mockEdgeRepo struct {
-	listFn   func(ctx context.Context, tenantID, source, target, relation string, limit, offset int) ([]models.Edge, bool, error)
+	listFn   func(ctx context.Context, tenantID, source, target, relation string, limit, offset int, activeOn *time.Time, current *bool) ([]models.Edge, bool, error)
 	createFn func(ctx context.Context, tenantID string, req models.CreateEdgeRequest) (*models.Edge, error)
 	updateFn func(ctx context.Context, tenantID, source, target, relation string, req models.UpdateEdgeRequest) (*models.Edge, error)
 	deleteFn func(ctx context.Context, tenantID, source, target, relation string) error
 }
 
-func (m *mockEdgeRepo) ListEdges(ctx context.Context, tenantID, source, target, relation string, limit, offset int) ([]models.Edge, bool, error) {
-	return m.listFn(ctx, tenantID, source, target, relation, limit, offset)
+func (m *mockEdgeRepo) ListEdges(ctx context.Context, tenantID, source, target, relation string, limit, offset int, activeOn *time.Time, current *bool) ([]models.Edge, bool, error) {
+	return m.listFn(ctx, tenantID, source, target, relation, limit, offset, activeOn, current)
 }
 
-func (m *mockEdgeRepo) CreateEdge(ctx context.Context, tenantID string, req models.CreateEdgeRequest) (*models.Edge, error) {
+func (m *mockEdgeRepo) CreateEdge(ctx context.Context, tenantID string, req models.CreateEdgeRequest) (*models.Edge, error) { //nolint:gocritic // hugeParam: matches domain.EdgeService interface signature
 	return m.createFn(ctx, tenantID, req)
 }
 

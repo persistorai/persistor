@@ -20,29 +20,46 @@ type edgeListResponse struct {
 
 // List returns edges with optional filtering and pagination.
 func (s *EdgeService) List(ctx context.Context, opts *EdgeListOptions) ([]Edge, bool, error) {
-	params := url.Values{}
-	if opts != nil {
-		if opts.Source != "" {
-			params.Set("source", opts.Source)
-		}
-		if opts.Target != "" {
-			params.Set("target", opts.Target)
-		}
-		if opts.Relation != "" {
-			params.Set("relation", opts.Relation)
-		}
-		if opts.Limit > 0 {
-			params.Set("limit", strconv.Itoa(opts.Limit))
-		}
-		if opts.Offset > 0 {
-			params.Set("offset", strconv.Itoa(opts.Offset))
-		}
-	}
+	params := edgeListParams(opts)
 	var resp edgeListResponse
 	if err := s.c.get(ctx, "/api/v1/edges", params, &resp); err != nil {
 		return nil, false, err
 	}
 	return resp.Edges, resp.HasMore, nil
+}
+
+// edgeListParams converts EdgeListOptions into URL query parameters.
+func edgeListParams(opts *EdgeListOptions) url.Values {
+	params := url.Values{}
+	if opts == nil {
+		return params
+	}
+	if opts.Source != "" {
+		params.Set("source", opts.Source)
+	}
+	if opts.Target != "" {
+		params.Set("target", opts.Target)
+	}
+	if opts.Relation != "" {
+		params.Set("relation", opts.Relation)
+	}
+	if opts.Limit > 0 {
+		params.Set("limit", strconv.Itoa(opts.Limit))
+	}
+	if opts.Offset > 0 {
+		params.Set("offset", strconv.Itoa(opts.Offset))
+	}
+	if opts.ActiveOn != nil {
+		params.Set("active_on", opts.ActiveOn.Format("2006-01-02"))
+	}
+	if opts.Current != nil {
+		if *opts.Current {
+			params.Set("current", "true")
+		} else {
+			params.Set("current", "false")
+		}
+	}
+	return params
 }
 
 // Create creates a new edge.
