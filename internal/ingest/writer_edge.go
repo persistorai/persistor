@@ -34,6 +34,14 @@ func (w *Writer) writeRelationship(
 	sourceID, sourceOK := nodeMap[strings.ToLower(rel.Source)]
 	targetID, targetOK := nodeMap[strings.ToLower(rel.Target)]
 
+	// If entity not in current nodeMap, try to find it in the KG
+	if !sourceOK {
+		sourceID, sourceOK = w.resolveEntityInKG(ctx, rel.Source, nodeMap)
+	}
+	if !targetOK {
+		targetID, targetOK = w.resolveEntityInKG(ctx, rel.Target, nodeMap)
+	}
+
 	if !sourceOK || !targetOK {
 		report.SkippedEdges++
 		return
@@ -78,6 +86,22 @@ func (w *Writer) createEdge(
 	return nil
 }
 
+// resolveEntityInKG looks up an entity name in the KG via exact label match.
+// If found, it caches the result in nodeMap for future lookups.
+func (w *Writer) resolveEntityInKG(
+	ctx context.Context,
+	name string,
+	nodeMap map[string]string,
+) (string, bool) {
+	existing, err := w.findByName(ctx, name)
+	if err != nil || existing == nil {
+		return "", false
+	}
+	// Cache for future lookups in this ingest run
+	nodeMap[strings.ToLower(name)] = existing.ID
+	return existing.ID, true
+}
+
 // WriteFacts patches extracted facts onto existing nodes.
 func (w *Writer) WriteFacts(
 	ctx context.Context,
@@ -101,7 +125,11 @@ func (w *Writer) writeFact(
 ) error {
 	nodeID, ok := nodeMap[strings.ToLower(fact.Subject)]
 	if !ok {
-		return fmt.Errorf("subject %q not in node map", fact.Subject)
+		// Try to find in KG
+		nodeID, ok = w.resolveEntityInKG(ctx, fact.Subject, nodeMap)
+		if !ok {
+			return fmt.Errorf("subject %q not in node map or KG", fact.Subject)
+		}
 	}
 
 	props := map[string]any{fact.Property: fact.Value}
