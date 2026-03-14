@@ -15,12 +15,14 @@ import (
 )
 
 func runIngestion(cmd *cobra.Command, dryRun bool, source, scanDir string) error {
-	if err := checkOllamaHealth(); err != nil {
+	llmClient := ingest.NewLLMClient()
+	fmt.Fprintf(os.Stderr, "LLM provider: %s\n", ingest.LLMProviderName(llmClient))
+
+	if err := checkLLMHealth(llmClient); err != nil {
 		return err
 	}
 
-	ollama := ingest.NewOllamaClient()
-	ext := ingest.NewExtractor(ollama)
+	ext := ingest.NewExtractor(llmClient)
 	gc := ingest.NewPersistorClient(apiClient)
 
 	if scanDir != "" {
@@ -28,6 +30,14 @@ func runIngestion(cmd *cobra.Command, dryRun bool, source, scanDir string) error
 	}
 
 	return ingestStdin(cmd.Context(), ext, gc, source, dryRun)
+}
+
+func checkLLMHealth(client ingest.LLMClient) error {
+	if c, ok := client.(*ingest.OpenAIClient); ok {
+		return c.HealthCheck(context.Background())
+	}
+
+	return checkOllamaHealth()
 }
 
 func checkOllamaHealth() error {
