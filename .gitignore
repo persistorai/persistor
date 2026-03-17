@@ -34,6 +34,7 @@
 /persistor-server
 AGENT_TASK*.md
 CODE_REVIEW_*.md
+CODE_REVIEW_*.json
 __debug_bin
 __debug_bin*
 bin/
