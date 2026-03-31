@@ -158,3 +158,20 @@ If you move, rename, or change the signature of any function:
 - Update EVERY test that calls or mocks it
 - ALL tests must still pass after your changes
 - Do NOT leave broken imports or stale mocks
+
+## Semantic Refactoring (AST-aware tools)
+
+**For renames and cross-codebase refactoring, use semantic tools instead of grep:**
+
+```bash
+# Go: Rename a symbol across the entire project (AST-aware, understands types/interfaces)
+~/go/bin/gopls rename -w path/to/file.go:LINE:COL "NewName"
+
+# Go: Find all references to a symbol  
+~/go/bin/gopls references path/to/file.go:LINE:COL
+
+# Go: Type-check the project
+/usr/local/go/bin/go vet ./...
+```
+
+**Why not grep?** grep is text matching, not code understanding. It misses interface implementations, embedded struct promotions, re-exports, and produces false positives from comments. gopls understands the full Go type system.
