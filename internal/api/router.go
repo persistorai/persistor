@@ -46,9 +46,10 @@ type RouterDeps struct {
 
 // Router-level limits.
 const (
-	maxBodySize = 10 << 20 // 10 MB
-	rateLimit   = 100      // requests per second per IP
-	rateBurst   = 200      // token bucket burst size
+	maxBodySize    = 10 << 20     // 10 MB
+	rateLimit      = 100          // requests per second per IP
+	rateBurst      = 200          // token bucket burst size
+	requestTimeout = 30 * time.Second
 )
 
 // setupMiddleware configures all middleware on the Gin engine.
@@ -57,6 +58,7 @@ func setupMiddleware(ctx context.Context, r *gin.Engine, deps *RouterDeps) {
 	r.Use(middleware.RequestID(deps.Log))
 	r.Use(ginLogger(deps.Log))
 	r.Use(gin.Recovery())
+	r.Use(middleware.RequestTimeout(requestTimeout))
 	r.Use(middleware.SecurityHeaders())
 	r.Use(middleware.MaxBodySize(maxBodySize))
 	r.Use(cors.New(cors.Config{
