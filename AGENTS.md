@@ -1,200 +1,177 @@
-# AGENTS.md
+# CLAUDE.md — Persistor
 
-Persistor — persistent knowledge graph + vector memory for AI agents.
-Backed by PostgreSQL 18 + pgvector. Go + Gin REST API with real-time WebSocket push.
+## Project
+
+Persistor is a knowledge graph service with PostgreSQL + pgvector backend.
+Go 1.25+, Gin HTTP framework, goose migrations, multi-tenant with RLS.
+
+Repo: `github.com/persistorai/persistor`
+Local: `/home/brian/code/persistor`
+
+## Build Gate
+
+Before committing, ALL of these must pass:
+
+```bash
+cd /home/brian/code/persistor
+go build ./...
+go vet ./...
+~/go/bin/golangci-lint run ./...
+go test ./...
+```
+
+If any fail, fix them. Do not commit broken code. Do not skip tests.
+
+## Go Standards
+
+Follow the project standards at `/home/brian/code/standards/go/`.
+
+## Type Safety
+
+- ZERO use of `interface{}` or `any` in function signatures — use concrete types or named interfaces
+- Exception: `map[string]any` for JSON properties is acceptable (it's the domain model)
+- ZERO type assertions without comma-ok pattern: always `v, ok := x.(Type)`
+- Use typed errors: define sentinel errors or custom error types, not raw `fmt.Errorf` for control flow
+- Return concrete types from constructors, accept interfaces in functions
+
+## File Structure
+
+- No file over 300 lines. If approaching 250, plan how to split.
+- One concern per file. Two responsibilities = two files.
+- Internal packages follow Go convention: `internal/` is not importable externally
+- Models in `internal/models/`, stores in `internal/store/`, services in `internal/service/`
+- API handlers in `internal/api/`
+
+## Functions
+
+- Max 50 lines per function. Extract helpers.
+- No more than 3 levels of nesting. Use early returns.
+- `context.Context` is always the first parameter
+- Errors are always the last return value
+- Name return values only when it improves readability (named returns for documentation, not naked returns)
+
+## Error Handling
+
+- Every error must be handled. No `_ = someFunc()` that returns an error.
+- Wrap errors with context: `fmt.Errorf("creating node: %w", err)`
+- Use `errors.Is()` and `errors.As()` for error checking, not string matching
+- Sentinel errors in `internal/models/errors.go`
+- User-facing errors: clear and actionable, not stack traces
+- Log at the boundary (handler), not deep in service/store layers
+
+## Interfaces
+
+- Define interfaces where they're CONSUMED, not where they're implemented
+- Keep interfaces small — 1-3 methods preferred
+- Domain interfaces live in `internal/domain/interfaces.go`
+- Store interfaces live near store implementations
+- Use dependency injection via constructor functions: `NewNodeService(store NodeStore, ...)`
+
+## Naming
+
+- Interfaces: PascalCase, no `I` prefix (`NodeStore`, not `INodeStore`)
+- Constructors: `New<Type>` (`NewNodeService`)
+- Functions: camelCase internally, PascalCase exported
+- Constants: PascalCase for exported, camelCase for unexported
+- Files: snake_case (`node_read.go`, `graph_traverse.go`)
+- Packages: short, lowercase, no underscores
+
+## Imports
+
+- Order: stdlib → external → internal (goimports handles this)
+- No dot imports
+- No blank imports except for driver registration (`_ "github.com/lib/pq"`)
+
+## Database
+
+- PostgreSQL 18+ with pgvector
+- goose for migrations in `internal/db/migrations/`
+- Row-level security (RLS) via `app.tenant_id` session variable
+- No foreign keys (by design — referential integrity in app layer)
+- Always use parameterized queries (`$1`, `$2`), never string interpolation
+- Transactions for multi-statement operations
+- Connection pooling via `internal/dbpool/`
+
+## Testing
+
+- Every package has `*_test.go` files
+- Use `testify` assertions where already established
+- Mock interfaces, not implementations — use `mocks_test.go` per package
+- Table-driven tests for multiple cases
+- Test edge cases: missing nodes, duplicate edges, invalid UUIDs, tenant isolation
+- Integration tests use test database with fresh schema per run
+
+## Security
+
+- AES-256-GCM encryption for sensitive fields (`internal/crypto/`)
+- Multi-tenant isolation via PostgreSQL RLS — every query scoped to tenant
+- API key auth via middleware (`internal/middleware/`)
+- No raw SQL from user input — always parameterized
+- Validate all input at the handler/model layer before it reaches the store
+
+## Commits
+
+- Conventional: `feat:`, `fix:`, `test:`, `chore:`, `docs:`
+- One logical change per commit
+- Message explains WHY, not just WHAT
 
 ## Architecture
 
-- `cmd/server/` — Entry point, server lifecycle, graceful shutdown
-- `cmd/persistor-cli/` — CLI tool (admin, doctor, node/edge/graph/search/salience CRUD, import, init)
-- `internal/api/` — Gin HTTP handlers (router, nodes, edges, search, graph, bulk, salience, health, audit, stats, history, admin, errors)
-- `internal/config/` — Env-driven config with per-concern validators
-- `internal/crypto/` — AES-256-GCM encryption providers (static key, Vault)
-- `internal/db/` — Migrations (goose embedded), LISTEN/NOTIFY, vector dimension management
-- `internal/db/migrations/` — SQL schema files (001–007: initial, property_history, audit_log, drop_old, force_rls, embed_worker_index, edge_indexes)
-- `internal/dbpool/` — pgx v5 connection pool
-- `internal/graphql/` — gqlgen schema, resolvers, type conversion, middleware, context helpers
-- `internal/httputil/` — Shared HTTP response helpers
-- `internal/metrics/` — Prometheus metrics (request duration, embed worker, WebSocket)
-- `internal/middleware/` — Auth (API key + caching), rate limiting, brute force protection, body limits, request IDs, security headers, Prometheus middleware
-- `internal/models/` — Node, Edge, Search, Salience, PropertyHistory types + validation
-- `internal/security/` — Brute force detection (shared with middleware)
-- `internal/service/` — NodeService, SearchService, BulkService, EmbedWorker, AuditWorker, EmbeddingService
-- `internal/store/` — 27 files across focused stores (Node, Edge, Search, Graph, Bulk, Salience, Embedding, History, Audit, Tenant) + helpers (encrypt, scan, bulk_helpers)
-- `internal/ws/` — WebSocket hub, client, event buffer, event types
-- `scripts/` — Backup, restore, health-check, SQLite migration, git hooks
+```
+cmd/persistor/         # Main entry point
+client/                # Go client SDK
+internal/
+  api/                 # HTTP handlers (Gin)
+  config/              # Configuration loading
+  crypto/              # AES-256-GCM encryption
+  db/migrations/       # goose SQL migrations
+  dbpool/              # Connection pool
+  domain/              # Service interfaces
+  graphql/             # GraphQL schema + resolvers
+  httputil/            # HTTP helpers
+  metrics/             # Prometheus metrics
+  middleware/          # Auth, tenant, logging
+  models/              # Domain types + validation
+  security/            # Rate limiting, etc.
+  service/             # Business logic
+  store/               # PostgreSQL data access
+  ws/                  # WebSocket support
+extensions/            # OpenClaw plugin extensions
+scripts/               # Migration scripts
+```
 
-## Tech Stack
+## Key Interfaces (in internal/domain/interfaces.go)
 
-| Component  | Choice                          | Notes                              |
-| ---------- | ------------------------------- | ---------------------------------- |
-| Language   | Go 1.25                         | `/usr/local/go/bin/go`             |
-| HTTP       | Gin (`gin-gonic/gin`)           | Fast, lightweight HTTP framework   |
-| CORS       | `gin-contrib/cors`              | Configured in router.go            |
-| Logging    | Logrus (`sirupsen/logrus`)      | JSON formatter, structured logging |
-| WebSocket  | `github.com/coder/websocket`    | Context-aware, successor to nhooyr |
-| Database   | PostgreSQL 18 + pgvector        | Native install, not Docker         |
-| DB Driver  | pgx v5 (`jackc/pgx`)            | Native LISTEN/NOTIFY, pool         |
-| Embeddings | Qwen3-Embedding-0.6B via Ollama | 1024d vectors, localhost:11434     |
-| GraphQL    | gqlgen (`99designs/gqlgen`)     | Coexists with REST at /graphql     |
-| Metrics    | Prometheus (`client_golang`)    | /metrics endpoint                  |
-| Migrations | goose v3 (`pressly/goose/v3`)   | Embedded SQL, up/down rollback     |
-| Linting    | golangci-lint + markdownlint    | Pre-commit hook enforces both      |
+- `NodeService` — CRUD + migrate nodes
+- `EdgeService` — CRUD edges
+- `SearchService` — full-text, semantic, hybrid search
+- `GraphService` — neighbors, traverse, context, shortest path
+- `SalienceService` — boost, supersede, recalculate
+- `BulkService` — bulk upsert nodes/edges
+- `AuditService` — query + purge audit log
+- `HistoryService` — property change tracking
 
-## Key Commands
+## Refactoring Rule
+
+If you move, rename, or change the signature of any function:
+- Update EVERY file that imports or references it
+- Update EVERY test that calls or mocks it
+- ALL tests must still pass after your changes
+- Do NOT leave broken imports or stale mocks
+
+## Semantic Refactoring (AST-aware tools)
+
+**For renames and cross-codebase refactoring, use semantic tools instead of grep:**
 
 ```bash
-# Go toolchain (not on default PATH in some contexts)
-export PATH="/usr/local/go/bin:$HOME/go/bin:$PATH"
+# Go: Rename a symbol across the entire project (AST-aware, understands types/interfaces)
+~/go/bin/gopls rename -w path/to/file.go:LINE:COL "NewName"
 
-# Build
-make build                    # Binary → bin/server
+# Go: Find all references to a symbol  
+~/go/bin/gopls references path/to/file.go:LINE:COL
 
-# Run
-make run                      # Build + start on :3030
-
-# Lint (Go)
-make lint                     # golangci-lint run ./...
-make lint-fix                 # golangci-lint run --fix ./...
-
-# Lint (Markdown)
-make lint-md                  # markdownlint '**/*.md'
-
-# Full CI
-make ci                       # format + vet + lint + lint-md + test + coverage
-
-# Test
-make test                     # go test -v -race ./...
-
-# Install git hooks after clone
-make setup-hooks
+# Go: Type-check the project
+/usr/local/go/bin/go vet ./...
 ```
 
-## Project Structure
-
-```text
-persistor/
-├── cmd/
-│   ├── server/main.go           # Entry point
-│   └── persistor-cli/           # CLI (admin, doctor, node/edge/graph/search/salience, import, init)
-├── client/                      # Go client library (nodes, edges, search, graph, bulk, salience, audit, admin)
-├── internal/
-│   ├── api/                     # Gin handlers (router, nodes, edges, search, graph, bulk, salience, health, audit, stats, history, admin)
-│   ├── config/                  # Env-driven config with per-concern validators
-│   ├── crypto/                  # AES-256-GCM encryption (static + Vault providers)
-│   ├── db/                      # Migrations (goose, embedded), LISTEN/NOTIFY, vector dims
-│   │   └── migrations/          # 001–007 (initial, property_history, audit_log, drop_old, force_rls, embed_worker_index, edge_indexes)
-│   ├── dbpool/                  # pgx v5 connection pool
-│   ├── graphql/                 # gqlgen schema, resolvers, type conversion, middleware
-│   ├── httputil/                # Shared HTTP response helpers
-│   ├── metrics/                 # Prometheus instrumentation
-│   ├── middleware/              # Auth (API key + cache), rate limiter, brute force, body limit, request ID, security headers, Prometheus
-│   ├── models/                  # Node, Edge, Search, Salience, PropertyHistory types + validation
-│   ├── security/                # Brute force detection
-│   ├── service/                 # NodeService, SearchService, BulkService, EmbedWorker, AuditWorker, EmbeddingService
-│   ├── store/                   # 27 files: Node, Edge, Search, Graph, Bulk, Salience, Embedding, History, Audit, Tenant + helpers
-│   └── ws/                      # WebSocket hub, client, event buffer, event types
-├── scripts/
-│   ├── hooks/pre-commit         # Go lint + markdown lint
-│   ├── migrate/                 # One-time SQLite → Postgres migration
-│   ├── backup.sh                # pg_dump + verify + encrypt + upload
-│   ├── restore.sh               # Decrypt + restore + verify
-│   └── health-check.sh          # HTTP health probe
-├── VERSION                      # Semver (0.7.0)
-├── CHANGELOG.md
-├── Makefile
-├── openapi.yaml                 # OpenAPI spec
-├── .golangci.yml                # Strict linter config
-├── .markdownlint.yaml
-└── .gitattributes
-```
-
-## Configuration (Environment Variables)
-
-| Variable          | Default                                                                    |
-| ----------------- | -------------------------------------------------------------------------- |
-| `DATABASE_URL`    | `postgres://persistor:<password>@localhost:5432/persistor?sslmode=disable` |
-| `PORT`            | `3030`                                                                     |
-| `LISTEN_HOST`     | `127.0.0.1`                                                                |
-| `CORS_ORIGINS`    | `http://localhost:3002`                                                    |
-| `OLLAMA_URL`      | `http://localhost:11434`                                                   |
-| `EMBEDDING_MODEL` | `qwen3-embedding:0.6b`                                                     |
-
-## Database Schema
-
-See `internal/db/migrations/001_initial.sql` for full schema. Key points:
-
-- **Tenant isolation:** RLS on every table via `tenant_id` + `current_setting('app.tenant_id')`
-- **Nodes:** `kg_nodes` — id, type, label, properties (JSONB), embedding (vector(1024)), salience tracking
-- **Edges:** `kg_edges` — source→target with relation, weight, JSONB properties, salience
-- **Triggers:** `updated_at` auto-update, `pg_notify('kg_changes', ...)` on all writes
-- **Indexes:** GIN for full-text search, IVFFlat for vector similarity, B-tree on type/salience/timestamps
-
-## Coding Standards
-
-**Go patterns:**
-
-- `internal/` package layout, no `pkg/`
-- `fmt.Errorf("context: %w", err)` for error wrapping
-- Check ALL errors — errcheck is enabled and strict
-- Constructor injection for dependencies (logger, pool, hub)
-- Gin handler signature: `func (h *Handler) Method(c *gin.Context)`
-- JSON responses via `c.JSON(status, gin.H{...})` or typed structs
-- Logrus structured logging: `log.WithFields(logrus.Fields{...}).Info("msg")`
-
-**Import ordering (enforced by gci):**
-
-1. Standard library
-2. Third-party packages
-3. Local packages (`github.com/persistorai/persistor/...`)
-
-**Commits:** Conventional commits (`feat:`, `fix:`, `chore:`, `refactor:`).
-
-**After code changes, always run:** `make lint` then `make build`
-
-## Current State (v0.7.0)
-
-Production-ready with clean architecture:
-
-- **Repository split:** 27 files across focused stores in `internal/store/`
-- **Service layer:** Handler → Service → Store separation, with AuditWorker background processing
-- **Audit log:** Tenant-isolated `kg_audit_log` with query/purge endpoints
-- **Auth & security:** API key auth with caching, brute force protection, body limits, request IDs
-- **Go client library:** `client/` package for programmatic access (nodes, edges, search, graph, bulk, salience, audit)
-- **CLI tool:** `cmd/persistor-cli/` for admin, diagnostics, and CRUD operations
-- **Prometheus metrics:** `persistor_*` metrics, `/metrics` endpoint, Gin middleware
-- **WebSocket hardening:** Ping/pong, monotonic event IDs, reconnection replay,
-  event buffering, permessage-deflate, graceful drain on shutdown
-- **GraphQL API:** gqlgen at `/api/v1/graphql` + playground (coexists with REST)
-- **Migrations:** goose v3, 7 SQL schema files, embedded in binary
-- **Semver:** VERSION file, git tags, CHANGELOG.md
-- **Systemd:** Deployed via `persistor.service` with EnvironmentFile
-- **OpenAPI:** `openapi.yaml` spec for REST API documentation
-
-## Planning Doc
-
-See planning docs for architecture decisions, schema design, migration plan, backup strategy, and phased task breakdown.
-
-## Important Notes
-
-- Service listens on localhost only (127.0.0.1:3030) — never expose externally
-- Backup data is age-encrypted — never store plaintext exports
-- The `migrate-from-sqlite` binary in .gitignore — only the source (`scripts/migrate-from-sqlite.go`) is tracked
-- Go binary path: `/usr/local/go/bin/go` (may not be on PATH in hooks/scripts)
-- golangci-lint path: `~/go/bin/golangci-lint`
-
-## Code Architecture Rules
-
-**These rules prevent monolithic "God Object" patterns that degrade code quality and agent effectiveness.**
-
-- **One struct per concern.** Don't add methods to an existing struct when the concern
-  is different. Create a new file + struct.
-- **No file over 300 lines.** Split before 300. Over 500 is a bug.
-- **Define interfaces before implementation.** Small, focused interfaces
-  (`NodeReader`, `NodeWriter`) beat splitting a large one later.
-- **Each package file gets its own `_test.go`.** Tests live next to the code they test.
-- **Handlers never import storage directly.** Depend on interfaces, not concrete types.
-- **Shared helpers go in dedicated files.** Don't bury utilities inside large files —
-  extract them (`encrypt.go`, `notify.go`, `response.go`).
-- **One PR per concern.** Small, focused changes are easier to review.
-- **After every feature, ask: "what should we refactor?"** Building reveals pain points.
+**Why not grep?** grep is text matching, not code understanding. It misses interface implementations, embedded struct promotions, re-exports, and produces false positives from comments. gopls understands the full Go type system.
