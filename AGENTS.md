@@ -1,4 +1,4 @@
-# CLAUDE.md — Persistor
+# AGENTS.md — Persistor
 
 ## Project
 
