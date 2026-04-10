@@ -2,7 +2,7 @@ openapi: 3.1.0
 info:
   title: Persistor API
   description: Knowledge graph and vector memory service with tenant isolation, encryption at rest, and real-time notifications.
-  version: 0.7.0
+  version: 0.8.0
   license:
     name: AGPL-3.0
 

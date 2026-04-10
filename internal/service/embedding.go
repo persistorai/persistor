@@ -61,15 +61,15 @@ func (s *EmbeddingService) Dimensions() int {
 }
 
 // NewEmbeddingService creates an EmbeddingService for the given Ollama endpoint, model, and expected dimensions.
-func NewEmbeddingService(ollamaURL, model string, dimensions int) *EmbeddingService {
-	transport := &http.Transport{
-		DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
+func NewEmbeddingService(ollamaURL, model string, dimensions int, allowRemote bool) *EmbeddingService {
+	transport := &http.Transport{}
+	if !allowRemote {
+		transport.DialContext = func(ctx context.Context, network, addr string) (net.Conn, error) {
 			host, _, err := net.SplitHostPort(addr)
 			if err != nil {
 				return nil, fmt.Errorf("invalid address: %w", err)
 			}
 
-			// Resolve hostname to IPs and verify all are loopback.
 			ips, err := net.DefaultResolver.LookupIPAddr(ctx, host)
 			if err != nil {
 				return nil, fmt.Errorf("resolving embedding host: %w", err)
@@ -82,7 +82,7 @@ func NewEmbeddingService(ollamaURL, model string, dimensions int) *EmbeddingServ
 			}
 
 			return (&net.Dialer{}).DialContext(ctx, network, addr)
-		},
+		}
 	}
 
 	return &EmbeddingService{

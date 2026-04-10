@@ -1,3 +1,4 @@
+-- +goose Up
 CREATE TABLE kg_retrieval_feedback (
     id                      UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     tenant_id               UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
@@ -29,3 +30,6 @@ CREATE POLICY tenant_isolation_kg_retrieval_feedback ON kg_retrieval_feedback
 CREATE INDEX idx_kg_retrieval_feedback_tenant_created_at ON kg_retrieval_feedback(tenant_id, created_at DESC);
 CREATE INDEX idx_kg_retrieval_feedback_tenant_query ON kg_retrieval_feedback(tenant_id, normalized_query, search_mode);
 CREATE INDEX idx_kg_retrieval_feedback_signals ON kg_retrieval_feedback USING GIN(signals);
+
+-- +goose Down
+DROP TABLE IF EXISTS kg_retrieval_feedback;

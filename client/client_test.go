@@ -33,7 +33,7 @@ func jsonResponse(w http.ResponseWriter, status int, v any) {
 func TestHealth(t *testing.T) {
 	_, c := newTestServer(t, map[string]http.HandlerFunc{
 		"GET /api/v1/health": func(w http.ResponseWriter, _ *http.Request) {
-			jsonResponse(w, 200, HealthResponse{Status: "ok", Version: "0.7.0"})
+			jsonResponse(w, 200, HealthResponse{Status: "ok", Version: "0.8.0"})
 		},
 	})
 	resp, err := c.Health(context.Background())
@@ -43,8 +43,8 @@ func TestHealth(t *testing.T) {
 	if resp.Status != "ok" {
 		t.Errorf("got status %q, want ok", resp.Status)
 	}
-	if resp.Version != "0.7.0" {
-		t.Errorf("got version %q, want 0.7.0", resp.Version)
+	if resp.Version != "0.8.0" {
+		t.Errorf("got version %q, want 0.8.0", resp.Version)
 	}
 }
 

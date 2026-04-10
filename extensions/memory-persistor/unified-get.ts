@@ -7,7 +7,12 @@ import type { PersistorContext, PersistorClient, PersistorNode } from '@persisto
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu;
 
 function isFilePath(path: string): boolean {
-  return path.startsWith('./') || path.startsWith('/') || path.startsWith('memory/');
+  const normalized = path.trim();
+  if (normalized === 'MEMORY.md') return true;
+  if (normalized.startsWith('./') || normalized.startsWith('../') || normalized.startsWith('/') || normalized.startsWith('memory/')) return true;
+  if (/^[A-Za-z]:[\\/]/.test(normalized)) return true;
+  if (!normalized.includes('/') && !normalized.includes('\\') && normalized.toLowerCase().endsWith('.md')) return true;
+  return false;
 }
 
 function isUUID(str: string): boolean {

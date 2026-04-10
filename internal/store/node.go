@@ -113,17 +113,25 @@ func (s *NodeStore) buildNodeUpdateQuery(
 		argIdx++
 	}
 
-	if req.Type != nil || req.Label != nil || req.Properties != nil {
-		searchText, err := s.buildUpdatedSearchText(ctx, tenantID, req)
-		if err != nil {
-			return nil, nil, 0, err
+	return setClauses, args, argIdx, nil
+}
+
+func fetchNodeTypeLabel(
+	ctx context.Context,
+	tx pgx.Tx,
+	nodeID string,
+) (string, string, error) {
+	const query = `SELECT type, label FROM kg_nodes WHERE tenant_id = current_setting('app.tenant_id')::uuid AND id = $1`
+
+	var nodeType, label string
+	if err := tx.QueryRow(ctx, query, nodeID).Scan(&nodeType, &label); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return "", "", models.ErrNodeNotFound
 		}
-		setClauses = append(setClauses, fmt.Sprintf("search_text = $%d", argIdx))
-		args = append(args, searchText)
-		argIdx++
+		return "", "", fmt.Errorf("fetching node type/label: %w", err)
 	}
 
-	return setClauses, args, argIdx, nil
+	return nodeType, label, nil
 }
 
 // UpdateNode updates an existing node with the provided fields and returns the result.
@@ -136,13 +144,9 @@ func (s *NodeStore) UpdateNode(
 	ctx, cancel := withTimeout(ctx)
 	defer cancel()
 
-	setClauses, args, argIdx, err := s.buildNodeUpdateQuery(ctx, tenantID, req)
+	setClauses, args, argIdx, err := s.buildNodeUpdateQuery(ctx, tenantID, models.UpdateNodeRequest{})
 	if err != nil {
 		return nil, err
-	}
-
-	if len(setClauses) == 0 {
-		return s.GetNode(ctx, tenantID, nodeID)
 	}
 
 	tx, err := s.beginTx(ctx, tenantID)
@@ -153,11 +157,49 @@ func (s *NodeStore) UpdateNode(
 	defer tx.Rollback(ctx) //nolint:errcheck // best-effort rollback after commit.
 
 	var oldProps map[string]any
+	var currentType, currentLabel string
 	if req.Properties != nil {
 		oldProps, err = fetchNodeProperties(ctx, tx, tenantID, nodeID, &s.Base)
 		if err != nil {
 			return nil, err
 		}
+	}
+	if req.Type != nil || req.Label != nil || req.Properties != nil {
+		currentType, currentLabel, err = fetchNodeTypeLabel(ctx, tx, nodeID)
+		if err != nil {
+			return nil, err
+		}
+		mergedReq := models.UpdateNodeRequest{}
+		if req.Type != nil {
+			mergedReq.Type = req.Type
+		} else {
+			mergedReq.Type = &currentType
+		}
+		if req.Label != nil {
+			mergedReq.Label = req.Label
+		} else {
+			mergedReq.Label = &currentLabel
+		}
+		if req.Properties != nil {
+			mergedReq.Properties = req.Properties
+		} else {
+			currentProps, err := fetchNodeProperties(ctx, tx, tenantID, nodeID, &s.Base)
+			if err != nil {
+				return nil, err
+			}
+			mergedReq.Properties = currentProps
+		}
+		searchText, err := s.buildUpdatedSearchText(ctx, tenantID, nodeID, mergedReq)
+		if err != nil {
+			return nil, err
+		}
+		setClauses = append(setClauses, fmt.Sprintf("search_text = $%d", argIdx))
+		args = append(args, searchText)
+		argIdx++
+	}
+
+	if len(setClauses) == 0 {
+		return s.GetNode(ctx, tenantID, nodeID)
 	}
 
 	query := fmt.Sprintf(
@@ -232,12 +274,11 @@ func (s *NodeStore) PatchNodeProperties(
 		return nil, fmt.Errorf("preparing patched properties: %w", err)
 	}
 
-	currentNode, err := s.GetNode(ctx, tenantID, nodeID)
+	currentType, currentLabel, err := fetchNodeTypeLabel(ctx, tx, nodeID)
 	if err != nil {
 		return nil, err
 	}
-	currentNode.Properties = merged
-	searchText := models.BuildNodeSearchText(currentNode)
+	searchText := models.BuildNodeSearchText(&models.Node{Type: currentType, Label: currentLabel, Properties: merged})
 
 	query := fmt.Sprintf(
 		"UPDATE kg_nodes SET properties = $1, search_text = $2 WHERE tenant_id = $3 AND id = $4 RETURNING %s",

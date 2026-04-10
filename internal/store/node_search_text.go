@@ -10,9 +10,14 @@ import (
 func (s *NodeStore) buildUpdatedSearchText(
 	ctx context.Context,
 	tenantID string,
+	nodeID string,
 	req models.UpdateNodeRequest,
 ) (string, error) {
-	base := &models.Node{}
+	base, err := s.GetNode(ctx, tenantID, nodeID)
+	if err != nil {
+		return "", fmt.Errorf("loading current node for search text: %w", err)
+	}
+
 	if req.Type != nil {
 		base.Type = *req.Type
 	}
@@ -23,12 +28,5 @@ func (s *NodeStore) buildUpdatedSearchText(
 		base.Properties = req.Properties
 	}
 
-	if req.Type != nil && req.Label != nil && req.Properties != nil {
-		return models.BuildNodeSearchText(base), nil
-	}
-
-	current, err := s.GetNode(ctx, tenantID, "")
-	_ = current
-	_ = err
-	return "", fmt.Errorf("buildUpdatedSearchText requires full node context")
+	return models.BuildNodeSearchText(base), nil
 }

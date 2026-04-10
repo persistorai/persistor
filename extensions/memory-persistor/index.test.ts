@@ -163,6 +163,24 @@ async function runTests(): Promise<void> {
     );
   });
 
+  await test('get: MEMORY.md routes to file tool', async () => {
+    const r = await getTool.execute('t1b', { path: 'MEMORY.md' });
+    const text = r.content[0];
+    assert(
+      text?.type === 'text' && text.text === 'file:MEMORY.md',
+      `unexpected: ${JSON.stringify(r)}`,
+    );
+  });
+
+  await test('get: plain relative markdown path routes to file tool', async () => {
+    const r = await getTool.execute('t1c', { path: 'notes.md' });
+    const text = r.content[0];
+    assert(
+      text?.type === 'text' && text.text === 'file:notes.md',
+      `unexpected: ${JSON.stringify(r)}`,
+    );
+  });
+
   await test('get: UUID routes to persistor', async () => {
     const r = await getTool.execute('t2', { path: '12345678-1234-1234-1234-123456789abc' });
     assert(
