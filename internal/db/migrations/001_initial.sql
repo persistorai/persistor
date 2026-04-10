@@ -34,8 +34,10 @@ CREATE TABLE kg_nodes (
     created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
 
+    -- Search text materializes label, type, and selected property values.
+    search_text     TEXT NOT NULL DEFAULT '',
     -- Pre-computed tsvector for full-text search (avoids per-query recomputation).
-    label_tsv       tsvector GENERATED ALWAYS AS (to_tsvector('english', label)) STORED,
+    search_tsv      tsvector GENERATED ALWAYS AS (to_tsvector('english', search_text)) STORED,
 
     PRIMARY KEY (tenant_id, id)
 );
@@ -45,8 +47,8 @@ ALTER TABLE kg_nodes ENABLE ROW LEVEL SECURITY;
 ALTER TABLE kg_nodes FORCE ROW LEVEL SECURITY;
 CREATE POLICY tenant_isolation_nodes ON kg_nodes
     FOR ALL
-    USING (tenant_id = current_setting('app.tenant_id')::uuid)
-    WITH CHECK (tenant_id = current_setting('app.tenant_id')::uuid);
+    USING (tenant_id = current_setting('app.tenant_id', true)::uuid)
+    WITH CHECK (tenant_id = current_setting('app.tenant_id', true)::uuid);
 
 -- Knowledge graph edges (no foreign keys — referential integrity in app layer).
 CREATE TABLE kg_edges (
@@ -75,8 +77,8 @@ ALTER TABLE kg_edges ENABLE ROW LEVEL SECURITY;
 ALTER TABLE kg_edges FORCE ROW LEVEL SECURITY;
 CREATE POLICY tenant_isolation_edges ON kg_edges
     FOR ALL
-    USING (tenant_id = current_setting('app.tenant_id')::uuid)
-    WITH CHECK (tenant_id = current_setting('app.tenant_id')::uuid);
+    USING (tenant_id = current_setting('app.tenant_id', true)::uuid)
+    WITH CHECK (tenant_id = current_setting('app.tenant_id', true)::uuid);
 
 -- Node indexes.
 -- All indexes use CONCURRENTLY to avoid locking tables; migration runs with NO TRANSACTION.
@@ -88,7 +90,7 @@ CREATE INDEX CONCURRENTLY idx_nodes_tenant_updated ON kg_nodes(tenant_id, update
 -- m = 32 and ef_construction = 200 improve recall at the cost of slower index builds.
 CREATE INDEX CONCURRENTLY idx_nodes_embedding ON kg_nodes USING hnsw (embedding vector_cosine_ops)
     WITH (m = 32, ef_construction = 200) WHERE embedding IS NOT NULL;
-CREATE INDEX CONCURRENTLY idx_nodes_fts ON kg_nodes USING gin (label_tsv);
+CREATE INDEX CONCURRENTLY idx_nodes_fts ON kg_nodes USING gin (search_tsv);
 
 -- Edge indexes.
 CREATE INDEX CONCURRENTLY idx_edges_tenant_source ON kg_edges(tenant_id, source);

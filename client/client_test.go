@@ -6,6 +6,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+
+	"github.com/persistorai/persistor/internal/models"
 )
 
 // newTestServer creates a test server that routes to the given handler map.
@@ -338,11 +340,19 @@ func TestAdmin(t *testing.T) {
 		"POST /api/v1/admin/backfill-embeddings": func(w http.ResponseWriter, _ *http.Request) {
 			jsonResponse(w, 200, map[string]int{"queued": 25})
 		},
+		"POST /api/v1/admin/reprocess-nodes": func(w http.ResponseWriter, _ *http.Request) {
+			jsonResponse(w, 200, map[string]int{"scanned": 100, "updated_search": 100, "queued_embeddings": 100})
+		},
 	})
 
 	queued, err := c.Admin.BackfillEmbeddings(context.Background())
 	if err != nil || queued != 25 {
 		t.Fatalf("BackfillEmbeddings: err=%v, queued=%d", err, queued)
+	}
+
+	result, err := c.Admin.ReprocessNodes(context.Background(), models.ReprocessNodesRequest{BatchSize: 100, SearchText: true, Embeddings: true})
+	if err != nil || result.Scanned != 100 || result.UpdatedSearch != 100 || result.QueuedEmbed != 100 {
+		t.Fatalf("ReprocessNodes: err=%v, result=%+v", err, result)
 	}
 }
 

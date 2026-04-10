@@ -5,7 +5,16 @@ import { logger } from './logger.ts';
 import { createUnifiedGetTool } from './unified-get.ts';
 import { createUnifiedSearchTool } from './unified-search.ts';
 
+import type { OpenClawTool } from './types.ts';
 import type { OpenClawPluginApi } from 'openclaw/plugin-sdk';
+
+interface RuntimeWithTools {
+  tools: {
+    createMemorySearchTool: (opts?: Record<string, unknown>) => OpenClawTool | null;
+    createMemoryGetTool: (opts?: Record<string, unknown>) => OpenClawTool | null;
+    registerMemoryCli: (program: unknown) => void;
+  };
+}
 
 /** Extract pluginConfig from the API object — known SDK gap: pluginConfig is not on OpenClawPluginApi type yet. */
 // TODO(SDK-XXX): Remove cast once pluginConfig is added to OpenClawPluginApi
@@ -19,6 +28,14 @@ function getPluginConfig(api: OpenClawPluginApi): Record<string, unknown> {
     return record['pluginConfig'] as Record<string, unknown>;
   }
   return {};
+}
+
+function getRuntimeTools(api: OpenClawPluginApi): RuntimeWithTools['tools'] {
+  const runtime = api.runtime as unknown as Partial<RuntimeWithTools>;
+  if (!runtime.tools) {
+    throw new Error('OpenClaw runtime tools are unavailable');
+  }
+  return runtime.tools;
 }
 
 const memoryPersistorPlugin = {
@@ -48,14 +65,15 @@ const memoryPersistorPlugin = {
 
     api.registerTool(
       (ctx) => {
+        const runtimeTools = getRuntimeTools(api);
         const searchOpts: Record<string, unknown> = {};
         if (ctx.config !== undefined) searchOpts['config'] = ctx.config;
         if (ctx.sessionKey !== undefined) searchOpts['agentSessionKey'] = ctx.sessionKey;
-        const fileSearchTool = api.runtime.tools.createMemorySearchTool(searchOpts);
+        const fileSearchTool = runtimeTools.createMemorySearchTool(searchOpts);
         const getOpts: Record<string, unknown> = {};
         if (ctx.config !== undefined) getOpts['config'] = ctx.config;
         if (ctx.sessionKey !== undefined) getOpts['agentSessionKey'] = ctx.sessionKey;
-        const fileGetTool = api.runtime.tools.createMemoryGetTool(getOpts);
+        const fileGetTool = runtimeTools.createMemoryGetTool(getOpts);
         if (!fileSearchTool || !fileGetTool) {
           return null;
         }
@@ -69,7 +87,7 @@ const memoryPersistorPlugin = {
 
     api.registerCli(
       ({ program }) => {
-        api.runtime.tools.registerMemoryCli(program);
+        getRuntimeTools(api).registerMemoryCli(program);
 
         const kg = program.command('memory-kg').description('Persistor knowledge graph memory');
 

@@ -16,7 +16,7 @@ CREATE TABLE unknown_relations (
 -- Enable RLS
 ALTER TABLE unknown_relations ENABLE ROW LEVEL SECURITY;
 CREATE POLICY tenant_isolation ON unknown_relations
-    USING (tenant_id = current_setting('app.tenant_id')::uuid);
+    USING (tenant_id = current_setting('app.tenant_id', true)::uuid);
 
 -- +goose Down
 DROP TABLE IF EXISTS unknown_relations;

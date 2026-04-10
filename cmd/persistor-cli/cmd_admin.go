@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/persistorai/persistor/client"
+	clientmodels "github.com/persistorai/persistor/internal/models"
 	"github.com/spf13/cobra"
 )
 
@@ -16,6 +17,7 @@ func newAdminCmd() *cobra.Command {
 	cmd.AddCommand(adminHealthCmd())
 	cmd.AddCommand(adminStatsCmd())
 	cmd.AddCommand(adminBackfillCmd())
+	cmd.AddCommand(adminReprocessCmd())
 	return cmd
 }
 
@@ -73,6 +75,32 @@ func adminBackfillCmd() *cobra.Command {
 			output(map[string]int{"queued": queued}, fmt.Sprintf("%d", queued))
 		},
 	}
+}
+
+func adminReprocessCmd() *cobra.Command {
+	var batchSize int
+	var searchText bool
+	var embeddings bool
+
+	cmd := &cobra.Command{
+		Use:   "reprocess-nodes",
+		Short: "Rebuild search text and/or embeddings for existing nodes in batches",
+		Run: func(cmd *cobra.Command, args []string) {
+			result, err := apiClient.Admin.ReprocessNodes(context.Background(), clientmodels.ReprocessNodesRequest{
+				BatchSize:  batchSize,
+				SearchText: searchText,
+				Embeddings: embeddings,
+			})
+			if err != nil {
+				fatal("reprocess-nodes", err)
+			}
+			output(result, fmt.Sprintf("scanned=%d updated_search=%d queued_embeddings=%d", result.Scanned, result.UpdatedSearch, result.QueuedEmbed))
+		},
+	}
+	cmd.Flags().IntVar(&batchSize, "batch-size", 100, "Number of nodes to process in one batch")
+	cmd.Flags().BoolVar(&searchText, "search-text", false, "Rebuild stored search_text for scanned nodes")
+	cmd.Flags().BoolVar(&embeddings, "embeddings", false, "Queue embeddings for scanned nodes")
+	return cmd
 }
 
 func newAuditCmd() *cobra.Command {

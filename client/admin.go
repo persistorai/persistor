@@ -1,6 +1,10 @@
 package client
 
-import "context"
+import (
+	"context"
+
+	"github.com/persistorai/persistor/internal/models"
+)
 
 // AdminService handles administrative operations.
 type AdminService struct {
@@ -17,6 +21,15 @@ func (s *AdminService) BackfillEmbeddings(ctx context.Context) (int, error) {
 		return 0, err
 	}
 	return resp.Queued, nil
+}
+
+// ReprocessNodes rewrites search text and/or queues embeddings for existing nodes.
+func (s *AdminService) ReprocessNodes(ctx context.Context, req models.ReprocessNodesRequest) (*models.ReprocessNodesResult, error) {
+	var resp models.ReprocessNodesResult
+	if err := s.c.post(ctx, "/api/v1/admin/reprocess-nodes", req, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
 }
 
 // HistoryService handles property history operations.

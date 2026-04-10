@@ -1,0 +1,40 @@
+{
+  "name": "scout-memory-baseline",
+  "questions": [
+    {
+      "prompt": "Who is Big Jerry?",
+      "search_mode": "hybrid",
+      "limit": 5,
+      "expected_labels": ["Big Jerry"],
+      "notes": "Original deer that inspired DeerPrint"
+    },
+    {
+      "prompt": "What happened on Christmas Eve 2025?",
+      "search_mode": "hybrid",
+      "limit": 5,
+      "expected_labels": ["DeerPrint", "Christmas Eve Breakthrough"],
+      "notes": "Re-identification breakthrough"
+    },
+    {
+      "prompt": "What is Brian's stance on soft deletes?",
+      "search_mode": "hybrid",
+      "limit": 5,
+      "expected_labels": ["Brian Colinger"],
+      "notes": "Architecture preference should be retrievable through Brian or related decision nodes"
+    },
+    {
+      "prompt": "What project is not owned by Dirt Road Systems?",
+      "search_mode": "hybrid",
+      "limit": 5,
+      "expected_labels": ["Persistor"],
+      "notes": "Persistor is Brian's personal project, not owned by DRS"
+    },
+    {
+      "prompt": "What matters most to Brian?",
+      "search_mode": "hybrid",
+      "limit": 5,
+      "expected_labels": ["Brian Colinger"],
+      "notes": "Should retrieve Brian and connected core priorities"
+    }
+  ]
+}

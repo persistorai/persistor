@@ -1,13 +1,11 @@
-import { PersistorClient } from '@persistorai/sdk';
-
 import { logger } from './logger.ts';
 import { mergeResults } from './result-merger.ts';
 
 import type { PersistorPluginConfig } from './config.ts';
 import type { FileSearchResult } from './result-merger.ts';
-import type { PersistorSearchResult } from '@persistorai/sdk';
 import type { OpenClawTool, ToolContentPart, ToolResult } from './types.ts';
 import type { TextContent } from '@mariozechner/pi-ai';
+import type { PersistorClient, PersistorSearchResult } from '@persistorai/sdk';
 
 /**
  * Extract the JSON payload from a tool result.
@@ -134,7 +132,7 @@ export function createUnifiedSearchTool(
       persistorAvailable = false;
     }
 
-    const merged = mergeResults(fileResults, persistorResults, config.weights);
+    const merged = mergeResults(fileResults, persistorResults, config.weights, query);
     const filtered = merged.filter((r) => r.score >= minScore).slice(0, maxResults);
 
     return jsonResult({
@@ -146,6 +144,7 @@ export function createUnifiedSearchTool(
             snippet: r.snippet,
             score: r.score,
             line: r.line,
+            why: 'file-memory match',
           };
         }
         return {
@@ -156,6 +155,7 @@ export function createUnifiedSearchTool(
           properties: r.properties,
           salienceScore: r.salienceScore,
           score: r.score,
+          why: 'knowledge-graph match',
         };
       }),
       meta: {

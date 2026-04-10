@@ -48,11 +48,13 @@ func (s *NodeStore) CreateNode(
 		return nil, fmt.Errorf("preparing node properties: %w", err)
 	}
 
-	query := `INSERT INTO kg_nodes (id, tenant_id, type, label, properties)
-		VALUES ($1, $2, $3, $4, $5)
+	searchText := models.BuildNodeSearchText(&models.Node{Type: req.Type, Label: req.Label, Properties: props})
+
+	query := `INSERT INTO kg_nodes (id, tenant_id, type, label, properties, search_text)
+		VALUES ($1, $2, $3, $4, $5, $6)
 		RETURNING ` + nodeColumns
 
-	row := tx.QueryRow(ctx, query, req.ID, tenantID, req.Type, req.Label, propsJSON)
+	row := tx.QueryRow(ctx, query, req.ID, tenantID, req.Type, req.Label, propsJSON, searchText)
 
 	n, err := scanNode(row.Scan)
 	if err != nil {
@@ -84,8 +86,8 @@ func (s *NodeStore) buildNodeUpdateQuery(
 	tenantID string,
 	req models.UpdateNodeRequest,
 ) (setClauses []string, args []any, nextArg int, err error) {
-	setClauses = make([]string, 0, 3)
-	args = make([]any, 0, 4)
+	setClauses = make([]string, 0, 4)
+	args = make([]any, 0, 5)
 	argIdx := 1
 
 	if req.Type != nil {
@@ -108,6 +110,16 @@ func (s *NodeStore) buildNodeUpdateQuery(
 
 		setClauses = append(setClauses, fmt.Sprintf("properties = $%d", argIdx))
 		args = append(args, propsJSON)
+		argIdx++
+	}
+
+	if req.Type != nil || req.Label != nil || req.Properties != nil {
+		searchText, err := s.buildUpdatedSearchText(ctx, tenantID, req)
+		if err != nil {
+			return nil, nil, 0, err
+		}
+		setClauses = append(setClauses, fmt.Sprintf("search_text = $%d", argIdx))
+		args = append(args, searchText)
 		argIdx++
 	}
 
@@ -217,12 +229,19 @@ func (s *NodeStore) PatchNodeProperties(
 		return nil, fmt.Errorf("preparing patched properties: %w", err)
 	}
 
+	currentNode, err := s.GetNode(ctx, tenantID, nodeID)
+	if err != nil {
+		return nil, err
+	}
+	currentNode.Properties = merged
+	searchText := models.BuildNodeSearchText(currentNode)
+
 	query := fmt.Sprintf(
-		"UPDATE kg_nodes SET properties = $1 WHERE tenant_id = $2 AND id = $3 RETURNING %s",
+		"UPDATE kg_nodes SET properties = $1, search_text = $2 WHERE tenant_id = $3 AND id = $4 RETURNING %s",
 		nodeColumns,
 	)
 
-	row := tx.QueryRow(ctx, query, propsJSON, tenantID, nodeID)
+	row := tx.QueryRow(ctx, query, propsJSON, searchText, tenantID, nodeID)
 
 	n, err := scanNode(row.Scan)
 	if err != nil {

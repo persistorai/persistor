@@ -15,8 +15,8 @@ CREATE TABLE kg_audit_log (
 ALTER TABLE kg_audit_log ENABLE ROW LEVEL SECURITY;
 ALTER TABLE kg_audit_log FORCE ROW LEVEL SECURITY;
 CREATE POLICY tenant_isolation ON kg_audit_log
-    USING (tenant_id = current_setting('app.tenant_id')::uuid)
-    WITH CHECK (tenant_id = current_setting('app.tenant_id')::uuid);
+    USING (tenant_id = current_setting('app.tenant_id', true)::uuid)
+    WITH CHECK (tenant_id = current_setting('app.tenant_id', true)::uuid);
 
 -- Indexes for common queries
 CREATE INDEX CONCURRENTLY idx_audit_tenant_created ON kg_audit_log(tenant_id, created_at DESC);

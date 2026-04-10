@@ -2,8 +2,8 @@ import { resolveConfig, defaultConfig } from './config.ts';
 import { mergeResults } from './result-merger.ts';
 import { createUnifiedGetTool } from './unified-get.ts';
 
-import type { PersistorClient } from '@persistorai/sdk';
 import type { OpenClawTool } from './types.ts';
+import type { PersistorClient } from '@persistorai/sdk';
 
 let passed = 0;
 let failed = 0;
@@ -34,7 +34,7 @@ async function runTests(): Promise<void> {
   ];
 
   await test('merge: file + persistor in score order', () => {
-    const r = mergeResults(fileR, persR, w);
+    const r = mergeResults(fileR, persR, w, 'hello');
     assert(r.length === 2, `expected 2, got ${r.length}`);
     const first = r[0];
     const second = r[1];
@@ -45,7 +45,7 @@ async function runTests(): Promise<void> {
   });
 
   await test('merge: empty persistor -> file only', () => {
-    const r = mergeResults(fileR, [], w);
+    const r = mergeResults(fileR, [], w, 'hello');
     const first = r[0];
     if (!first) throw new Error('expected result');
     assert(r.length === 1 && first.source === 'file', 'should have file only');
@@ -53,19 +53,19 @@ async function runTests(): Promise<void> {
   });
 
   await test('merge: empty file -> persistor only', () => {
-    const r = mergeResults([], persR, w);
+    const r = mergeResults([], persR, w, 'hello');
     const first = r[0];
     if (!first) throw new Error('expected result');
     assert(r.length === 1 && first.source === 'persistor', 'should have persistor only');
   });
 
   await test('merge: both empty -> []', () => {
-    assert(mergeResults([], [], w).length === 0, 'should be empty');
+    assert(mergeResults([], [], w, 'hello').length === 0, 'should be empty');
   });
 
   await test('merge: score normalization uses salience_score/100 when no score', () => {
     const noScore = [{ id: 'b', type: 'concept', label: 'X', properties: {}, salience_score: 60 }];
-    const r = mergeResults([], noScore, { file: 1, persistor: 1 });
+    const r = mergeResults([], noScore, { file: 1, persistor: 1 }, 'hello');
     const first = r[0];
     if (!first) throw new Error('expected result');
     assert(Math.abs(first.score - 0.6) < 0.001, `expected ~0.6, got ${first.score}`);
@@ -99,26 +99,28 @@ async function runTests(): Promise<void> {
   // --- Unified Get ---
   const mockFileGet = {
     name: 'memory_get',
-    execute: async (
+    execute: (
       _id: string,
       p: Record<string, unknown>,
       _signal?: AbortSignal,
       _onUpdate?: unknown,
-    ) => ({
-      content: [{ type: 'text' as const, text: `file:${String(p['path'])}` }],
-      details: undefined,
-    }),
+    ) =>
+      Promise.resolve({
+        content: [{ type: 'text' as const, text: `file:${String(p['path'])}` }],
+        details: undefined,
+      }),
   };
   const mockClient = {
-    getNode: async (id: string) => ({
-      id,
-      type: 'concept',
-      label: 'T',
-      properties: {},
-      salience_score: 75,
-    }),
-    getContext: async () => null,
-    checkHealth: async () => true,
+    getNode: (id: string) =>
+      Promise.resolve({
+        id,
+        type: 'concept',
+        label: 'T',
+        properties: {},
+        salience_score: 75,
+      }),
+    getContext: () => Promise.resolve(null),
+    checkHealth: () => Promise.resolve(true),
   };
   const cfg = resolveConfig({});
   const getTool = createUnifiedGetTool(
@@ -147,21 +149,20 @@ async function runTests(): Promise<void> {
   await test('get: non-file non-UUID tries persistor then file', async () => {
     const freshFileGet = {
       name: 'memory_get',
-      execute: async (
+      execute: (
         _id: string,
         p: Record<string, unknown>,
         _signal?: AbortSignal,
         _onUpdate?: unknown,
-      ) => ({
-        content: [{ type: 'text' as const, text: `file:${String(p['path'])}` }],
-        details: undefined,
-      }),
+      ) =>
+        Promise.resolve({
+          content: [{ type: 'text' as const, text: `file:${String(p['path'])}` }],
+          details: undefined,
+        }),
     };
     const failClient = {
       ...mockClient,
-      getNode: async () => {
-        throw new Error('nope');
-      },
+      getNode: () => Promise.reject(new Error('nope')),
     };
     const tool = createUnifiedGetTool(
       freshFileGet as unknown as OpenClawTool,

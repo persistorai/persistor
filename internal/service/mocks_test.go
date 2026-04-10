@@ -13,11 +13,12 @@ type mockNodeStore struct {
 	mu    sync.Mutex
 	calls []string
 
-	listNodes  func(ctx context.Context, tenantID, typeFilter string, minSalience float64, limit, offset int) ([]models.Node, bool, error)
-	getNode    func(ctx context.Context, tenantID, nodeID string) (*models.Node, error)
-	createNode func(ctx context.Context, tenantID string, req models.CreateNodeRequest) (*models.Node, error)
-	updateNode func(ctx context.Context, tenantID, nodeID string, req models.UpdateNodeRequest) (*models.Node, error)
-	deleteNode func(ctx context.Context, tenantID, nodeID string) error
+	listNodes           func(ctx context.Context, tenantID, typeFilter string, minSalience float64, limit, offset int) ([]models.Node, bool, error)
+	getNode             func(ctx context.Context, tenantID, nodeID string) (*models.Node, error)
+	createNode          func(ctx context.Context, tenantID string, req models.CreateNodeRequest) (*models.Node, error)
+	updateNode          func(ctx context.Context, tenantID, nodeID string, req models.UpdateNodeRequest) (*models.Node, error)
+	patchNodeProperties func(ctx context.Context, tenantID, nodeID string, req models.PatchPropertiesRequest) (*models.Node, error)
+	deleteNode          func(ctx context.Context, tenantID, nodeID string) error
 }
 
 func (m *mockNodeStore) record(name string) {
@@ -56,8 +57,11 @@ func (m *mockNodeStore) DeleteNode(ctx context.Context, tenantID, nodeID string)
 	return m.deleteNode(ctx, tenantID, nodeID)
 }
 
-func (m *mockNodeStore) PatchNodeProperties(_ context.Context, _, _ string, _ models.PatchPropertiesRequest) (*models.Node, error) {
+func (m *mockNodeStore) PatchNodeProperties(ctx context.Context, tenantID, nodeID string, req models.PatchPropertiesRequest) (*models.Node, error) {
 	m.record("PatchNodeProperties")
+	if m.patchNodeProperties != nil {
+		return m.patchNodeProperties(ctx, tenantID, nodeID, req)
+	}
 	return &models.Node{}, nil
 }
 
@@ -116,6 +120,11 @@ type mockSearchStore struct {
 	fullTextSearch func(ctx context.Context, tenantID, query, typeFilter string, minSalience float64, limit int) ([]models.Node, error)
 	semanticSearch func(ctx context.Context, tenantID string, embedding []float32, limit int) ([]models.ScoredNode, error)
 	hybridSearch   func(ctx context.Context, tenantID, query string, embedding []float32, limit int) ([]models.Node, error)
+	getNodeByLabel func(ctx context.Context, tenantID, label string) (*models.Node, error)
+}
+
+type mockGraphLookupStore struct {
+	neighbors func(ctx context.Context, tenantID, nodeID string, limit int) (*models.NeighborResult, error)
 }
 
 func (m *mockSearchStore) record(name string) {
@@ -137,6 +146,21 @@ func (m *mockSearchStore) SemanticSearch(ctx context.Context, tenantID string, e
 func (m *mockSearchStore) HybridSearch(ctx context.Context, tenantID, query string, embedding []float32, limit int) ([]models.Node, error) {
 	m.record("HybridSearch")
 	return m.hybridSearch(ctx, tenantID, query, embedding, limit)
+}
+
+func (m *mockSearchStore) GetNodeByLabel(ctx context.Context, tenantID, label string) (*models.Node, error) {
+	m.record("GetNodeByLabel")
+	if m.getNodeByLabel == nil {
+		return nil, nil
+	}
+	return m.getNodeByLabel(ctx, tenantID, label)
+}
+
+func (m *mockGraphLookupStore) Neighbors(ctx context.Context, tenantID, nodeID string, limit int) (*models.NeighborResult, error) {
+	if m.neighbors == nil {
+		return &models.NeighborResult{}, nil
+	}
+	return m.neighbors(ctx, tenantID, nodeID, limit)
 }
 
 // mockEmbedder returns configured embeddings.

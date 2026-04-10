@@ -84,6 +84,7 @@ func main() {
 	rootCmd.AddCommand(newExportCmd())
 	rootCmd.AddCommand(newImportKGCmd())
 	rootCmd.AddCommand(newSchemaCmd())
+	rootCmd.AddCommand(newEvalCmd())
 
 	ingestCmd := newIngestCmd()
 	ingestCmd.PersistentPreRun = func(cmd *cobra.Command, args []string) {

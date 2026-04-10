@@ -9,7 +9,7 @@ export default tseslint.config(
   ...tseslint.configs.stylisticTypeChecked,
 
   {
-    ignores: ['**/node_modules/**', '**/*.config.mjs'],
+    ignores: ['**/node_modules/**', '**/*.config.mjs', 'integration-test.ts'],
   },
 
   {

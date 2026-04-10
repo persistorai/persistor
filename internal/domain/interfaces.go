@@ -76,6 +76,7 @@ type Auditor interface {
 // AdminService defines administrative operations.
 type AdminService interface {
 	ListNodesWithoutEmbeddings(ctx context.Context, tenantID string, limit int) ([]models.NodeSummary, error)
+	ReprocessNodes(ctx context.Context, tenantID string, req models.ReprocessNodesRequest) (*models.ReprocessNodesResult, error)
 }
 
 // HistoryService defines property history operations.

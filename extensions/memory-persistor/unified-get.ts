@@ -1,8 +1,8 @@
 import { logger } from './logger.ts';
 
-import type { PersistorClient, PersistorNode, PersistorContext } from '@persistorai/sdk';
 import type { PersistorPluginConfig } from './config.ts';
 import type { OpenClawTool, ToolResult } from './types.ts';
+import type { PersistorContext, PersistorClient, PersistorNode } from '@persistorai/sdk';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu;
 
@@ -27,19 +27,25 @@ function formatNode(node: PersistorNode, context?: PersistorContext | null): str
   if (Object.keys(node.properties).length > 0) {
     lines.push('', 'Properties:');
     for (const [k, v] of Object.entries(node.properties)) {
-      lines.push(`  ${k}: ${typeof v === 'object' ? JSON.stringify(v) : String(v)}`);
+      if (typeof v === 'object') {
+        lines.push(`  ${k}: ${JSON.stringify(v)}`);
+      } else if (typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean') {
+        lines.push(`  ${k}: ${String(v)}`);
+      } else {
+        lines.push(`  ${k}: ${Object.prototype.toString.call(v)}`);
+      }
     }
   }
-  if (context?.neighbors.length) {
+  if (context && context.neighbors.length > 0) {
     lines.push('', `Neighbors (${context.neighbors.length}):`);
     for (const n of context.neighbors) {
       lines.push(`  -> ${n.label} (${n.type})`);
     }
   }
-  if (context?.edges?.length) {
+  if (context?.edges && context.edges.length > 0) {
     lines.push('', 'Edges:');
     for (const e of context.edges) {
-      lines.push(`  ${e.source} --[${e.relation ?? e.type ?? '?'}]--> ${e.target}`);
+      lines.push(`  ${e.source} --[${e.relation}]--> ${e.target}`);
     }
   }
   return lines.join('\n');

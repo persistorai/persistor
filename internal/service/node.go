@@ -69,7 +69,7 @@ func (s *NodeService) CreateNode(
 		s.embedWorker.Enqueue(EmbedJob{
 			TenantID: tenantID,
 			NodeID:   node.ID,
-			Text:     node.Type + ":" + node.Label,
+			Text:     models.BuildNodeEmbeddingText(node),
 		})
 	}
 
@@ -87,12 +87,12 @@ func (s *NodeService) UpdateNode(
 		return nil, err
 	}
 
-	if req.Type != nil || req.Label != nil {
+	if req.Type != nil || req.Label != nil || req.Properties != nil {
 		if s.embedWorker != nil {
 			s.embedWorker.Enqueue(EmbedJob{
 				TenantID: tenantID,
 				NodeID:   node.ID,
-				Text:     node.Type + ":" + node.Label,
+				Text:     models.BuildNodeEmbeddingText(node),
 			})
 		}
 	}
@@ -109,6 +109,14 @@ func (s *NodeService) PatchNodeProperties(
 	node, err := s.store.PatchNodeProperties(ctx, tenantID, nodeID, req)
 	if err != nil {
 		return nil, err
+	}
+
+	if s.embedWorker != nil {
+		s.embedWorker.Enqueue(EmbedJob{
+			TenantID: tenantID,
+			NodeID:   node.ID,
+			Text:     models.BuildNodeEmbeddingText(node),
+		})
 	}
 
 	auditAsync(s.auditWorker, tenantID, "node.patch_properties", "node", nodeID, map[string]any{"patched_keys": mapKeys(req.Properties)})
@@ -135,10 +143,9 @@ func (s *NodeService) MigrateNode(
 		return nil, err
 	}
 
-	// Re-embed the new node.
+	// Re-embed the new node. We only know the new ID here, so use it as a fallback.
 	if s.embedWorker != nil {
-		label := result.NewID
-		s.embedWorker.Enqueue(EmbedJob{TenantID: tenantID, NodeID: result.NewID, Text: label})
+		s.embedWorker.Enqueue(EmbedJob{TenantID: tenantID, NodeID: result.NewID, Text: result.NewID})
 	}
 
 	auditAsync(s.auditWorker, tenantID, "node.migrate", "node", oldID, map[string]any{

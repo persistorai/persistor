@@ -7,10 +7,10 @@
  */
 const NAMESPACE = 'memory-persistor';
 
+const debugValue = typeof process !== 'undefined' ? process.env['DEBUG'] : undefined;
 const debugEnabled =
-  typeof process !== 'undefined' &&
-  typeof process.env['DEBUG'] === 'string' &&
-  (process.env['DEBUG'] === '*' || process.env['DEBUG'].split(',').some((s) => s.trim() === NAMESPACE));
+  typeof debugValue === 'string' &&
+  (debugValue === '*' || debugValue.split(',').some((part: string) => part.trim() === NAMESPACE));
 
 function serialize(v: unknown): string {
   if (typeof v === 'string') return v;

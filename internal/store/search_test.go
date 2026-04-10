@@ -56,4 +56,26 @@ func TestFullTextSearch(t *testing.T) {
 	if len(results) != 0 {
 		t.Errorf("FullTextSearch with bad type filter = %d results, want 0", len(results))
 	}
+
+	// Search should also hit indexed property text, not just labels.
+	propertyReq := models.CreateNodeRequest{
+		Type:  "project",
+		Label: "Persistor",
+		Properties: map[string]any{
+			"summary": "Memory system for AI agents",
+		},
+	}
+	_ = propertyReq.Validate()
+	if _, err := ns.CreateNode(ctx, tenantID, propertyReq); err != nil {
+		t.Fatalf("CreateNode(propertyReq): %v", err)
+	}
+
+	results, err = ss.FullTextSearch(ctx, tenantID, "agents", "", 0, 10)
+	if err != nil {
+		t.Fatalf("FullTextSearch(property text): %v", err)
+	}
+
+	if len(results) != 1 || results[0].Label != "Persistor" {
+		t.Fatalf("FullTextSearch(property text) = %#v, want Persistor hit", results)
+	}
 }

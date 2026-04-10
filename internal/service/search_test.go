@@ -11,24 +11,40 @@ import (
 )
 
 func TestSearchService_FullTextSearch(t *testing.T) {
+	queries := make([]string, 0, 4)
 	store := &mockSearchStore{
-		fullTextSearch: func(_ context.Context, _, _, _ string, _ float64, _ int) ([]models.Node, error) {
-			return []models.Node{{ID: "n1", Label: "Match"}}, nil
+		fullTextSearch: func(_ context.Context, _, query, _ string, _ float64, _ int) ([]models.Node, error) {
+			queries = append(queries, query)
+			if query == "big jerry" {
+				return []models.Node{{ID: "n1", Label: "Big Jerry", Salience: 10}}, nil
+			}
+			return []models.Node{}, nil
+		},
+	}
+	graph := &mockGraphLookupStore{
+		neighbors: func(_ context.Context, _, nodeID string, _ int) (*models.NeighborResult, error) {
+			if nodeID != "n1" {
+				return &models.NeighborResult{}, nil
+			}
+			return &models.NeighborResult{Nodes: []models.Node{{ID: "n2", Label: "Oklahoma", Salience: 20}}}, nil
 		},
 	}
 	log := logrus.New()
 	log.SetLevel(logrus.ErrorLevel)
-	svc := NewSearchService(store, nil, log)
+	svc := NewSearchService(store, nil, log).WithGraphLookup(graph)
 
-	nodes, err := svc.FullTextSearch(context.Background(), "t1", "match", "", 0, 10)
+	nodes, err := svc.FullTextSearch(context.Background(), "t1", "Who is Big Jerry?", "", 0, 10)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if len(nodes) != 1 || nodes[0].ID != "n1" {
+	if len(nodes) != 2 || nodes[0].ID != "n1" || nodes[1].ID != "n2" {
 		t.Errorf("unexpected results: %v", nodes)
 	}
-	if len(store.calls) != 1 || store.calls[0] != "FullTextSearch" {
-		t.Errorf("expected FullTextSearch call, got %v", store.calls)
+	if len(store.calls) < 2 || store.calls[0] != "FullTextSearch" || store.calls[1] != "FullTextSearch" {
+		t.Errorf("expected repeated FullTextSearch calls first, got %v", store.calls)
+	}
+	if len(queries) < 2 || queries[1] != "big jerry" {
+		t.Fatalf("expected fallback variant query, got %v", queries)
 	}
 }
 
@@ -103,16 +119,32 @@ func TestSearchService_HybridSearch(t *testing.T) {
 					return []float32{0.1, 0.2}, nil
 				},
 			}
+			queries := make([]string, 0, 4)
 			store := &mockSearchStore{
-				hybridSearch: func(_ context.Context, _, _ string, _ []float32, _ int) ([]models.Node, error) {
-					return []models.Node{{ID: "n1"}, {ID: "n2"}}, nil
+				hybridSearch: func(_ context.Context, _, query string, _ []float32, _ int) ([]models.Node, error) {
+					queries = append(queries, query)
+					if tc.wantErr {
+						return nil, nil
+					}
+					if query == "big jerry" {
+						return []models.Node{{ID: "n1"}, {ID: "n2"}}, nil
+					}
+					return []models.Node{}, nil
+				},
+			}
+			graph := &mockGraphLookupStore{
+				neighbors: func(_ context.Context, _, nodeID string, _ int) (*models.NeighborResult, error) {
+					if nodeID != "n1" {
+						return &models.NeighborResult{}, nil
+					}
+					return &models.NeighborResult{Nodes: []models.Node{{ID: "n3", Label: "Ridge Line 2", Salience: 30}}}, nil
 				},
 			}
 			log := logrus.New()
 			log.SetLevel(logrus.ErrorLevel)
-			svc := NewSearchService(store, embedder, log)
+			svc := NewSearchService(store, embedder, log).WithGraphLookup(graph)
 
-			nodes, err := svc.HybridSearch(context.Background(), "t1", "query", 10)
+			nodes, err := svc.HybridSearch(context.Background(), "t1", "Who is Big Jerry?", 10)
 			if tc.wantErr {
 				if err == nil {
 					t.Fatal("expected error")
@@ -122,8 +154,14 @@ func TestSearchService_HybridSearch(t *testing.T) {
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
-			if len(nodes) != 2 {
-				t.Errorf("got %d nodes, want 2", len(nodes))
+			if len(nodes) != 3 {
+				t.Errorf("got %d nodes, want 3", len(nodes))
+			}
+			if nodes[2].ID != "n3" {
+				t.Fatalf("expected graph-expanded node n3, got %v", nodes)
+			}
+			if len(queries) < 2 || queries[1] != "big jerry" {
+				t.Fatalf("expected hybrid fallback variant, got %v", queries)
 			}
 		})
 	}

@@ -8,12 +8,12 @@ ALTER TABLE kg_property_history FORCE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS tenant_isolation_property_history ON kg_property_history;
 CREATE POLICY tenant_isolation_property_history ON kg_property_history
     FOR ALL
-    USING (tenant_id = current_setting('app.tenant_id')::uuid)
-    WITH CHECK (tenant_id = current_setting('app.tenant_id')::uuid);
+    USING (tenant_id = current_setting('app.tenant_id', true)::uuid)
+    WITH CHECK (tenant_id = current_setting('app.tenant_id', true)::uuid);
 
 -- +goose Down
 DROP POLICY IF EXISTS tenant_isolation_property_history ON kg_property_history;
 CREATE POLICY tenant_isolation_property_history ON kg_property_history
-    USING (tenant_id = current_setting('app.tenant_id')::uuid);
+    USING (tenant_id = current_setting('app.tenant_id', true)::uuid);
 
 ALTER TABLE kg_property_history NO FORCE ROW LEVEL SECURITY;

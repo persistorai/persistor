@@ -86,6 +86,8 @@ func TestNodeService_CreateNode(t *testing.T) {
 			// Check embed enqueue
 			if len(embedEnq.jobs) != 1 {
 				t.Errorf("expected 1 embed job, got %d", len(embedEnq.jobs))
+			} else if embedEnq.jobs[0].Text != "type: concept\nlabel: Test" {
+				t.Errorf("unexpected embedding text: %q", embedEnq.jobs[0].Text)
 			}
 
 			// Wait for async audit
@@ -117,7 +119,8 @@ func TestNodeService_UpdateNode(t *testing.T) {
 	go aw.Run(ctx)
 	defer cancel()
 
-	svc := NewNodeService(store, &mockEmbedEnqueuer{}, aw, log)
+	embedEnq := &mockEmbedEnqueuer{}
+	svc := NewNodeService(store, embedEnq, aw, log)
 
 	lbl := "Updated"
 	node, err := svc.UpdateNode(context.Background(), "t1", "n1", models.UpdateNodeRequest{Label: &lbl})
@@ -129,6 +132,12 @@ func TestNodeService_UpdateNode(t *testing.T) {
 	}
 	if len(store.calls) != 1 || store.calls[0] != "UpdateNode" {
 		t.Errorf("expected UpdateNode call, got %v", store.calls)
+	}
+	if len(embedEnq.jobs) != 1 {
+		t.Fatalf("expected 1 embed job, got %d", len(embedEnq.jobs))
+	}
+	if embedEnq.jobs[0].Text != "type: person\nlabel: Updated" {
+		t.Fatalf("unexpected embedding text: %q", embedEnq.jobs[0].Text)
 	}
 
 	time.Sleep(50 * time.Millisecond)

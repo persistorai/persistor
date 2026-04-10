@@ -39,6 +39,10 @@ func RunMigrations(ctx context.Context, pool *dbpool.Pool, log *logrus.Logger, f
 	}
 	defer sqlDB.Close()
 
+	if _, err := sqlDB.ExecContext(ctx, "SELECT set_config('app.tenant_id', '00000000-0000-0000-0000-000000000000', false)"); err != nil {
+		return fmt.Errorf("initializing migration tenant setting: %w", err)
+	}
+
 	provider, err := goose.NewProvider(goose.DialectPostgres, sqlDB, fsys)
 	if err != nil {
 		return fmt.Errorf("creating goose provider: %w", err)

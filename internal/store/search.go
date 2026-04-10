@@ -44,7 +44,7 @@ func (s *SearchStore) FullTextSearch(
 	sql := `WITH q AS (SELECT plainto_tsquery('english', $1) AS tsq)
 		SELECT ` + nodeColumns + `
 		FROM kg_nodes, q
-		WHERE label_tsv @@ q.tsq
+		WHERE search_tsv @@ q.tsq
 			AND tenant_id = current_setting('app.tenant_id')::uuid`
 
 	args := []any{query}
@@ -62,7 +62,7 @@ func (s *SearchStore) FullTextSearch(
 		argIdx++
 	}
 
-	sql += fmt.Sprintf(` ORDER BY ts_rank(label_tsv, q.tsq) DESC, salience_score DESC LIMIT $%d`, argIdx)
+	sql += fmt.Sprintf(` ORDER BY (ts_rank(search_tsv, q.tsq) * 0.8 + LEAST(salience_score / 100.0, 1.0) * 0.2) DESC, salience_score DESC, updated_at DESC LIMIT $%d`, argIdx)
 	args = append(args, limit)
 
 	rows, err := tx.Query(ctx, sql, args...)
@@ -185,9 +185,9 @@ func (s *SearchStore) HybridSearch(
 
 	sql := `WITH q AS (SELECT plainto_tsquery('english', $1) AS tsq),
 		fts AS (
-			SELECT id, tenant_id, ts_rank(label_tsv, q.tsq) AS rank
+			SELECT id, tenant_id, ts_rank(search_tsv, q.tsq) AS rank
 			FROM kg_nodes, q
-			WHERE label_tsv @@ q.tsq
+			WHERE search_tsv @@ q.tsq
 				AND tenant_id = current_setting('app.tenant_id')::uuid
 			ORDER BY rank DESC
 			LIMIT $3
@@ -219,7 +219,7 @@ func (s *SearchStore) HybridSearch(
 		FROM kg_nodes n
 		INNER JOIN combined c ON n.tenant_id = c.tenant_id AND n.id = c.id
 		WHERE n.tenant_id = current_setting('app.tenant_id')::uuid
-		ORDER BY c.rrf_score DESC
+		ORDER BY (c.rrf_score * 0.85 + LEAST(n.salience_score / 100.0, 1.0) * 0.15) DESC, n.updated_at DESC
 		LIMIT $3`
 
 	rows, err := tx.Query(ctx, sql, query, embeddingStr, limit)

@@ -1,0 +1,61 @@
+{
+  "name": "scout-memory-phase2",
+  "questions": [
+    {
+      "prompt": "Who is Big Jerry?",
+      "search_mode": "hybrid",
+      "limit": 5,
+      "expected_labels": ["Big Jerry"],
+      "notes": "Core entity lookup should still succeed under hybrid retrieval"
+    },
+    {
+      "prompt": "What happened on Christmas Eve 2025?",
+      "search_mode": "hybrid",
+      "limit": 5,
+      "expected_labels": ["DeerPrint", "Christmas Eve Breakthrough"],
+      "notes": "Temporal phrasing should retrieve the re-identification breakthrough context"
+    },
+    {
+      "prompt": "What is Brian's stance on soft deletes?",
+      "search_mode": "hybrid",
+      "limit": 5,
+      "expected_labels": ["Brian Colinger"],
+      "notes": "Procedural and architecture-preference phrasing should hit Brian-linked memory"
+    },
+    {
+      "prompt": "What project is not owned by Dirt Road Systems?",
+      "search_mode": "hybrid",
+      "limit": 5,
+      "expected_labels": ["Persistor"],
+      "notes": "Ownership distinction should remain retrievable"
+    },
+    {
+      "prompt": "What matters most to Brian?",
+      "search_mode": "hybrid",
+      "limit": 5,
+      "expected_labels": ["Brian Colinger"],
+      "notes": "Core priorities should resolve through Brian's memory cluster"
+    },
+    {
+      "prompt": "What changed in DeerPrint production on Apr 1 and Apr 2?",
+      "search_mode": "hybrid",
+      "limit": 6,
+      "expected_labels": ["DeerPrint"],
+      "notes": "Temporal shorthand plus product name should retrieve the production change narrative"
+    },
+    {
+      "prompt": "What is Big Jerry connected to?",
+      "search_mode": "hybrid",
+      "limit": 6,
+      "expected_labels": ["Big Jerry"],
+      "notes": "Graph-aware expansion should help surface Big Jerry with related context"
+    },
+    {
+      "prompt": "Which project belongs to Brian personally instead of Dirt Road Systems?",
+      "search_mode": "hybrid",
+      "limit": 6,
+      "expected_labels": ["Persistor"],
+      "notes": "Paraphrased ownership query should be caught by query variant handling"
+    }
+  ]
+}

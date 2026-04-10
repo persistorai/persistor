@@ -33,11 +33,6 @@ type NodeSummary struct {
 	Label string `json:"label"`
 }
 
-// EmbeddingText returns the text to embed for this node: "type:label".
-func (n *NodeSummary) EmbeddingText() string {
-	return n.Type + ":" + n.Label
-}
-
 // ScoredNode pairs a Node with a similarity score from semantic search.
 type ScoredNode struct {
 	Node

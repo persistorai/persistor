@@ -7,24 +7,30 @@ import (
 
 	"github.com/persistorai/persistor/internal/domain"
 	"github.com/persistorai/persistor/internal/models"
+	"github.com/persistorai/persistor/internal/store"
 )
 
 // AdminStore is the data-access interface AdminService depends on.
-// It reuses domain.AdminService since the method sets are identical, avoiding duplication.
-type AdminStore = domain.AdminService
+type AdminStore interface {
+	ListNodesWithoutEmbeddings(ctx context.Context, tenantID string, limit int) ([]models.NodeSummary, error)
+	ListNodesForReprocess(ctx context.Context, tenantID string, limit int) ([]store.ReprocessableNode, error)
+	CountNodesForReprocess(ctx context.Context, tenantID string) (remainingSearchText, remainingEmbeddings, remainingTotal int, err error)
+	UpdateNodeSearchText(ctx context.Context, tenantID, nodeID, searchText string) error
+}
 
 // Compile-time check: *AdminService must satisfy domain.AdminService.
 var _ domain.AdminService = (*AdminService)(nil)
 
 // AdminService wraps AdminStore with context-aware logging.
 type AdminService struct {
-	store AdminStore
-	log   *logrus.Logger
+	store       AdminStore
+	embedWorker EmbedEnqueuer
+	log         *logrus.Logger
 }
 
 // NewAdminService creates an AdminService.
-func NewAdminService(store AdminStore, log *logrus.Logger) *AdminService {
-	return &AdminService{store: store, log: log}
+func NewAdminService(store AdminStore, embedWorker EmbedEnqueuer, log *logrus.Logger) *AdminService {
+	return &AdminService{store: store, embedWorker: embedWorker, log: log}
 }
 
 // ListNodesWithoutEmbeddings returns nodes with a NULL embedding vector, up to limit.
