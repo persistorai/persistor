@@ -1,3 +1,6 @@
+import { scoreFileContextBoost, scorePersistorContextBoost } from './retrieval-scoring.ts';
+
+import type { RetrievalContext } from './session-context.ts';
 import type { PersistorSearchResult, UnifiedSearchResult } from './types.ts';
 
 /** A result from the built-in file memory search */
@@ -76,6 +79,7 @@ export function mergeResults(
   persistorResults: PersistorSearchResult[],
   weights: MergeWeights,
   query = '',
+  retrievalContext?: RetrievalContext,
 ): UnifiedSearchResult[] {
   const intent = detectQueryIntent(query);
 
@@ -83,7 +87,10 @@ export function mergeResults(
     const { path, snippet, line } = r;
     return {
       source: 'file' as const,
-      score: scoreFileResult(r, weights, intent),
+      score: clamp01(
+        scoreFileResult(r, weights, intent) +
+          (retrievalContext != null ? scoreFileContextBoost(r, retrievalContext) : 0),
+      ),
       path,
       snippet,
       line,
@@ -93,7 +100,10 @@ export function mergeResults(
   const persistorUnified: UnifiedSearchResult[] = persistorResults.map((r) => {
     return {
       source: 'persistor' as const,
-      score: scorePersistorResult(r, weights, intent),
+      score: clamp01(
+        scorePersistorResult(r, weights, intent) +
+          (retrievalContext != null ? scorePersistorContextBoost(r, retrievalContext) : 0),
+      ),
       nodeId: r.id,
       nodeType: r.type,
       label: r.label,

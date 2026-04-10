@@ -3,6 +3,7 @@ package models_test
 import (
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/persistorai/persistor/internal/models"
 )
@@ -141,4 +142,69 @@ func TestSupersedeRequest_Validate(t *testing.T) {
 			assertNoError(t, err)
 		})
 	}
+}
+
+func TestCreateEpisodeRequest_Validate(t *testing.T) {
+	startedAt := ptr(modelsTime("2026-04-10T12:00:00Z"))
+	endedAt := ptr(modelsTime("2026-04-10T13:00:00Z"))
+
+	tests := []struct {
+		name    string
+		req     models.CreateEpisodeRequest
+		wantErr string
+	}{
+		{name: "valid", req: models.CreateEpisodeRequest{Title: "Kickoff", StartedAt: startedAt, EndedAt: endedAt}},
+		{name: "missing title", req: models.CreateEpisodeRequest{}, wantErr: "title: label is required"},
+		{name: "bad status", req: models.CreateEpisodeRequest{Title: "Kickoff", Status: "stale"}, wantErr: "status must be one of"},
+		{name: "bad time range", req: models.CreateEpisodeRequest{Title: "Kickoff", StartedAt: endedAt, EndedAt: startedAt}, wantErr: "ended_at must be on or after started_at"},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			err := tc.req.Validate()
+			if tc.wantErr != "" {
+				assertErrorContains(t, err, tc.wantErr)
+				return
+			}
+			assertNoError(t, err)
+		})
+	}
+}
+
+func TestCreateEventRecordRequest_Validate(t *testing.T) {
+	confidence := 0.75
+	startedAt := ptr(modelsTime("2026-04-10T12:00:00Z"))
+	endedAt := ptr(modelsTime("2026-04-10T13:00:00Z"))
+
+	tests := []struct {
+		name    string
+		req     models.CreateEventRecordRequest
+		wantErr string
+	}{
+		{name: "valid", req: models.CreateEventRecordRequest{Kind: models.EventKindDecision, Title: "Do it", Confidence: &confidence, Links: []models.CreateEventLinkRequest{{NodeID: "n1", Role: "owner"}}}},
+		{name: "missing kind", req: models.CreateEventRecordRequest{Title: "No kind"}, wantErr: "kind must be one of"},
+		{name: "missing title", req: models.CreateEventRecordRequest{Kind: models.EventKindTask}, wantErr: "title: label is required"},
+		{name: "bad confidence", req: models.CreateEventRecordRequest{Kind: models.EventKindTask, Title: "Oops", Confidence: ptr(1.5)}, wantErr: "confidence must be between 0 and 1"},
+		{name: "bad time range", req: models.CreateEventRecordRequest{Kind: models.EventKindTask, Title: "Oops", OccurredStartAt: endedAt, OccurredEndAt: startedAt}, wantErr: "occurred_end_at must be on or after occurred_start_at"},
+		{name: "missing link role", req: models.CreateEventRecordRequest{Kind: models.EventKindTask, Title: "Oops", Links: []models.CreateEventLinkRequest{{NodeID: "n1"}}}, wantErr: "relation is required"},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			err := tc.req.Validate()
+			if tc.wantErr != "" {
+				assertErrorContains(t, err, tc.wantErr)
+				return
+			}
+			assertNoError(t, err)
+		})
+	}
+}
+
+func modelsTime(v string) time.Time {
+	t, err := time.Parse(time.RFC3339, v)
+	if err != nil {
+		panic(err)
+	}
+	return t
 }

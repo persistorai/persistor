@@ -18,6 +18,8 @@ func newAdminCmd() *cobra.Command {
 	cmd.AddCommand(adminStatsCmd())
 	cmd.AddCommand(adminBackfillCmd())
 	cmd.AddCommand(adminReprocessCmd())
+	cmd.AddCommand(adminMaintenanceCmd())
+	cmd.AddCommand(adminMergeSuggestionsCmd())
 	return cmd
 }
 
@@ -100,6 +102,81 @@ func adminReprocessCmd() *cobra.Command {
 	cmd.Flags().IntVar(&batchSize, "batch-size", 100, "Number of nodes to process in one batch")
 	cmd.Flags().BoolVar(&searchText, "search-text", false, "Rebuild stored search_text for scanned nodes")
 	cmd.Flags().BoolVar(&embeddings, "embeddings", false, "Queue embeddings for scanned nodes")
+	return cmd
+}
+
+func adminMaintenanceCmd() *cobra.Command {
+	var batchSize int
+	var refreshSearchText bool
+	var refreshEmbeddings bool
+	var scanStaleFacts bool
+	var includeDuplicateCandidates bool
+
+	cmd := &cobra.Command{
+		Use:   "maintenance-run",
+		Short: "Run an explicit maintenance pass for refresh and consolidation scans",
+		Run: func(cmd *cobra.Command, args []string) {
+			result, err := apiClient.Admin.RunMaintenance(context.Background(), clientmodels.MaintenanceRunRequest{
+				BatchSize:                  batchSize,
+				RefreshSearchText:          refreshSearchText,
+				RefreshEmbeddings:          refreshEmbeddings,
+				ScanStaleFacts:             scanStaleFacts,
+				IncludeDuplicateCandidates: includeDuplicateCandidates,
+			})
+			if err != nil {
+				fatal("maintenance-run", err)
+			}
+			output(result, fmt.Sprintf("scanned=%d updated_search_text=%d queued_embeddings=%d stale_fact_nodes=%d", result.Scanned, result.UpdatedSearchText, result.QueuedEmbeddings, result.StaleFactNodes))
+		},
+	}
+	cmd.Flags().IntVar(&batchSize, "batch-size", 100, "Number of nodes to inspect in one maintenance pass")
+	cmd.Flags().BoolVar(&refreshSearchText, "refresh-search-text", false, "Refresh stored search_text when derived text has changed")
+	cmd.Flags().BoolVar(&refreshEmbeddings, "refresh-embeddings", false, "Queue embeddings for nodes missing them in the scanned batch")
+	cmd.Flags().BoolVar(&scanStaleFacts, "scan-stale-facts", false, "Scan fact evidence for stale or superseded entries")
+	cmd.Flags().BoolVar(&includeDuplicateCandidates, "include-duplicate-candidates", false, "Count duplicate candidate pairs for the current tenant")
+	return cmd
+}
+
+func adminMergeSuggestionsCmd() *cobra.Command {
+	var limit int
+	var minScore float64
+	var typeFilter string
+
+	cmd := &cobra.Command{
+		Use:   "merge-suggestions",
+		Short: "Inspect explainable duplicate candidate suggestions",
+		Run: func(cmd *cobra.Command, args []string) {
+			suggestions, err := apiClient.Admin.ListMergeSuggestions(context.Background(), clientmodels.MergeSuggestionListOpts{
+				Type:     typeFilter,
+				Limit:    limit,
+				MinScore: minScore,
+			})
+			if err != nil {
+				fatal("merge-suggestions", err)
+			}
+			if flagFmt == "table" {
+				rows := make([][]string, 0, len(suggestions))
+				for _, suggestion := range suggestions {
+					reason := ""
+					if len(suggestion.Reasons) > 0 {
+						reason = suggestion.Reasons[0].Description
+					}
+					rows = append(rows, []string{
+						suggestion.Canonical.ID,
+						suggestion.Duplicate.ID,
+						fmt.Sprintf("%.2f", suggestion.Score),
+						reason,
+					})
+				}
+				formatTable([]string{"CANONICAL", "DUPLICATE", "SCORE", "TOP_REASON"}, rows)
+				return
+			}
+			output(map[string]any{"suggestions": suggestions}, fmt.Sprintf("%d", len(suggestions)))
+		},
+	}
+	cmd.Flags().IntVar(&limit, "limit", 25, "Maximum number of suggestions to return")
+	cmd.Flags().Float64Var(&minScore, "min-score", 0.6, "Minimum suggestion score to include")
+	cmd.Flags().StringVar(&typeFilter, "type", "", "Filter to a single node type")
 	return cmd
 }
 

@@ -88,3 +88,27 @@ func TestLoadFixtureRejectsMissingExpectations(t *testing.T) {
 		t.Fatal("expected error for missing expectations")
 	}
 }
+
+func TestFixtureApplyPrototypeRerankProfile(t *testing.T) {
+	t.Parallel()
+
+	fixture := &Fixture{
+		Name: "test-fixture",
+		Questions: []Question{
+			{Prompt: "Who is Big Jerry?", SearchMode: "hybrid_rerank"},
+			{Prompt: "What is DeerPrint?", SearchMode: "hybrid"},
+		},
+	}
+
+	clone := fixture.Clone()
+	clone.ApplyPrototypeRerankProfile("term_focus")
+	if clone.Questions[0].InternalRerankProfile != "term_focus" {
+		t.Fatalf("expected rerank profile on hybrid_rerank question, got %#v", clone.Questions[0])
+	}
+	if clone.Questions[1].InternalRerankProfile != "" {
+		t.Fatalf("expected non-rerank question to remain unchanged, got %#v", clone.Questions[1])
+	}
+	if fixture.Questions[0].InternalRerankProfile != "" {
+		t.Fatalf("expected original fixture to stay unchanged, got %#v", fixture.Questions[0])
+	}
+}

@@ -26,6 +26,10 @@ func (ing *Ingester) writeAll(
 		return report, err
 	}
 
+	if err := ing.writeEpisodic(ctx, entities, rels, nodeMap, report); err != nil {
+		return report, err
+	}
+
 	return report, nil
 }
 
@@ -78,5 +82,24 @@ func (ing *Ingester) writeFacts(
 			fmt.Sprintf("writing facts: %v", err))
 	}
 
+	return nil
+}
+
+func (ing *Ingester) writeEpisodic(
+	ctx context.Context,
+	entities []ExtractedEntity,
+	rels []ExtractedRelationship,
+	nodeMap map[string]string,
+	report *IngestReport,
+) error {
+	createdEpisodes, createdEvents, err := ing.writer.WriteEpisodic(ctx, entities, rels, nodeMap)
+	if err != nil {
+		report.Errors = append(report.Errors,
+			fmt.Sprintf("writing episodic records: %v", err))
+		return nil
+	}
+
+	report.CreatedEpisodes += createdEpisodes
+	report.CreatedEvents += createdEvents
 	return nil
 }

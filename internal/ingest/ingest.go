@@ -11,7 +11,7 @@ import (
 // IngestOpts configures the ingest pipeline.
 type IngestOpts struct {
 	Source  string
-	DryRun bool
+	DryRun  bool
 	ScanDir string
 }
 
@@ -24,6 +24,8 @@ type IngestReport struct {
 	CreatedEdges     int
 	SkippedEdges     int
 	UnknownRelations int
+	CreatedEpisodes  int
+	CreatedEvents    int
 	Errors           []string
 }
 
@@ -34,9 +36,9 @@ type KnownEntityFetcher interface {
 
 // Ingester orchestrates the ingest pipeline: chunk, extract, write.
 type Ingester struct {
-	extractor    *Extractor
-	writer       *Writer
-	entityFetch  KnownEntityFetcher
+	extractor   *Extractor
+	writer      *Writer
+	entityFetch KnownEntityFetcher
 }
 
 // NewIngester creates an Ingester with the given extractor and writer.

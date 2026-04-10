@@ -121,9 +121,14 @@ func (s *SearchService) HybridSearch(
 		return nil, err
 	}
 
+	searchLimit := limit
+	if shouldPrototypeRerank(ctx, limit) {
+		searchLimit = rerankCandidateLimit(limit)
+	}
+
 	var firstErr error
 	for _, variant := range variants {
-		results, searchErr := s.store.HybridSearch(ctx, tenantID, variant, embedding, limit)
+		results, searchErr := s.store.HybridSearch(ctx, tenantID, variant, embedding, searchLimit)
 		if searchErr != nil {
 			if firstErr == nil {
 				firstErr = searchErr
@@ -131,6 +136,9 @@ func (s *SearchService) HybridSearch(
 			continue
 		}
 		if len(results) > 0 {
+			if shouldPrototypeRerank(ctx, limit) {
+				results = prototypeRerankNodesWithProfile(query, results, limit, InternalRerankProfile(ctx))
+			}
 			results = mergeExpandedNodes(results, s.rescueByLabel(ctx, tenantID, query), limit)
 			return mergeExpandedNodes(results, s.expandFromGraph(ctx, tenantID, results, limit), limit), nil
 		}

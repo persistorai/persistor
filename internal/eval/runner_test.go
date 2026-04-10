@@ -131,3 +131,73 @@ func TestRunnerRunCapturesSearchErrors(t *testing.T) {
 		t.Fatal("expected question error to be captured")
 	}
 }
+
+func TestRunnerRunUsesHybridRerankMode(t *testing.T) {
+	t.Parallel()
+
+	var opts *client.SearchOptions
+	runner := NewRunner(fakeSearchClient{
+		hybrid: func(_ context.Context, _ string, got *client.SearchOptions) ([]client.Node, error) {
+			opts = got
+			return []client.Node{{ID: "big-jerry", Label: "Big Jerry", Type: "animal"}}, nil
+		},
+	})
+
+	report, err := runner.Run(context.Background(), &Fixture{
+		Name: "memory-fixture",
+		Questions: []Question{{
+			Prompt:                "Who is Big Jerry?",
+			SearchMode:            "hybrid_rerank",
+			InternalRerankProfile: "term_focus",
+			ExpectedNodeIDs:       []string{"big-jerry"},
+		}},
+	})
+	if err != nil {
+		t.Fatalf("Run returned error: %v", err)
+	}
+	if report.Passed != 1 {
+		t.Fatalf("expected pass, got %#v", report.Results[0])
+	}
+	if opts == nil || opts.InternalRerank != "prototype" {
+		t.Fatalf("expected prototype internal rerank option, got %#v", opts)
+	}
+	if opts.InternalRerankProfile != "term_focus" {
+		t.Fatalf("expected term_focus rerank profile, got %#v", opts)
+	}
+}
+
+func TestRunnerComparePrototypeProfiles(t *testing.T) {
+	t.Parallel()
+
+	calls := make([]string, 0, 4)
+	runner := NewRunner(fakeSearchClient{
+		hybrid: func(_ context.Context, _ string, opts *client.SearchOptions) ([]client.Node, error) {
+			calls = append(calls, opts.InternalRerankProfile)
+			return []client.Node{{ID: "big-jerry", Label: "Big Jerry", Type: "animal"}}, nil
+		},
+	})
+
+	comparison, err := runner.ComparePrototypeProfiles(context.Background(), &Fixture{
+		Name: "memory-fixture",
+		Questions: []Question{{
+			Prompt:          "Who is Big Jerry?",
+			SearchMode:      "hybrid_rerank",
+			ExpectedNodeIDs: []string{"big-jerry"},
+		}},
+	}, []string{"term_focus", "salience_focus"})
+	if err != nil {
+		t.Fatalf("ComparePrototypeProfiles returned error: %v", err)
+	}
+	if comparison.Baseline.Passed != 1 {
+		t.Fatalf("expected baseline pass, got %#v", comparison.Baseline)
+	}
+	if len(comparison.Profiles) != 2 {
+		t.Fatalf("expected 2 profile reports, got %d", len(comparison.Profiles))
+	}
+	if got := calls[0]; got != "default" {
+		t.Fatalf("expected baseline to use default profile, got %q", got)
+	}
+	if calls[1] != "term_focus" || calls[2] != "salience_focus" {
+		t.Fatalf("unexpected profile call order: %v", calls)
+	}
+}

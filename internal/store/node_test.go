@@ -162,6 +162,50 @@ func TestListNodes(t *testing.T) {
 	}
 }
 
+func TestGetNodeByLabel_UsesAliasFallbacks(t *testing.T) {
+	base, tenantID := setupTestBase(t)
+	ns := store.NewNodeStore(base)
+	as := store.NewAliasStore(base)
+	ctx := context.Background()
+
+	billReq := models.CreateNodeRequest{Type: "person", Label: "William Gates"}
+	_ = billReq.Validate()
+	bill, err := ns.CreateNode(ctx, tenantID, billReq)
+	if err != nil {
+		t.Fatalf("CreateNode(bill): %v", err)
+	}
+
+	zuckReq := models.CreateNodeRequest{Type: "person", Label: "Mark Zuckerberg"}
+	_ = zuckReq.Validate()
+	zuck, err := ns.CreateNode(ctx, tenantID, zuckReq)
+	if err != nil {
+		t.Fatalf("CreateNode(zuck): %v", err)
+	}
+
+	if _, err := as.CreateAlias(ctx, tenantID, models.CreateAliasRequest{NodeID: bill.ID, Alias: "Bill Gates", AliasType: "nickname"}); err != nil {
+		t.Fatalf("CreateAlias(bill): %v", err)
+	}
+	if _, err := as.CreateAlias(ctx, tenantID, models.CreateAliasRequest{NodeID: zuck.ID, Alias: "  the z u c k  ", AliasType: "nickname"}); err != nil {
+		t.Fatalf("CreateAlias(zuck): %v", err)
+	}
+
+	got, err := ns.GetNodeByLabel(ctx, tenantID, "Bill Gates")
+	if err != nil {
+		t.Fatalf("GetNodeByLabel exact alias: %v", err)
+	}
+	if got == nil || got.ID != bill.ID {
+		t.Fatalf("GetNodeByLabel exact alias = %#v, want %q", got, bill.ID)
+	}
+
+	got, err = ns.GetNodeByLabel(ctx, tenantID, " the   z u c k ")
+	if err != nil {
+		t.Fatalf("GetNodeByLabel normalized alias: %v", err)
+	}
+	if got == nil || got.ID != zuck.ID {
+		t.Fatalf("GetNodeByLabel normalized alias = %#v, want %q", got, zuck.ID)
+	}
+}
+
 func TestEncryptionRoundtrip(t *testing.T) {
 	base, tenantID := setupTestBase(t)
 	ns := store.NewNodeStore(base)

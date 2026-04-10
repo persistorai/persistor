@@ -8,6 +8,7 @@ import (
 
 	"github.com/persistorai/persistor/internal/api"
 	"github.com/persistorai/persistor/internal/models"
+	"github.com/persistorai/persistor/internal/service"
 )
 
 func TestFullTextSearch_OK(t *testing.T) {
@@ -93,5 +94,34 @@ func TestHybridSearch_OK(t *testing.T) {
 
 	if w.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestHybridSearch_PassesInternalRerankContext(t *testing.T) {
+	t.Parallel()
+
+	var mode string
+	var profile string
+	repo := &mockSearchRepo{
+		hybridFn: func(ctx context.Context, _, _ string, _ int) ([]models.Node, error) {
+			mode = service.InternalRerankMode(ctx)
+			profile = service.InternalRerankProfile(ctx)
+			return []models.Node{{ID: "n1", Type: "concept", Label: "test"}}, nil
+		},
+	}
+
+	r := newTestRouter()
+	h := api.NewSearchHandler(repo, testLogger())
+	r.GET("/search/hybrid", h.Hybrid)
+
+	w := doRequest(r, http.MethodGet, "/search/hybrid?q=test&internal_rerank=prototype&internal_rerank_profile=term_focus", "")
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	if mode != "prototype" {
+		t.Fatalf("expected prototype rerank mode, got %q", mode)
+	}
+	if profile != "term_focus" {
+		t.Fatalf("expected term_focus rerank profile, got %q", profile)
 	}
 }

@@ -9,6 +9,7 @@ import (
 
 // GraphClient abstracts the Persistor API operations needed by the writer.
 type GraphClient interface {
+	GetNode(ctx context.Context, id string) (*client.Node, error)
 	GetNodeByLabel(ctx context.Context, label string) (*client.Node, error)
 	SearchNodes(ctx context.Context, query string, limit int) ([]client.Node, error)
 	CreateNode(ctx context.Context, req *client.CreateNodeRequest) (*client.Node, error)
@@ -30,8 +31,10 @@ type WriteReport struct {
 
 // Writer writes extracted entities, relationships, and facts to the graph.
 type Writer struct {
-	graph  GraphClient
-	source string
+	graph    GraphClient
+	source   string
+	episodic EpisodicClient
+	tenantID string
 }
 
 // NewWriter creates a Writer that uses the given GraphClient and source tag.

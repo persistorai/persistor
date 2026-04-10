@@ -3,6 +3,7 @@ package ingest
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"time"
 
 	"github.com/persistorai/persistor/client"
@@ -13,17 +14,21 @@ func (w *Writer) writeEntity(
 	ctx context.Context,
 	ent ExtractedEntity,
 ) (string, entityAction, error) {
-	existing, err := w.findByName(ctx, ent.Name)
+	resolution, err := w.resolveEntity(ctx, ent.Name, ent.Type)
 	if err != nil {
-		return "", 0, fmt.Errorf("searching for entity %q: %w", ent.Name, err)
+		return "", 0, fmt.Errorf("resolving entity %q: %w", ent.Name, err)
 	}
 
-	if existing != nil {
-		id, err := w.updateEntity(ctx, existing, ent)
+	if resolution.Status == resolutionMatched && resolution.Match != nil && resolution.Match.Node != nil {
+		id, err := w.updateEntity(ctx, resolution.Match.Node, ent)
 		if err != nil {
 			return "", 0, err
 		}
 		return id, actionUpdated, nil
+	}
+
+	if resolution.Status == resolutionAmbiguous {
+		logEntityResolution(ent.Name, resolution)
 	}
 
 	id, err := w.createEntity(ctx, ent)
@@ -33,19 +38,22 @@ func (w *Writer) writeEntity(
 	return id, actionCreated, nil
 }
 
-// findByName looks up a node by exact label match first, then falls back to
-// fuzzy matching via full-text search if no exact match is found.
-func (w *Writer) findByName(ctx context.Context, name string) (*client.Node, error) {
-	node, err := w.graph.GetNodeByLabel(ctx, name)
-	if err != nil {
-		return nil, fmt.Errorf("looking up node by label %q: %w", name, err)
+func logEntityResolution(name string, resolution *entityResolution) {
+	topCandidates := make([]any, 0, len(resolution.Candidates))
+	for _, candidate := range resolution.Candidates {
+		topCandidates = append(topCandidates, map[string]any{
+			"id":         candidate.Node.ID,
+			"label":      candidate.Node.Label,
+			"type":       candidate.Node.Type,
+			"method":     candidate.Method,
+			"confidence": candidate.Confidence,
+		})
 	}
-	if node != nil {
-		return node, nil
-	}
-
-	// Fall back to fuzzy search
-	return w.findByNameFuzzy(ctx, name)
+	slog.Info("ambiguous entity resolution",
+		"query", name,
+		"expected_type", resolution.ExpectedType,
+		"candidates", topCandidates,
+	)
 }
 
 // createEntity creates a new node for the extracted entity.

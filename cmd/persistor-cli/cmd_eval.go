@@ -19,6 +19,7 @@ func newEvalCmd() *cobra.Command {
 
 func newEvalRunCmd() *cobra.Command {
 	var fixturePath string
+	var compareProfiles []string
 
 	cmd := &cobra.Command{
 		Use:   "run",
@@ -34,6 +35,15 @@ func newEvalRunCmd() *cobra.Command {
 			}
 
 			runner := eval.NewRunner(apiClient.Search)
+			if len(compareProfiles) > 0 {
+				report, err := runner.ComparePrototypeProfiles(context.Background(), fixture, compareProfiles)
+				if err != nil {
+					fatal("run eval comparison", err)
+				}
+				output(report, "")
+				return
+			}
+
 			report, err := runner.Run(context.Background(), fixture)
 			if err != nil {
 				fatal("run eval", err)
@@ -49,16 +59,18 @@ func newEvalRunCmd() *cobra.Command {
 	}
 
 	cmd.Flags().StringVar(&fixturePath, "fixture", "", "Path to evaluation fixture JSON")
+	cmd.Flags().StringSliceVar(&compareProfiles, "compare-rerank-profile", nil, "Additional prototype rerank weighting profiles to compare against the default rerank profile")
 	return cmd
 }
 
 func printEvalTable(report *eval.Report) {
-	headers := []string{"PROMPT", "MODE", "PASS", "FOUND", "EXPECTED", "RETURNED", "LATENCY_MS"}
+	headers := []string{"PROMPT", "MODE", "PROFILE", "PASS", "FOUND", "EXPECTED", "RETURNED", "LATENCY_MS"}
 	rows := make([][]string, 0, len(report.Results))
 	for _, result := range report.Results {
 		rows = append(rows, []string{
 			result.Prompt,
 			result.SearchMode,
+			result.InternalRerankProfile,
 			fmt.Sprintf("%t", result.Passed),
 			fmt.Sprintf("%d", result.FoundExpectedCount),
 			fmt.Sprintf("%d", result.ExpectedCount),

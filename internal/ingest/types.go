@@ -29,7 +29,9 @@ type ExtractedRelationship struct {
 // ExtractedFact is a key-value fact about an entity.
 // Value is typed as any to support string, bool, and numeric values from LLM extraction.
 type ExtractedFact struct {
-	Subject  string `json:"subject"`
-	Property string `json:"property"`
-	Value    any    `json:"value"`
+	Subject    string   `json:"subject"`
+	Property   string   `json:"property"`
+	Value      any      `json:"value"`
+	Confidence *float64 `json:"confidence,omitempty"`
+	Timestamp  *string  `json:"timestamp,omitempty"`
 }

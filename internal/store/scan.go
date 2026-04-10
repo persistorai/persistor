@@ -142,3 +142,47 @@ func collectNodes(rows pgx.Rows) ([]models.Node, error) {
 
 	return nodes, nil
 }
+
+// scanAlias scans a single row into a models.Alias.
+func scanAlias(scan func(dest ...any) error) (*models.Alias, error) {
+	var a models.Alias
+	var tenantID uuid.UUID
+
+	err := scan(
+		&a.ID,
+		&tenantID,
+		&a.NodeID,
+		&a.Alias,
+		&a.NormalizedAlias,
+		&a.AliasType,
+		&a.Confidence,
+		&a.Source,
+		&a.CreatedAt,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	a.TenantID = tenantID
+	return &a, nil
+}
+
+// collectAliases scans all rows into an alias slice.
+func collectAliases(rows pgx.Rows) ([]models.Alias, error) {
+	aliases := make([]models.Alias, 0, 16)
+
+	for rows.Next() {
+		a, err := scanAlias(rows.Scan)
+		if err != nil {
+			return nil, fmt.Errorf("scanning alias row: %w", err)
+		}
+
+		aliases = append(aliases, *a)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterating alias rows: %w", err)
+	}
+
+	return aliases, nil
+}

@@ -67,6 +67,9 @@ persistor salience recalc                  # recompute scores from access patter
 
 # Admin & diagnostics
 persistor admin stats                      # knowledge graph statistics
+persistor admin reprocess-nodes --search-text --embeddings
+persistor admin maintenance-run --refresh-search-text --scan-stale-facts
+persistor admin merge-suggestions --type person --min-score 0.7
 persistor doctor                           # check server connectivity and config
 ```
 
@@ -149,12 +152,12 @@ with curl examples, data model documentation, and agent-specific usage patterns.
 | Health    | `GET /health`, `GET /ready`                                                                                  |
 | Nodes     | `GET/POST /nodes`, `GET/PUT/PATCH/DELETE /nodes/:id`                                                         |
 | Edges     | `GET/POST /edges`, `PUT/PATCH/DELETE /edges/:source/:target/:relation`                                       |
-| Search    | `GET /search`, `GET /search/semantic`, `GET /search/hybrid`                                                  |
+| Search    | `GET /search`, `GET /search/semantic`, `GET /search/hybrid` (label + alias-aware retrieval)                 |
 | Graph     | `GET /graph/neighbors/:id`, `GET /graph/traverse/:id`, `GET /graph/context/:id`, `GET /graph/path/:from/:to` |
 | Bulk      | `POST /bulk/nodes`, `POST /bulk/edges`                                                                       |
 | Salience  | `POST /salience/boost/:id`, `POST /salience/supersede`, `POST /salience/recalc`                              |
 | WebSocket | `GET /ws`                                                                                                    |
-| Admin     | `GET /stats`, `POST /admin/backfill-embeddings`                                                              |
+| Admin     | `GET /stats`, `POST /admin/backfill-embeddings`, `POST /admin/reprocess-nodes`, `POST /admin/maintenance/run`, `GET /admin/merge-suggestions`, `POST/GET /admin/retrieval-feedback` |
 | Audit     | `GET /audit`, `DELETE /audit`                                                                                |
 | History   | `GET /nodes/:id/history`                                                                                     |
 | Metrics   | `GET /metrics` (Prometheus, outside `/api/v1/`)                                                              |
@@ -183,7 +186,10 @@ Persistor includes an early evaluation harness for measuring memory retrieval qu
 persistor eval run --fixture ./testdata/eval/scout-memory-baseline.json
 persistor eval run --fixture ./testdata/eval/scout-memory-baseline.json --format table
 persistor eval run --fixture ./testdata/eval/scout-memory-phase2.json --format table
+persistor eval run --fixture ./testdata/eval/scout-memory-phase2.json --compare-rerank-profile term_focus --compare-rerank-profile salience_focus
 ```
+
+The `--compare-rerank-profile` flow runs the fixture once with the default prototype rerank profile, then once per named profile, and emits a JSON comparison report. Use plain `--format table` runs when you want the per-question table for one fixture/profile at a time.
 
 The evaluation output reports:
 
@@ -213,6 +219,142 @@ Phase 1 currently improves the memory system in these ways:
 - smarter memory-plugin result merging and deduplication
 
 The public search and memory tool names remain stable. Improvements are shipped behind the existing interfaces rather than through version-suffixed endpoint names.
+
+## Phase 2 Memory Operations
+
+Phase 2 finishes the first operator-facing maintenance loop for memory quality.
+
+- **Alias-aware retrieval**: exact lookup, full-text search, and hybrid search can all surface a node by its stored alias, not just its canonical label.
+- **Alias normalization**: aliases are matched case-insensitively with whitespace normalization, so `Bill   Gates` and `bill gates` collapse to the same stored form.
+- **Current API surface**: alias storage exists in the data model and is used by ingest, search, and duplicate analysis, but there is not yet a public REST or CLI alias CRUD command. Operators should treat alias creation today as an internal/system workflow, not a documented end-user API.
+- **Entity resolution during ingest**: ingest tries exact ID, alias-aware exact lookup, then search-backed candidates. It auto-matches only when confidence is high enough and the best result is clearly ahead of the runner-up.
+- **Practical confidence thresholds**: candidates below `0.50` are ignored, `>= 0.93` can auto-match, and near-ties within `0.08` are treated as ambiguous to avoid silent merges.
+- **Duplicate suggestions**: `persistor admin merge-suggestions` lists explainable likely duplicates, ordered by score, but does not merge anything automatically.
+- **Maintenance workflows**:
+  - Use `persistor admin reprocess-nodes` when you want to backfill missing `search_text` and/or embeddings for existing nodes.
+  - Use `persistor admin maintenance-run` when you want a broader operator scan that can refresh derived fields, count stale fact evidence, and estimate duplicate-candidate volume.
+  - Reserve a future full re-ingest for extractor/schema changes that require re-reading original source material, not for routine refresh/backfill work.
+
+## Phase 3 Episodic Memory and Recall
+
+Phase 3 adds a bounded episodic layer alongside the existing semantic graph.
+
+- **Semantic memory** still lives in nodes, edges, facts, aliases, salience, and search indexes.
+- **Episodic memory** adds durable `episodes` and `event records` so the system can preserve compact timelines, decision points, tasks, promises, and outcomes without turning every moment into a first-class graph node.
+- **Current public surface**: these foundations are implemented and used internally by ingest, recall assembly, and the OpenClaw memory plugin, but there is not yet a public REST or CLI CRUD surface for episodes, events, or recall packs.
+
+### Episodic structures
+
+- An **episode** is a bounded container with `title`, optional `summary`, `status` (`open` or `closed`), optional time range, and optional links back to a primary project node or source artifact node.
+- An **event record** is a first-class event-like memory item linked to an episode. Supported event kinds are `observation`, `conversation`, `message`, `decision`, `task`, `promise`, and `outcome`.
+- Event records can carry bounded evidence pointers, optional timestamps or ranges, a confidence score, and links back to graph nodes with explicit roles.
+
+### Bounded ingest behavior
+
+Current episodic ingest is intentionally conservative.
+
+- Persistor only creates episodic records when extraction contains a strong enough event signal.
+- Today that means:
+  - extracted entities typed as `decision` or `event`
+  - extracted entities with an explicit event kind in `event_kind`, `kind`, or `event_type`
+  - extracted relationships with relation `decided`
+- For each ingest source, Persistor builds at most one synthetic episode when at least one event record is created.
+- Event records are deduplicated by normalized `(kind, title)` within that ingest pass.
+- Dry runs do not persist episodic records, but real ingest reports include `Episodic: <episodes>, <events>` when any were created.
+
+### Belief tracking
+
+Belief tracking is currently a bounded internal summary derived from fact evidence on node properties.
+
+- The current preferred value for a property is stored in the node as normal application data.
+- Persistor also writes an internal `_fact_beliefs` structure that summarizes the current belief state for that property.
+- Each belief contains a **preferred claim** plus zero or more competing claims, with confidence, evidence count, source list, and last-observed metadata.
+- Status is:
+  - `supported` when one preferred claim clearly leads
+  - `contested` when the runner-up is close enough to matter
+  - `superseded` when evidence exists but the property no longer has a current stored value
+- This is meant for retrieval, operator review, and recall-pack assembly. It is not yet a standalone belief-management API.
+
+### Recall packs
+
+Recall packs are compact, deterministic summaries for one or more active node IDs.
+
+They currently assemble:
+
+- core entities
+- notable neighbors
+- recent linked episodes/events
+- open decisions/tasks/promises
+- contradictions from contested or superseded beliefs
+- strongest supporting evidence pointers
+
+The implementation is bounded on purpose. Each section has small defaults and a hard cap of `10` items per section.
+
+### OpenClaw memory plugin behavior
+
+The `memory-persistor` extension now does session-aware retrieval across file memory and the Persistor graph.
+
+- It registers the unified `memory_search` and `memory_get` tools.
+- `memory_search` builds a retrieval context from optional tool params:
+  - `currentSessionEntities` (aliases: `sessionEntities`, `entities`)
+  - `recentMessages` (aliases: `messages`, `recentTurns`)
+  - `activeWorkContext` (aliases: `workContext`, `activeTask`, `taskContext`)
+- That context is used to:
+  - infer file-vs-graph source preference
+  - expand the query into a few bounded query variants
+  - lightly boost matching file and graph results
+- `memory_get` reads file paths normally, and otherwise attempts a Persistor node lookup by UUID or other node ID/label string, optionally including graph context.
+- The plugin also exposes `memory-kg status` and `memory-kg search <query>` for direct operator checks in OpenClaw.
+
+For command examples, data model details, and plugin/operator notes, see `INTEGRATION.md`.
+
+## Phase 4 Retrieval Tuning and Feedback
+
+Phase 4 adds bounded operator-facing retrieval tuning surfaces without changing the default public search contract.
+
+- **Default behavior is unchanged**: normal `GET /search/hybrid` and `persistor search --hybrid` calls keep using the existing hybrid search flow.
+- **Prototype reranking is internal/optional**: the extra rerank pass is only enabled when `internal_rerank=prototype` is supplied on hybrid search requests, or when an eval fixture uses `search_mode: "hybrid_rerank"`.
+- **Bounded candidate set**: the prototype reranker only reorders the already-retrieved hybrid candidates. It overfetches to `limit * 3`, capped at `50`, then trims back to the requested limit.
+- **Named prototype profiles**: `default`, `term_focus`, and `salience_focus`. Unknown profile names normalize back to `default`.
+
+### Internal rerank profiles
+
+- `default`: balanced scoring across exact/partial term matches, search text coverage, salience, and original rank bias.
+- `term_focus`: gives more weight to label/search-text term matches and query coverage, with less salience bias. Useful for wording-sensitive prompts.
+- `salience_focus`: leans more on salience and existing rank order, with lighter term weighting. Useful when your graph curation and boosts already encode importance well.
+
+### Enabling the prototype reranker
+
+API example:
+
+```bash
+curl "http://localhost:3030/api/v1/search/hybrid?q=Persistor%20deploy%20fix&limit=5&internal_rerank=prototype&internal_rerank_profile=term_focus" \
+  -H "Authorization: Bearer $API_KEY"
+```
+
+Go client example:
+
+```go
+results, err := c.Search.Hybrid(ctx, "Persistor deploy fix", &client.SearchOptions{
+    Limit:                 5,
+    InternalRerank:        "prototype",
+    InternalRerankProfile: "term_focus",
+})
+```
+
+These query parameters are intended for internal evaluation and controlled operator experiments, not for broad end-user exposure.
+
+### Retrieval feedback loop groundwork
+
+Persistor also stores explicit, manual retrieval feedback events for operator review. This is groundwork for future tuning, not automatic online learning.
+
+- API only today: `POST /api/v1/admin/retrieval-feedback` to record an event, `GET /api/v1/admin/retrieval-feedback` to inspect a bounded summary.
+- Manual and bounded by design: no hidden firehose logging, no silent weighting changes, no autonomous profile switching.
+- Outcomes: `helpful`, `unhelpful`, `missed`.
+- Derived signals: `confirmed_recall`, `irrelevant_result`, `missed_known_item`, `empty_result`.
+- Request metadata can include `search_mode`, inferred-or-supplied `intent`, `internal_rerank`, `internal_rerank_profile`, retrieved/selected/expected node IDs, and an optional note.
+
+Use this for operator comparison runs, QA passes, or product-internal review of search quality.
 
 ## Deployment
 

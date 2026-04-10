@@ -55,7 +55,8 @@ func TestIngest_FullPipeline(t *testing.T) {
 		response: `{
 			"entities": [
 				{"name": "Alice", "type": "person", "properties": {"role": "dev"}, "description": "A dev"},
-				{"name": "Persistor", "type": "project", "properties": {}, "description": "A KG service"}
+				{"name": "Persistor", "type": "project", "properties": {}, "description": "A KG service"},
+				{"name": "Ship v2", "type": "decision", "properties": {"occurred_at": "2026-04-02T10:00:00Z"}, "description": "Alice decided to ship v2."}
 			],
 			"relationships": [
 				{"source": "Alice", "target": "Persistor", "relation": "works_on", "confidence": 0.95}
@@ -67,17 +68,18 @@ func TestIngest_FullPipeline(t *testing.T) {
 	}
 
 	gc := newMockGraphClient()
+	ep := &mockEpisodicClient{}
 	ext := ingest.NewExtractor(llm)
-	w := ingest.NewWriter(gc, "test")
+	w := ingest.NewWriter(gc, "test").WithEpisodic(ep, "tenant-1")
 	ing := ingest.NewIngester(ext, w, nil)
 
-	report, err := ing.Ingest(context.Background(), strings.NewReader("Alice works on Persistor."), ingest.IngestOpts{})
+	report, err := ing.Ingest(context.Background(), strings.NewReader("Alice works on Persistor and decided to ship v2."), ingest.IngestOpts{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	if report.CreatedNodes != 2 {
-		t.Errorf("expected 2 created nodes, got %d", report.CreatedNodes)
+	if report.CreatedNodes != 3 {
+		t.Errorf("expected 3 created nodes, got %d", report.CreatedNodes)
 	}
 
 	if report.CreatedEdges != 1 {
@@ -86,6 +88,15 @@ func TestIngest_FullPipeline(t *testing.T) {
 
 	if len(gc.createdEdges) != 1 {
 		t.Errorf("expected 1 edge created, got %d", len(gc.createdEdges))
+	}
+	if report.CreatedEpisodes != 1 {
+		t.Errorf("expected 1 created episode, got %d", report.CreatedEpisodes)
+	}
+	if report.CreatedEvents != 1 {
+		t.Errorf("expected 1 created event, got %d", report.CreatedEvents)
+	}
+	if len(ep.events) != 1 || ep.events[0].Kind != "decision" {
+		t.Fatalf("expected one decision event, got %#v", ep.events)
 	}
 }
 

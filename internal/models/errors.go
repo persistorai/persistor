@@ -17,10 +17,14 @@ var (
 
 // Sentinel errors for entity lookups.
 var (
-	ErrNodeNotFound            = errors.New("node not found")
-	ErrEdgeNotFound            = errors.New("edge not found")
-	ErrRelationTypeNotFound    = errors.New("relation type not found")
-	ErrUnknownRelationNotFound = errors.New("unknown relation not found")
+	ErrNodeNotFound               = errors.New("node not found")
+	ErrEdgeNotFound               = errors.New("edge not found")
+	ErrAliasNotFound              = errors.New("alias not found")
+	ErrRelationTypeNotFound       = errors.New("relation type not found")
+	ErrUnknownRelationNotFound    = errors.New("unknown relation not found")
+	ErrEpisodeNotFound            = errors.New("episode not found")
+	ErrEventRecordNotFound        = errors.New("event record not found")
+	ErrEmbeddingWorkerUnavailable = errors.New("embedding worker not available")
 )
 
 // ErrDuplicateKey indicates a unique constraint violation (maps to HTTP 409 Conflict).

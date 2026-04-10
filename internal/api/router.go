@@ -21,22 +21,22 @@ import (
 
 // RouterDeps holds all dependencies needed by the router.
 type RouterDeps struct {
-	Log              *logrus.Logger
-	Pool             *dbpool.Pool
-	Hub              *ws.Hub
-	Nodes            NodeService
-	Edges            EdgeService
-	Search           SearchService
-	Graph            GraphService
-	Bulk             BulkService
-	Salience         SalienceService
-	Embedding        AdminService
-	History          HistoryService
-	Audit            AuditService
-	ExportImport     ExportImportService
-	TenantLookup     middleware.TenantLookup
-	EmbedWorker      *service.EmbedWorker // used by admin handler only
-	CORSOrigins      []string
+	Log                 *logrus.Logger
+	Pool                *dbpool.Pool
+	Hub                 *ws.Hub
+	Nodes               NodeService
+	Edges               EdgeService
+	Search              SearchService
+	Graph               GraphService
+	Bulk                BulkService
+	Salience            SalienceService
+	Embedding           AdminService
+	History             HistoryService
+	Audit               AuditService
+	ExportImport        ExportImportService
+	TenantLookup        middleware.TenantLookup
+	EmbedWorker         *service.EmbedWorker // used by admin handler only
+	CORSOrigins         []string
 	Version             string
 	OllamaURL           string
 	OllamaModel         string
@@ -47,9 +47,9 @@ type RouterDeps struct {
 
 // Router-level limits.
 const (
-	maxBodySize    = 10 << 20     // 10 MB
-	rateLimit      = 100          // requests per second per IP
-	rateBurst      = 200          // token bucket burst size
+	maxBodySize    = 10 << 20 // 10 MB
+	rateLimit      = 100      // requests per second per IP
+	rateBurst      = 200      // token bucket burst size
 	requestTimeout = 30 * time.Second
 )
 
@@ -154,6 +154,10 @@ func registerRoutes(ctx context.Context, api *gin.RouterGroup, deps *RouterDeps)
 	// Admin.
 	api.POST("/admin/backfill-embeddings", admin.BackfillEmbeddings)
 	api.POST("/admin/reprocess-nodes", admin.ReprocessNodes)
+	api.POST("/admin/maintenance/run", admin.RunMaintenance)
+	api.GET("/admin/merge-suggestions", admin.ListMergeSuggestions)
+	api.POST("/admin/retrieval-feedback", admin.RecordRetrievalFeedback)
+	api.GET("/admin/retrieval-feedback", admin.GetRetrievalFeedbackSummary)
 
 	// WebSocket endpoint.
 	api.GET("/ws", wsHandler(ctx, log, deps.Hub, deps.CORSOrigins, deps.TenantLookup))
@@ -163,11 +167,11 @@ func registerRoutes(ctx context.Context, api *gin.RouterGroup, deps *RouterDeps)
 func registerGraphQL(api *gin.RouterGroup, deps *RouterDeps) {
 	gqlResolver := &gql.Resolver{
 		NodeSvc:     deps.Nodes,
-		EdgeSvc:   deps.Edges,
+		EdgeSvc:     deps.Edges,
 		SearchSvc:   deps.Search,
-		GraphSvc:  deps.Graph,
+		GraphSvc:    deps.Graph,
 		SalienceSvc: deps.Salience,
-		AuditSvc:  deps.Audit,
+		AuditSvc:    deps.Audit,
 	}
 	gqlSrv := gqlhandler.NewDefaultServer(gql.NewExecutableSchema(gql.Config{Resolvers: gqlResolver}))
 	gqlGroup := api.Group("/graphql", gql.GinContextToTenantMiddleware())

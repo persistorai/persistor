@@ -181,9 +181,11 @@ type EdgeListOptions struct {
 
 // SearchOptions holds parameters for search queries.
 type SearchOptions struct {
-	Type        string
-	MinSalience float64
-	Limit       int
+	Type                  string
+	MinSalience           float64
+	Limit                 int
+	InternalRerank        string
+	InternalRerankProfile string
 }
 
 // AuditQueryOptions holds parameters for querying audit logs.

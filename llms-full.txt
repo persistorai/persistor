@@ -150,7 +150,7 @@ Query params: `source`, `target`, `relation`, `limit` (default 50, max 1000), `o
 
 All return `{"nodes": [...], "total": N}`.
 
-**`GET /api/v1/search`** — Full-text search on node labels.
+**`GET /api/v1/search`** — Full-text search on node labels and stored aliases.
 Query params: `q` (**required**, max 2000), `type`, `min_salience`, `limit` (default 20, max 1000).
 
 **`GET /api/v1/search/semantic`** — Vector similarity search via Ollama embeddings.
@@ -217,6 +217,86 @@ Returns `{"updated": N}`.
 
 **`POST /api/v1/admin/backfill-embeddings`** — Backfill missing vector embeddings.
 
+**`POST /api/v1/admin/reprocess-nodes`** — Targeted backfill for existing nodes.
+
+```json
+{ "batch_size": 100, "search_text": true, "embeddings": true }
+```
+
+Rebuilds missing or outdated `search_text` and queues embeddings for scanned nodes that still need them.
+
+**`POST /api/v1/admin/maintenance/run`** — Explicit maintenance pass.
+
+```json
+{
+  "batch_size": 100,
+  "refresh_search_text": true,
+  "refresh_embeddings": true,
+  "scan_stale_facts": true,
+  "include_duplicate_candidates": true
+}
+```
+
+Use this for broader operator sweeps. Response fields include maintenance counts such as `stale_fact_nodes`, `superseded_nodes`, and `duplicate_candidate_pairs`.
+
+**`GET /api/v1/admin/merge-suggestions`** — Inspect explainable duplicate candidates.
+Query params: `type`, `limit` (default 25), `min_score` (default 0.6).
+
+Suggestions are conservative, same-type only, ignore superseded nodes, and never perform automatic merges.
+
+**`POST /api/v1/admin/retrieval-feedback`** — Record one explicit retrieval feedback event.
+
+```json
+{
+  "query": "Persistor deploy fix",
+  "search_mode": "hybrid",
+  "internal_rerank": "prototype",
+  "internal_rerank_profile": "term_focus",
+  "outcome": "helpful",
+  "retrieved_node_ids": ["deploy-runbook"],
+  "selected_node_ids": ["deploy-runbook"],
+  "note": "top result matched operator expectation"
+}
+```
+
+Outcomes: `helpful`, `unhelpful`, `missed`. Persistor derives signals such as `confirmed_recall`, `irrelevant_result`, `missed_known_item`, and `empty_result`. This is manual operator feedback, not automatic learning.
+
+**`GET /api/v1/admin/retrieval-feedback`** — Summarize recent retrieval feedback.
+
+Query param: `limit` (default 25, max 100). Returns `total_events`, `outcome_counts`, `signal_counts`, `recent_events`, and `query_breakdown`.
+
+### Phase 4 Retrieval Tuning Notes
+
+- `GET /api/v1/search/hybrid` supports internal comparison params `internal_rerank=prototype` and optional `internal_rerank_profile=default|term_focus|salience_focus`.
+- The prototype reranker is opt-in and bounded. It overfetches hybrid candidates to `limit * 3`, capped at `50`, reranks them, then trims back to the requested limit.
+- Named prototype profiles: `default` (balanced), `term_focus` (stronger lexical/query-coverage weighting), and `salience_focus` (stronger salience/original-rank weighting). Unknown profiles normalize to `default`.
+- `persistor eval run --compare-rerank-profile <profile>` runs one baseline comparison with the default prototype profile, then one run per requested profile, for fixture questions using `search_mode: "hybrid_rerank"`.
+
+### Alias and Entity Resolution Notes
+
+- Persistor stores normalized aliases and uses them during exact lookup, full-text search, hybrid search, and duplicate-candidate analysis.
+- Alias normalization is lowercase + trimmed + collapsed whitespace.
+- There is currently no public alias CRUD REST or CLI surface.
+- Ingest resolution uses layered matching: exact ID, alias-aware exact lookup, then scored search candidates.
+- Practical thresholds: below `0.50` ignored, `>= 0.93` can auto-match, and close runner-up gaps within `0.08` remain ambiguous to avoid silent merges.
+
+### Phase 3 Episodic and Recall Notes
+
+- Persistor now maintains an internal episodic layer with `episodes` and `event records` in addition to the public semantic graph.
+- Supported event kinds are `observation`, `conversation`, `message`, `decision`, `task`, `promise`, and `outcome`.
+- Current episodic ingest is deliberately conservative. It only creates event records for strong event signals, currently extracted `decision`/`event` entities, explicit event-kind properties, and `decided` relationships.
+- When episodic ingest creates any event records for one source, it also creates one synthetic episode for that ingest pass and reports episodic counts in CLI ingest output.
+- Fact evidence is summarized into internal `_fact_beliefs` state on nodes. Each property gets a preferred claim plus competing claims, with status `supported`, `contested`, or `superseded`.
+- Recall packs are internal bounded summaries over active node IDs. They include core entities, notable neighbors, recent episodes, open decisions, contradictions, and strongest evidence.
+- There is not yet a public REST or CLI CRUD surface for episodes, event records, recall packs, or direct belief-state management.
+
+### OpenClaw memory-persistor Notes
+
+- The `memory-persistor` extension registers `memory_search` and `memory_get`, plus `memory-kg status` and `memory-kg search <query>`.
+- `memory_search` supports optional session context fields: `currentSessionEntities` (`sessionEntities` / `entities`), `recentMessages` (`messages` / `recentTurns`), and `activeWorkContext` (`workContext` / `activeTask` / `taskContext`).
+- That context is used to infer source preference, generate bounded query variants, and lightly re-rank file and Persistor results.
+- `memory_get` treats file-like paths as file memory and otherwise attempts Persistor node lookup first, optionally with graph context.
+
 ### Audit
 
 **`GET /api/v1/audit`** — Get audit log entries.
@@ -266,14 +346,17 @@ results, err := c.SearchHybrid(ctx, "active projects", 10)
 
 ## Agent Integration Patterns
 
-1. **Search before creating** — avoid duplicates.
+1. **Search before creating** — avoid duplicates. Alias-aware retrieval improves this check.
 2. **Use slug IDs** for important entities (`alice`, `acme-app`).
 3. **Write descriptive labels** — they power full-text search.
 4. **Use `context` endpoint** for "tell me everything about X" queries.
 5. **Boost** nodes your user emphasizes.
 6. **Supersede, don't delete** — preserves history when facts change.
 7. **Use bulk endpoints** for batch ingestion.
-8. **Run `salience/recalc`** periodically to keep scores fresh.
+8. **Use `POST /admin/reprocess-nodes`** for targeted search-text or embedding backfills.
+9. **Use `POST /admin/maintenance/run`** for broader maintenance sweeps and stale-fact/duplicate visibility.
+10. **Treat `GET /admin/merge-suggestions` as review input only** — it does not merge automatically.
+11. **Run `salience/recalc`** periodically to keep scores fresh.
 
 ## License
 

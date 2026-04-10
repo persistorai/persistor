@@ -77,11 +77,23 @@ type Auditor interface {
 type AdminService interface {
 	ListNodesWithoutEmbeddings(ctx context.Context, tenantID string, limit int) ([]models.NodeSummary, error)
 	ReprocessNodes(ctx context.Context, tenantID string, req models.ReprocessNodesRequest) (*models.ReprocessNodesResult, error)
+	RunMaintenance(ctx context.Context, tenantID string, req models.MaintenanceRunRequest) (*models.MaintenanceRunResult, error)
+	ListMergeSuggestions(ctx context.Context, tenantID string, opts models.MergeSuggestionListOpts) ([]models.MergeSuggestion, error)
+	RecordRetrievalFeedback(ctx context.Context, tenantID string, req models.RetrievalFeedbackRequest) (*models.RetrievalFeedbackRecord, error)
+	GetRetrievalFeedbackSummary(ctx context.Context, tenantID string, opts models.RetrievalFeedbackListOpts) (*models.RetrievalFeedbackSummary, error)
 }
 
 // HistoryService defines property history operations.
 type HistoryService interface {
 	GetPropertyHistory(ctx context.Context, tenantID, nodeID string, propertyKey string, limit, offset int) ([]models.PropertyChange, bool, error)
+}
+
+// AliasService defines persisted alias operations.
+type AliasService interface {
+	CreateAlias(ctx context.Context, tenantID string, req models.CreateAliasRequest) (*models.Alias, error)
+	GetAlias(ctx context.Context, tenantID, aliasID string) (*models.Alias, error)
+	ListAliases(ctx context.Context, tenantID string, opts models.AliasListOpts) ([]models.Alias, bool, error)
+	DeleteAlias(ctx context.Context, tenantID, aliasID string) error
 }
 
 // ExportImportService defines backup and restore operations for the knowledge graph.
@@ -94,4 +106,13 @@ type ExportImportService interface {
 	// ValidateImport checks an export payload for consistency errors without writing
 	// anything to the database. Returns a list of human-readable error descriptions.
 	ValidateImport(ctx context.Context, tenantID string, data *models.ExportFormat) ([]string, error)
+}
+
+// EpisodicStore defines foundational episode and event persistence operations.
+type EpisodicStore interface {
+	CreateEpisode(ctx context.Context, tenantID string, req models.CreateEpisodeRequest) (*models.Episode, error)
+	GetEpisode(ctx context.Context, tenantID, episodeID string) (*models.Episode, error)
+	CreateEventRecord(ctx context.Context, tenantID string, req models.CreateEventRecordRequest) (*models.EventRecord, error)
+	GetEventRecord(ctx context.Context, tenantID, eventID string) (*models.EventRecord, error)
+	ListEventLinks(ctx context.Context, tenantID, eventID string) ([]models.EventLink, error)
 }

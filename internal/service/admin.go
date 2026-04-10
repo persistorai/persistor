@@ -14,8 +14,12 @@ import (
 type AdminStore interface {
 	ListNodesWithoutEmbeddings(ctx context.Context, tenantID string, limit int) ([]models.NodeSummary, error)
 	ListNodesForReprocess(ctx context.Context, tenantID string, limit int) ([]store.ReprocessableNode, error)
+	ListNodesForMaintenance(ctx context.Context, tenantID string, limit int) ([]store.ReprocessableNode, error)
 	CountNodesForReprocess(ctx context.Context, tenantID string) (remainingSearchText, remainingEmbeddings, remainingTotal int, err error)
 	UpdateNodeSearchText(ctx context.Context, tenantID, nodeID, searchText string) error
+	ListDuplicateCandidatePairs(ctx context.Context, tenantID, typeFilter string, limit int) ([]store.DuplicateCandidatePair, error)
+	CreateRetrievalFeedback(ctx context.Context, tenantID string, req models.RetrievalFeedbackRequest) (*models.RetrievalFeedbackRecord, error)
+	ListRetrievalFeedback(ctx context.Context, tenantID string, opts models.RetrievalFeedbackListOpts) ([]models.RetrievalFeedbackRecord, error)
 }
 
 // Compile-time check: *AdminService must satisfy domain.AdminService.

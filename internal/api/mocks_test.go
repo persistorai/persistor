@@ -94,3 +94,32 @@ func (m *mockSearchRepo) SemanticSearch(ctx context.Context, tenantID, query str
 func (m *mockSearchRepo) HybridSearch(ctx context.Context, tenantID, query string, limit int) ([]models.Node, error) {
 	return m.hybridFn(ctx, tenantID, query, limit)
 }
+
+type mockAdminRepo struct {
+	recordFeedbackFn func(ctx context.Context, tenantID string, req models.RetrievalFeedbackRequest) (*models.RetrievalFeedbackRecord, error)
+	summaryFn        func(ctx context.Context, tenantID string, opts models.RetrievalFeedbackListOpts) (*models.RetrievalFeedbackSummary, error)
+}
+
+func (m *mockAdminRepo) ListNodesWithoutEmbeddings(_ context.Context, _ string, _ int) ([]models.NodeSummary, error) {
+	return nil, nil
+}
+
+func (m *mockAdminRepo) ReprocessNodes(_ context.Context, _ string, _ models.ReprocessNodesRequest) (*models.ReprocessNodesResult, error) {
+	return nil, nil
+}
+
+func (m *mockAdminRepo) RunMaintenance(_ context.Context, _ string, _ models.MaintenanceRunRequest) (*models.MaintenanceRunResult, error) {
+	return nil, nil
+}
+
+func (m *mockAdminRepo) ListMergeSuggestions(_ context.Context, _ string, _ models.MergeSuggestionListOpts) ([]models.MergeSuggestion, error) {
+	return nil, nil
+}
+
+func (m *mockAdminRepo) RecordRetrievalFeedback(ctx context.Context, tenantID string, req models.RetrievalFeedbackRequest) (*models.RetrievalFeedbackRecord, error) {
+	return m.recordFeedbackFn(ctx, tenantID, req)
+}
+
+func (m *mockAdminRepo) GetRetrievalFeedbackSummary(ctx context.Context, tenantID string, opts models.RetrievalFeedbackListOpts) (*models.RetrievalFeedbackSummary, error) {
+	return m.summaryFn(ctx, tenantID, opts)
+}

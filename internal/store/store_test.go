@@ -92,9 +92,13 @@ func setupTestBase(t *testing.T) (_ store.Base, _ string) {
 
 	t.Cleanup(func() {
 		cleanCtx := context.Background()
-		// Delete in dependency order: audit, property_history, edges, nodes, tenant.
+		// Delete in dependency order: episodic links/records/episodes, audit, property_history, aliases, edges, nodes, tenant.
+		env.pool.Exec(cleanCtx, "DELETE FROM kg_event_links WHERE tenant_id = $1", tenantID)      //nolint:errcheck // best-effort cleanup
+		env.pool.Exec(cleanCtx, "DELETE FROM kg_event_records WHERE tenant_id = $1", tenantID)    //nolint:errcheck // best-effort cleanup
+		env.pool.Exec(cleanCtx, "DELETE FROM kg_episodes WHERE tenant_id = $1", tenantID)         //nolint:errcheck // best-effort cleanup
 		env.pool.Exec(cleanCtx, "DELETE FROM kg_audit_log WHERE tenant_id = $1", tenantID)        //nolint:errcheck // best-effort cleanup
 		env.pool.Exec(cleanCtx, "DELETE FROM kg_property_history WHERE tenant_id = $1", tenantID) //nolint:errcheck // best-effort cleanup
+		env.pool.Exec(cleanCtx, "DELETE FROM kg_aliases WHERE tenant_id = $1", tenantID)          //nolint:errcheck // best-effort cleanup
 		env.pool.Exec(cleanCtx, "DELETE FROM kg_edges WHERE tenant_id = $1", tenantID)            //nolint:errcheck // best-effort cleanup
 		env.pool.Exec(cleanCtx, "DELETE FROM kg_nodes WHERE tenant_id = $1", tenantID)            //nolint:errcheck // best-effort cleanup
 		env.pool.Exec(cleanCtx, "DELETE FROM tenants WHERE id = $1", tenantID)                    //nolint:errcheck // best-effort cleanup

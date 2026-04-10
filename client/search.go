@@ -60,8 +60,16 @@ func (s *SearchService) Semantic(ctx context.Context, query string, limit int) (
 // Hybrid performs a hybrid (full-text + vector RRF fusion) search.
 func (s *SearchService) Hybrid(ctx context.Context, query string, opts *SearchOptions) ([]Node, error) {
 	params := url.Values{"q": {query}}
-	if opts != nil && opts.Limit > 0 {
-		params.Set("limit", strconv.Itoa(opts.Limit))
+	if opts != nil {
+		if opts.Limit > 0 {
+			params.Set("limit", strconv.Itoa(opts.Limit))
+		}
+		if opts.InternalRerank != "" {
+			params.Set("internal_rerank", opts.InternalRerank)
+		}
+		if opts.InternalRerankProfile != "" {
+			params.Set("internal_rerank_profile", opts.InternalRerankProfile)
+		}
 	}
 	var resp searchNodeResponse
 	if err := s.c.get(ctx, "/api/v1/search/hybrid", params, &resp); err != nil {

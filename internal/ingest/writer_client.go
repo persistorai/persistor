@@ -16,6 +16,11 @@ func NewPersistorClient(c *client.Client) GraphClient {
 	return &persistorClient{c: c}
 }
 
+// GetNode returns a single node by ID.
+func (p *persistorClient) GetNode(ctx context.Context, id string) (*client.Node, error) {
+	return p.c.Nodes.Get(ctx, id)
+}
+
 // GetNodeByLabel returns the node whose label matches exactly (case-insensitive),
 // or nil if no match is found.
 func (p *persistorClient) GetNodeByLabel(ctx context.Context, label string) (*client.Node, error) {

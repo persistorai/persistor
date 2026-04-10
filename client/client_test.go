@@ -183,7 +183,11 @@ func TestSearch(t *testing.T) {
 		"GET /api/v1/search/semantic": func(w http.ResponseWriter, _ *http.Request) {
 			jsonResponse(w, 200, map[string]any{"nodes": []ScoredNode{{Node: Node{ID: "n1"}, Score: 0.95}}, "total": 1})
 		},
-		"GET /api/v1/search/hybrid": func(w http.ResponseWriter, _ *http.Request) {
+		"GET /api/v1/search/hybrid": func(w http.ResponseWriter, r *http.Request) {
+			if got := r.URL.Query().Get("internal_rerank"); got != "" && got != "prototype" {
+				jsonResponse(w, 400, map[string]string{"code": "invalid_request", "message": "bad rerank mode"})
+				return
+			}
 			jsonResponse(w, 200, map[string]any{"nodes": []Node{{ID: "n1"}}, "total": 1})
 		},
 	})
@@ -206,6 +210,11 @@ func TestSearch(t *testing.T) {
 	nodes, err = c.Search.Hybrid(ctx, "deer", nil)
 	if err != nil || len(nodes) != 1 {
 		t.Fatalf("Hybrid: err=%v, len=%d", err, len(nodes))
+	}
+
+	nodes, err = c.Search.Hybrid(ctx, "deer", &SearchOptions{Limit: 5, InternalRerank: "prototype", InternalRerankProfile: "term_focus"})
+	if err != nil || len(nodes) != 1 {
+		t.Fatalf("Hybrid with internal rerank: err=%v, len=%d", err, len(nodes))
 	}
 }
 
@@ -343,6 +352,20 @@ func TestAdmin(t *testing.T) {
 		"POST /api/v1/admin/reprocess-nodes": func(w http.ResponseWriter, _ *http.Request) {
 			jsonResponse(w, 200, map[string]int{"scanned": 100, "updated_search": 100, "queued_embeddings": 100})
 		},
+		"POST /api/v1/admin/maintenance/run": func(w http.ResponseWriter, _ *http.Request) {
+			jsonResponse(w, 200, map[string]int{"scanned": 50, "updated_search_text": 10, "queued_embeddings": 5, "stale_fact_nodes": 3, "superseded_nodes": 2, "duplicate_candidate_pairs": 4})
+		},
+		"GET /api/v1/admin/merge-suggestions": func(w http.ResponseWriter, r *http.Request) {
+			if got := r.URL.Query().Get("min_score"); got != "0.8" {
+				t.Fatalf("min_score query = %q, want 0.8", got)
+			}
+			jsonResponse(w, 200, map[string]any{"suggestions": []map[string]any{{
+				"canonical": map[string]any{"id": "node-a", "type": "person", "label": "Bill Gates", "salience_score": 0.9},
+				"duplicate": map[string]any{"id": "node-b", "type": "person", "label": "bill gates", "salience_score": 0.5},
+				"score":     0.95,
+				"reasons":   []map[string]any{{"code": "same_normalized_label", "description": "Nodes have the same normalized label.", "weight": 0.55, "evidence": []string{"Bill Gates", "bill gates"}}},
+			}}})
+		},
 	})
 
 	queued, err := c.Admin.BackfillEmbeddings(context.Background())
@@ -353,6 +376,22 @@ func TestAdmin(t *testing.T) {
 	result, err := c.Admin.ReprocessNodes(context.Background(), models.ReprocessNodesRequest{BatchSize: 100, SearchText: true, Embeddings: true})
 	if err != nil || result.Scanned != 100 || result.UpdatedSearch != 100 || result.QueuedEmbed != 100 {
 		t.Fatalf("ReprocessNodes: err=%v, result=%+v", err, result)
+	}
+
+	maintenance, err := c.Admin.RunMaintenance(context.Background(), models.MaintenanceRunRequest{RefreshSearchText: true, RefreshEmbeddings: true, ScanStaleFacts: true, IncludeDuplicateCandidates: true})
+	if err != nil || maintenance.Scanned != 50 || maintenance.UpdatedSearchText != 10 || maintenance.QueuedEmbeddings != 5 || maintenance.DuplicateCandidatePairs != 4 {
+		t.Fatalf("RunMaintenance: err=%v, result=%+v", err, maintenance)
+	}
+
+	suggestions, err := c.Admin.ListMergeSuggestions(context.Background(), models.MergeSuggestionListOpts{Limit: 5, MinScore: 0.8})
+	if err != nil {
+		t.Fatalf("ListMergeSuggestions: %v", err)
+	}
+	if len(suggestions) != 1 || suggestions[0].Canonical.ID != "node-a" {
+		t.Fatalf("ListMergeSuggestions = %#v, want canonical node-a", suggestions)
+	}
+	if len(suggestions[0].Reasons) != 1 {
+		t.Fatalf("reasons = %#v, want 1 reason", suggestions[0].Reasons)
 	}
 }
 

@@ -2,6 +2,8 @@ package client
 
 import (
 	"context"
+	"net/url"
+	"strconv"
 
 	"github.com/persistorai/persistor/internal/models"
 )
@@ -30,6 +32,36 @@ func (s *AdminService) ReprocessNodes(ctx context.Context, req models.ReprocessN
 		return nil, err
 	}
 	return &resp, nil
+}
+
+// RunMaintenance triggers an explicit refresh/reprocess maintenance pass.
+func (s *AdminService) RunMaintenance(ctx context.Context, req models.MaintenanceRunRequest) (*models.MaintenanceRunResult, error) {
+	var resp models.MaintenanceRunResult
+	if err := s.c.post(ctx, "/api/v1/admin/maintenance/run", req, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
+// ListMergeSuggestions returns explainable duplicate candidates for manual review.
+func (s *AdminService) ListMergeSuggestions(ctx context.Context, opts models.MergeSuggestionListOpts) ([]models.MergeSuggestion, error) {
+	query := make(url.Values)
+	if opts.Type != "" {
+		query.Set("type", opts.Type)
+	}
+	if opts.Limit > 0 {
+		query.Set("limit", strconv.Itoa(opts.Limit))
+	}
+	if opts.MinScore > 0 {
+		query.Set("min_score", strconv.FormatFloat(opts.MinScore, 'f', -1, 64))
+	}
+	var resp struct {
+		Suggestions []models.MergeSuggestion `json:"suggestions"`
+	}
+	if err := s.c.get(ctx, "/api/v1/admin/merge-suggestions", query, &resp); err != nil {
+		return nil, err
+	}
+	return resp.Suggestions, nil
 }
 
 // HistoryService handles property history operations.

@@ -222,7 +222,10 @@ func (s *NodeStore) PatchNodeProperties(
 		return nil, err
 	}
 
-	merged := models.MergeProperties(oldProps, req.Properties)
+	merged, historyProps, err := applyFactConsolidation(oldProps, req.Properties)
+	if err != nil {
+		return nil, fmt.Errorf("consolidating fact properties: %w", err)
+	}
 
 	propsJSON, err := s.encryptProperties(ctx, tenantID, merged)
 	if err != nil {
@@ -256,7 +259,7 @@ func (s *NodeStore) PatchNodeProperties(
 		return nil, err
 	}
 
-	if err := RecordPropertyChanges(ctx, tx, tenantID, nodeID, oldProps, merged, ""); err != nil {
+	if err := RecordPropertyChanges(ctx, tx, tenantID, nodeID, filterHistoryProperties(oldProps), historyProps, ""); err != nil {
 		return nil, fmt.Errorf("recording property history: %w", err)
 	}
 

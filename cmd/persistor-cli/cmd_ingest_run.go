@@ -183,6 +183,9 @@ func printReport(source string, report *ingest.IngestReport, dryRun bool) {
 	fmt.Fprintf(os.Stderr, "  Updated:  %d nodes (merged properties)\n", report.UpdatedNodes)
 	fmt.Fprintf(os.Stderr, "  Skipped:  %d edges (orphan entities)\n", report.SkippedEdges)
 	fmt.Fprintf(os.Stderr, "  Unknown:  %d relation types logged\n", report.UnknownRelations)
+	if report.CreatedEpisodes > 0 || report.CreatedEvents > 0 {
+		fmt.Fprintf(os.Stderr, "  Episodic: %d episodes, %d events\n", report.CreatedEpisodes, report.CreatedEvents)
+	}
 
 	for _, e := range report.Errors {
 		fmt.Fprintf(os.Stderr, "  Error: %s\n", e)

@@ -1,5 +1,6 @@
 import { logger } from './logger.ts';
 import { mergeResults } from './result-merger.ts';
+import { buildRetrievalContext } from './session-context.ts';
 
 import type { PersistorPluginConfig } from './config.ts';
 import type { FileSearchResult } from './result-merger.ts';
@@ -69,7 +70,7 @@ function jsonResult(payload: unknown): ToolResult {
  * Search Persistor using the configured search mode.
  * Truncates query to 500 chars for safety.
  */
-async function searchPersistor(
+async function searchPersistorOnce(
   client: PersistorClient,
   query: string,
   config: PersistorPluginConfig,
@@ -77,14 +78,34 @@ async function searchPersistor(
   const safeQuery = query.length > 500 ? query.slice(0, 500) : query;
   const params = { q: safeQuery, limit: config.persistor.searchLimit };
   const mode = config.persistor.searchMode;
-  try {
-    if (mode === 'semantic') return await client.searchSemantic(params);
-    if (mode === 'text') return await client.search(params);
-    return await client.searchHybrid(params);
-  } catch (e: unknown) {
-    logger.warn('Persistor search failed:', e);
-    return [];
+  if (mode === 'semantic') return await client.searchSemantic(params);
+  if (mode === 'text') return await client.search(params);
+  return await client.searchHybrid(params);
+}
+
+function dedupePersistorResults(results: PersistorSearchResult[]): PersistorSearchResult[] {
+  const seen = new Set<string>();
+  return results.filter((result) => {
+    if (seen.has(result.id)) return false;
+    seen.add(result.id);
+    return true;
+  });
+}
+
+async function searchPersistor(
+  client: PersistorClient,
+  queries: string[],
+  config: PersistorPluginConfig,
+): Promise<PersistorSearchResult[]> {
+  const aggregated: PersistorSearchResult[] = [];
+  for (const query of queries) {
+    try {
+      aggregated.push(...(await searchPersistorOnce(client, query, config)));
+    } catch (e: unknown) {
+      logger.warn('Persistor search failed:', e);
+    }
   }
+  return dedupePersistorResults(aggregated);
 }
 
 /**
@@ -117,9 +138,11 @@ export function createUnifiedSearchTool(
     const maxResults = typeof params['maxResults'] === 'number' ? params['maxResults'] : 20;
     const minScore = typeof params['minScore'] === 'number' ? params['minScore'] : 0;
 
+    const retrievalContext = buildRetrievalContext(query, params);
+
     const [fileResult, persistorResult] = await Promise.allSettled([
       originalExecute(toolCallId, params),
-      searchPersistor(persistorClient, query, config),
+      searchPersistor(persistorClient, retrievalContext.queryVariants, config),
     ]);
 
     const fileResults =
@@ -132,7 +155,7 @@ export function createUnifiedSearchTool(
       persistorAvailable = false;
     }
 
-    const merged = mergeResults(fileResults, persistorResults, config.weights, query);
+    const merged = mergeResults(fileResults, persistorResults, config.weights, query, retrievalContext);
     const filtered = merged.filter((r) => r.score >= minScore).slice(0, maxResults);
 
     return jsonResult({
@@ -162,6 +185,9 @@ export function createUnifiedSearchTool(
         persistorAvailable,
         totalFile: fileResults.length,
         totalPersistor: persistorResults.length,
+        sourcePreference: retrievalContext.sourcePreference,
+        queryVariants: retrievalContext.queryVariants,
+        currentSessionEntities: retrievalContext.currentSessionEntities,
       },
     });
   };

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/jackc/pgx/v5"
 
@@ -100,8 +101,8 @@ func (s *NodeStore) ListNodes(
 	return nodes, hasMore, nil
 }
 
-// GetNodeByLabel retrieves a node whose label matches exactly (case-insensitive).
-// Returns nil, nil when no match is found.
+// GetNodeByLabel retrieves a node by exact label match first, then by exact or
+// normalized alias match. Returns nil, nil when no match is found.
 func (s *NodeStore) GetNodeByLabel(ctx context.Context, tenantID, label string) (*models.Node, error) {
 	ctx, cancel := withTimeout(ctx)
 	defer cancel()
@@ -113,13 +114,44 @@ func (s *NodeStore) GetNodeByLabel(ctx context.Context, tenantID, label string) 
 
 	defer tx.Rollback(ctx) //nolint:errcheck // best-effort rollback after commit.
 
-	query := `SELECT ` + nodeColumns + ` FROM kg_nodes
-		WHERE tenant_id = current_setting('app.tenant_id')::uuid
-		  AND LOWER(label) = LOWER($1)
-		ORDER BY salience_score DESC
+	trimmed := strings.TrimSpace(label)
+	normalized := models.NormalizeAlias(trimmed)
+	query := `WITH label_match AS (
+			SELECT ` + nodeColumns + `, 0 AS match_rank
+			FROM kg_nodes
+			WHERE tenant_id = current_setting('app.tenant_id')::uuid
+			  AND LOWER(label) = LOWER($1)
+		), alias_exact_match AS (
+			SELECT n.id, n.tenant_id, n.type, n.label, n.properties,
+				n.access_count, n.last_accessed, n.salience_score, n.superseded_by,
+				n.user_boosted, n.created_at, n.updated_at, 1 AS match_rank
+			FROM kg_nodes n
+			INNER JOIN kg_aliases a ON n.tenant_id = a.tenant_id AND n.id = a.node_id
+			WHERE n.tenant_id = current_setting('app.tenant_id')::uuid
+			  AND LOWER(a.alias) = LOWER($1)
+		), alias_normalized_match AS (
+			SELECT n.id, n.tenant_id, n.type, n.label, n.properties,
+				n.access_count, n.last_accessed, n.salience_score, n.superseded_by,
+				n.user_boosted, n.created_at, n.updated_at, 2 AS match_rank
+			FROM kg_nodes n
+			INNER JOIN kg_aliases a ON n.tenant_id = a.tenant_id AND n.id = a.node_id
+			WHERE n.tenant_id = current_setting('app.tenant_id')::uuid
+			  AND a.normalized_alias = $2
+		)
+		SELECT id, tenant_id, type, label, properties,
+			access_count, last_accessed, salience_score, superseded_by,
+			user_boosted, created_at, updated_at
+		FROM (
+			SELECT * FROM label_match
+			UNION ALL
+			SELECT * FROM alias_exact_match
+			UNION ALL
+			SELECT * FROM alias_normalized_match
+		) matches
+		ORDER BY match_rank ASC, salience_score DESC, updated_at DESC
 		LIMIT 1`
 
-	row := tx.QueryRow(ctx, query, label)
+	row := tx.QueryRow(ctx, query, trimmed, normalized)
 
 	n, err := scanNode(row.Scan)
 	if err != nil {

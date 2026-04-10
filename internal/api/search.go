@@ -2,9 +2,12 @@ package api
 
 import (
 	"net/http"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 	"github.com/sirupsen/logrus"
+
+	"github.com/persistorai/persistor/internal/service"
 )
 
 // maxSearchQueryLen caps the length of search query strings.
@@ -111,8 +114,15 @@ func (h *SearchHandler) Hybrid(c *gin.Context) {
 		return
 	}
 	limit := parseInt(c.DefaultQuery("limit", "10"), 10)
+	ctx := c.Request.Context()
+	if rerankMode := strings.TrimSpace(c.Query("internal_rerank")); rerankMode != "" {
+		ctx = service.WithInternalRerankMode(ctx, rerankMode)
+	}
+	if rerankProfile := strings.TrimSpace(c.Query("internal_rerank_profile")); rerankProfile != "" {
+		ctx = service.WithInternalRerankProfile(ctx, rerankProfile)
+	}
 
-	nodes, err := h.repo.HybridSearch(c.Request.Context(), tenantID, q, limit)
+	nodes, err := h.repo.HybridSearch(ctx, tenantID, q, limit)
 	if err != nil {
 		// Embedding failed — fall back to full-text search.
 		h.log.WithError(err).Warn("hybrid search failed, falling back to full-text")

@@ -28,30 +28,31 @@ func NewRunner(search SearchClient) *Runner {
 
 // Report summarizes evaluation results for a fixture.
 type Report struct {
-	FixtureName        string         `json:"fixture_name"`
-	QuestionCount      int            `json:"question_count"`
-	Passed             int            `json:"passed"`
-	Failed             int            `json:"failed"`
-	RecallAtK          float64        `json:"recall_at_k"`
-	PrecisionAtK       float64        `json:"precision_at_k"`
-	AverageLatencyMs   float64        `json:"average_latency_ms"`
-	Results            []QuestionEval `json:"results"`
+	FixtureName      string         `json:"fixture_name"`
+	QuestionCount    int            `json:"question_count"`
+	Passed           int            `json:"passed"`
+	Failed           int            `json:"failed"`
+	RecallAtK        float64        `json:"recall_at_k"`
+	PrecisionAtK     float64        `json:"precision_at_k"`
+	AverageLatencyMs float64        `json:"average_latency_ms"`
+	Results          []QuestionEval `json:"results"`
 }
 
 // QuestionEval contains the result of evaluating one question.
 type QuestionEval struct {
-	Prompt             string            `json:"prompt"`
-	SearchMode         string            `json:"search_mode"`
-	Limit              int               `json:"limit"`
-	Passed             bool              `json:"passed"`
-	LatencyMs          float64           `json:"latency_ms"`
-	FoundExpectedCount int               `json:"found_expected_count"`
-	ExpectedCount      int               `json:"expected_count"`
-	ReturnedCount      int               `json:"returned_count"`
-	ExpectedMatches    []string          `json:"expected_matches,omitempty"`
-	MissedExpectations []string          `json:"missed_expectations,omitempty"`
-	Returned           []ReturnedResult  `json:"returned"`
-	Error              string            `json:"error,omitempty"`
+	Prompt                string           `json:"prompt"`
+	SearchMode            string           `json:"search_mode"`
+	InternalRerankProfile string           `json:"internal_rerank_profile,omitempty"`
+	Limit                 int              `json:"limit"`
+	Passed                bool             `json:"passed"`
+	LatencyMs             float64          `json:"latency_ms"`
+	FoundExpectedCount    int              `json:"found_expected_count"`
+	ExpectedCount         int              `json:"expected_count"`
+	ReturnedCount         int              `json:"returned_count"`
+	ExpectedMatches       []string         `json:"expected_matches,omitempty"`
+	MissedExpectations    []string         `json:"missed_expectations,omitempty"`
+	Returned              []ReturnedResult `json:"returned"`
+	Error                 string           `json:"error,omitempty"`
 }
 
 // ReturnedResult is a compact representation of a returned search hit.
@@ -119,16 +120,17 @@ func (r *Runner) runQuestion(ctx context.Context, q Question) QuestionEval {
 	}
 
 	started := time.Now()
-	returned, err := r.searchOnce(ctx, mode, q.Prompt, limit)
+	returned, err := r.searchOnce(ctx, mode, q.Prompt, limit, q.InternalRerankProfile)
 	latencyMs := float64(time.Since(started).Milliseconds())
 	if err != nil {
 		return QuestionEval{
-			Prompt:      q.Prompt,
-			SearchMode:  mode,
-			Limit:       limit,
-			LatencyMs:   latencyMs,
-			ExpectedCount: expectedCount(q),
-			Error:       err.Error(),
+			Prompt:                q.Prompt,
+			SearchMode:            mode,
+			InternalRerankProfile: q.InternalRerankProfile,
+			Limit:                 limit,
+			LatencyMs:             latencyMs,
+			ExpectedCount:         expectedCount(q),
+			Error:                 err.Error(),
 		}
 	}
 
@@ -158,21 +160,23 @@ func (r *Runner) runQuestion(ctx context.Context, q Question) QuestionEval {
 	passed := expectedCount > 0 && foundCount == expectedCount
 
 	return QuestionEval{
-		Prompt:             q.Prompt,
-		SearchMode:         mode,
-		Limit:              limit,
-		Passed:             passed,
-		LatencyMs:          latencyMs,
-		FoundExpectedCount: foundCount,
-		ExpectedCount:      expectedCount,
-		ReturnedCount:      len(returned),
-		ExpectedMatches:    matched,
-		MissedExpectations: missed,
-		Returned:           returned,
+		Prompt:                q.Prompt,
+		SearchMode:            mode,
+		InternalRerankProfile: q.InternalRerankProfile,
+		Limit:                 limit,
+		Passed:                passed,
+		LatencyMs:             latencyMs,
+		FoundExpectedCount:    foundCount,
+		ExpectedCount:         expectedCount,
+		ReturnedCount:         len(returned),
+		ExpectedMatches:       matched,
+		MissedExpectations:    missed,
+		Returned:              returned,
 	}
 }
 
-func (r *Runner) searchOnce(ctx context.Context, mode, prompt string, limit int) ([]ReturnedResult, error) {
+func (r *Runner) searchOnce(ctx context.Context, mode, prompt string, limit int, rerankProfile string) ([]ReturnedResult, error) {
+	rerankProfile = strings.TrimSpace(strings.ToLower(rerankProfile))
 	switch mode {
 	case "text":
 		nodes, err := r.search.FullText(ctx, prompt, &client.SearchOptions{Limit: limit})
@@ -188,6 +192,12 @@ func (r *Runner) searchOnce(ctx context.Context, mode, prompt string, limit int)
 		return mapScoredNodes(nodes), nil
 	case "hybrid":
 		nodes, err := r.search.Hybrid(ctx, prompt, &client.SearchOptions{Limit: limit})
+		if err != nil {
+			return nil, err
+		}
+		return mapNodes(nodes), nil
+	case "hybrid_rerank":
+		nodes, err := r.search.Hybrid(ctx, prompt, &client.SearchOptions{Limit: limit, InternalRerank: "prototype", InternalRerankProfile: rerankProfile})
 		if err != nil {
 			return nil, err
 		}

@@ -41,28 +41,59 @@ func (s *SearchStore) FullTextSearch(
 
 	defer tx.Rollback(ctx) //nolint:errcheck // best-effort rollback after commit.
 
-	sql := `WITH q AS (SELECT plainto_tsquery('english', $1) AS tsq)
+	normalized := models.NormalizeAlias(query)
+	sql := `WITH q AS (SELECT plainto_tsquery('english', $1) AS tsq),
+		node_candidates AS (
+			SELECT id, tenant_id, ts_rank(search_tsv, q.tsq) AS match_score
+			FROM kg_nodes, q
+			WHERE search_tsv @@ q.tsq
+				AND tenant_id = current_setting('app.tenant_id')::uuid
+		),
+		alias_candidates AS (
+			SELECT a.node_id AS id, a.tenant_id,
+				GREATEST(
+					CASE WHEN LOWER(a.alias) = LOWER($1) THEN 1.0 ELSE 0 END,
+					CASE WHEN a.normalized_alias = $2 THEN 0.95 ELSE 0 END,
+					COALESCE(ts_rank(to_tsvector('english', a.alias), q.tsq), 0) * 0.9
+				) AS match_score
+			FROM kg_aliases a, q
+			WHERE a.tenant_id = current_setting('app.tenant_id')::uuid
+				AND (
+					LOWER(a.alias) = LOWER($1)
+					OR a.normalized_alias = $2
+					OR to_tsvector('english', a.alias) @@ q.tsq
+				)
+		),
+		candidates AS (
+			SELECT id, tenant_id, MAX(match_score) AS match_score
+			FROM (
+				SELECT * FROM node_candidates
+				UNION ALL
+				SELECT * FROM alias_candidates
+			) combined
+			GROUP BY id, tenant_id
+		)
 		SELECT ` + nodeColumns + `
-		FROM kg_nodes, q
-		WHERE search_tsv @@ q.tsq
-			AND tenant_id = current_setting('app.tenant_id')::uuid`
+		FROM kg_nodes n
+		INNER JOIN candidates c ON n.tenant_id = c.tenant_id AND n.id = c.id
+		WHERE n.tenant_id = current_setting('app.tenant_id')::uuid`
 
-	args := []any{query}
-	argIdx := 2
+	args := []any{query, normalized}
+	argIdx := 3
 
 	if typeFilter != "" {
-		sql += fmt.Sprintf(" AND type = $%d", argIdx)
+		sql += fmt.Sprintf(" AND n.type = $%d", argIdx)
 		args = append(args, typeFilter)
 		argIdx++
 	}
 
 	if minSalience > 0 {
-		sql += fmt.Sprintf(" AND salience_score >= $%d", argIdx)
+		sql += fmt.Sprintf(" AND n.salience_score >= $%d", argIdx)
 		args = append(args, minSalience)
 		argIdx++
 	}
 
-	sql += fmt.Sprintf(` ORDER BY (ts_rank(search_tsv, q.tsq) * 0.8 + LEAST(salience_score / 100.0, 1.0) * 0.2) DESC, salience_score DESC, updated_at DESC LIMIT $%d`, argIdx)
+	sql += fmt.Sprintf(` ORDER BY (c.match_score * 0.8 + LEAST(n.salience_score / 100.0, 1.0) * 0.2) DESC, n.salience_score DESC, n.updated_at DESC LIMIT $%d`, argIdx)
 	args = append(args, limit)
 
 	rows, err := tx.Query(ctx, sql, args...)
@@ -182,15 +213,35 @@ func (s *SearchStore) HybridSearch(
 	defer tx.Rollback(ctx) //nolint:errcheck // best-effort rollback after commit.
 
 	embeddingStr := formatEmbedding(embedding)
+	normalized := models.NormalizeAlias(query)
 
 	sql := `WITH q AS (SELECT plainto_tsquery('english', $1) AS tsq),
-		fts AS (
+		fts_raw AS (
 			SELECT id, tenant_id, ts_rank(search_tsv, q.tsq) AS rank
 			FROM kg_nodes, q
 			WHERE search_tsv @@ q.tsq
 				AND tenant_id = current_setting('app.tenant_id')::uuid
+			UNION ALL
+			SELECT a.node_id AS id, a.tenant_id,
+				GREATEST(
+					CASE WHEN LOWER(a.alias) = LOWER($1) THEN 1.0 ELSE 0 END,
+					CASE WHEN a.normalized_alias = $3 THEN 0.95 ELSE 0 END,
+					COALESCE(ts_rank(to_tsvector('english', a.alias), q.tsq), 0) * 0.9
+				) AS rank
+			FROM kg_aliases a, q
+			WHERE a.tenant_id = current_setting('app.tenant_id')::uuid
+				AND (
+					LOWER(a.alias) = LOWER($1)
+					OR a.normalized_alias = $3
+					OR to_tsvector('english', a.alias) @@ q.tsq
+				)
+		),
+		fts AS (
+			SELECT id, tenant_id, MAX(rank) AS rank
+			FROM fts_raw
+			GROUP BY id, tenant_id
 			ORDER BY rank DESC
-			LIMIT $3
+			LIMIT $4
 		),
 		vec AS (
 			SELECT id, tenant_id, embedding <=> $2::vector AS dist
@@ -198,7 +249,7 @@ func (s *SearchStore) HybridSearch(
 			WHERE embedding IS NOT NULL
 				AND tenant_id = current_setting('app.tenant_id')::uuid
 			ORDER BY dist
-			LIMIT $3
+			LIMIT $4
 		),
 		ranked_fts AS (
 			SELECT id, tenant_id, 1.0 / (60 + ROW_NUMBER() OVER (ORDER BY rank DESC)) AS rrf FROM fts
@@ -220,9 +271,9 @@ func (s *SearchStore) HybridSearch(
 		INNER JOIN combined c ON n.tenant_id = c.tenant_id AND n.id = c.id
 		WHERE n.tenant_id = current_setting('app.tenant_id')::uuid
 		ORDER BY (c.rrf_score * 0.85 + LEAST(n.salience_score / 100.0, 1.0) * 0.15) DESC, n.updated_at DESC
-		LIMIT $3`
+		LIMIT $4`
 
-	rows, err := tx.Query(ctx, sql, query, embeddingStr, limit)
+	rows, err := tx.Query(ctx, sql, query, embeddingStr, normalized, limit)
 	if err != nil {
 		return nil, fmt.Errorf("executing hybrid search: %w", err)
 	}

@@ -1,6 +1,8 @@
 import { resolveConfig, defaultConfig } from './config.ts';
 import { mergeResults } from './result-merger.ts';
+import { buildRetrievalContext } from './session-context.ts';
 import { createUnifiedGetTool } from './unified-get.ts';
+import { createUnifiedSearchTool } from './unified-search.ts';
 
 import type { OpenClawTool } from './types.ts';
 import type { PersistorClient } from '@persistorai/sdk';
@@ -69,6 +71,29 @@ async function runTests(): Promise<void> {
     const first = r[0];
     if (!first) throw new Error('expected result');
     assert(Math.abs(first.score - 0.6) < 0.001, `expected ~0.6, got ${first.score}`);
+  });
+
+  await test('merge: session entities boost matching graph results', () => {
+    const context = buildRetrievalContext('who is brian', {
+      currentSessionEntities: ['Brian'],
+      recentMessages: ['We were just discussing Brian and DeerPrint'],
+    });
+    const fileOnly = [{ path: 'memory/notes.md', snippet: 'misc unrelated note', score: 0.72 }];
+    const graph = [
+      { id: 'brian', type: 'person', label: 'Brian', properties: { org: 'DeerPrint' }, salience_score: 65 },
+    ];
+    const r = mergeResults(fileOnly, graph, { file: 1, persistor: 1 }, 'who is brian', context);
+    const first = r[0];
+    if (!first) throw new Error('expected result');
+    assert(first.source === 'persistor', 'graph result should outrank unrelated file result');
+  });
+
+  await test('session context: infers file preference from active work context', () => {
+    const context = buildRetrievalContext('how should I implement the fix', {
+      activeWorkContext: ['repo persistor branch fix/session-aware-retrieval'],
+    });
+    assert(context.sourcePreference === 'file', `expected file, got ${context.sourcePreference}`);
+    assert(context.queryVariants.length >= 2, 'expected query expansion with work context');
   });
 
   // --- Config ---
@@ -175,6 +200,69 @@ async function runTests(): Promise<void> {
       part?.type === 'text' && part.text === 'file:some-label',
       `expected file fallback, got: ${JSON.stringify(r)}`,
     );
+  });
+
+  // --- Unified Search ---
+  await test('search: session context expands persistor query and reports meta', async () => {
+    const receivedQueries: string[] = [];
+    const fileSearchTool = {
+      name: 'memory_search',
+      label: 'Memory Search',
+      description: 'search files',
+      parameters: {},
+      execute: () =>
+        Promise.resolve({
+          content: [
+            {
+              type: 'text' as const,
+              text: JSON.stringify({
+                results: [{ path: 'memory/tasks.md', snippet: 'session-aware retrieval task', score: 0.7 }],
+              }),
+            },
+          ],
+          details: undefined,
+        }),
+    };
+    const searchClient = {
+      searchHybrid: (input: { q: string }) => {
+        receivedQueries.push(input.q);
+        return Promise.resolve([
+          {
+            id: input.q.includes('Brian') ? 'person-1' : `query:${input.q}`,
+            type: 'person',
+            label: 'Brian',
+            properties: { project: 'Persistor' },
+            salience_score: 70,
+          },
+        ]);
+      },
+      searchSemantic: () => Promise.resolve([]),
+      search: () => Promise.resolve([]),
+    };
+    const tool = createUnifiedSearchTool(
+      fileSearchTool as unknown as OpenClawTool,
+      searchClient as unknown as PersistorClient,
+      cfg,
+    );
+
+    const result = await tool.execute('t4', {
+      query: 'who is working on persistor',
+      currentSessionEntities: ['Brian'],
+      recentMessages: ['Brian is implementing session-aware retrieval'],
+      activeWorkContext: ['persistor repo retrieval task'],
+    });
+
+    const text = result.content[0];
+    if (text?.type !== 'text') throw new Error('expected text result');
+    const payload = JSON.parse(text.text) as {
+      results: { source: string }[];
+      meta: { sourcePreference: string; queryVariants: string[]; currentSessionEntities: string[] };
+    };
+    assert(receivedQueries.length >= 2, `expected expanded queries, got ${receivedQueries.length}`);
+    assert(payload.meta.sourcePreference === 'both', 'expected combined source preference');
+    assert(payload.meta.currentSessionEntities[0] === 'Brian', 'expected session entities in meta');
+    assert(payload.results.some((entry) => entry.source === 'persistor'), 'expected persistor result');
+    assert(payload.results.some((entry) => entry.source === 'file'), 'expected file result');
   });
 
   console.log(`\n${passed} passed, ${failed} failed`);

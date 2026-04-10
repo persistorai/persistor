@@ -41,13 +41,13 @@ All endpoints (except `/health` and `/ready`) require `Authorization: Bearer <ap
 | Health    | `GET /health`, `GET /ready`                                                                                           |
 | Nodes     | `GET/POST /nodes`, `GET/PUT/DELETE /nodes/:id`, `PATCH /nodes/:id/properties`                                         |
 | Edges     | `GET/POST /edges`, `PUT/DELETE /edges/:source/:target/:relation`, `PATCH /edges/:source/:target/:relation/properties` |
-| Search    | `GET /search`, `GET /search/semantic`, `GET /search/hybrid`                                                           |
+| Search    | `GET /search`, `GET /search/semantic`, `GET /search/hybrid` (label + alias-aware retrieval)                          |
 | Graph     | `GET /graph/neighbors/:id`, `GET /graph/traverse/:id`, `GET /graph/context/:id`, `GET /graph/path/:from/:to`          |
 | Bulk      | `POST /bulk/nodes`, `POST /bulk/edges`                                                                                |
 | Salience  | `POST /salience/boost/:id`, `POST /salience/supersede`, `POST /salience/recalc`                                       |
 | WebSocket | `GET /ws`                                                                                                             |
 | GraphQL   | `POST /graphql`, `GET /graphql/playground`                                                                            |
-| Admin     | `POST /admin/backfill-embeddings`                                                                                     |
+| Admin     | `POST /admin/backfill-embeddings`, `POST /admin/reprocess-nodes`, `POST /admin/maintenance/run`, `GET /admin/merge-suggestions`, `POST/GET /admin/retrieval-feedback` |
 | Audit     | `GET /audit`, `DELETE /audit`                                                                                         |
 | History   | `GET /nodes/:id/history`                                                                                              |
 | Stats     | `GET /stats`                                                                                                          |
@@ -60,6 +60,34 @@ All endpoints (except `/health` and `/ready`) require `Authorization: Bearer <ap
 - [OpenAPI Spec](openapi.yaml): Machine-readable API specification
 - [Changelog](CHANGELOG.md): Version history
 - [Go SDK](client/): Apache-2.0 licensed Go client library
+
+## Phase 2 Notes
+
+- Search and exact lookup are alias-aware, but there is no public alias CRUD REST/CLI surface yet.
+- Ingest resolution prefers exact ID, then alias-aware exact lookup, then scored search candidates.
+- Practical thresholds: below `0.50` ignored, `>= 0.93` can auto-match, near-ties within `0.08` stay ambiguous.
+- `POST /admin/reprocess-nodes` is for targeted backfill of missing search text and/or embeddings.
+- `POST /admin/maintenance/run` is for broader maintenance sweeps, including stale fact and duplicate-candidate counts.
+- `GET /admin/merge-suggestions` lists explainable likely duplicates and never merges automatically.
+
+## Phase 3 Notes
+
+- Persistor now has an internal episodic layer with `episodes` and `event records` alongside the semantic graph.
+- Current episodic ingest is conservative: it creates records only for strong event signals, currently extracted `decision`/`event` entities, explicit event kinds, and `decided` relationships.
+- Fact evidence is summarized into internal `_fact_beliefs` entries with `supported`, `contested`, or `superseded` status, plus a preferred claim and competing claims.
+- Recall packs are internal bounded summaries over active node IDs, including core entities, notable neighbors, recent episodes, open decisions, contradictions, and strongest evidence.
+- The OpenClaw `memory-persistor` plugin supports session-aware retrieval via `currentSessionEntities`, `recentMessages`, and `activeWorkContext` on `memory_search`.
+- There is still no public REST or CLI CRUD surface for episodes, event records, belief states, or recall packs.
+
+
+## Phase 4 Notes
+
+- `GET /search/hybrid` accepts internal-only comparison params `internal_rerank=prototype` and optional `internal_rerank_profile=default|term_focus|salience_focus`. Without them, default hybrid behavior is unchanged.
+- The prototype reranker is bounded: it reranks only the fetched hybrid candidates, overfetching to `limit * 3` capped at `50`, then trimming back to `limit`.
+- `persistor eval run --compare-rerank-profile <profile>` compares the default prototype rerank profile against one or more named profiles. It only rewrites fixture questions using `search_mode: "hybrid_rerank"`.
+- `POST /admin/retrieval-feedback` records one explicit manual feedback event for a retrieval attempt. Outcomes are `helpful`, `unhelpful`, and `missed`.
+- `GET /admin/retrieval-feedback` returns a bounded summary with recent events, outcome counts, signal counts, and query breakdowns. Default limit is `25`, max `100`.
+- Retrieval feedback is operator-visible groundwork only today. There is no automatic online learning or silent profile switching.
 
 ## License
 

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/sirupsen/logrus"
 
@@ -164,5 +165,74 @@ func TestSearchService_HybridSearch(t *testing.T) {
 				t.Fatalf("expected hybrid fallback variant, got %v", queries)
 			}
 		})
+	}
+}
+
+func TestSearchService_HybridSearch_PrototypeReranksCandidates(t *testing.T) {
+	now := time.Now()
+	embedder := &mockEmbedder{
+		generate: func(_ context.Context, _ string) ([]float32, error) {
+			return []float32{0.1, 0.2}, nil
+		},
+	}
+
+	var receivedLimit int
+	store := &mockSearchStore{
+		hybridSearch: func(_ context.Context, _, _ string, _ []float32, limit int) ([]models.Node, error) {
+			receivedLimit = limit
+			return []models.Node{
+				{ID: "n1", Label: "Deployment log", Type: "note", Properties: map[string]any{"summary": "Unrelated maintenance"}, Salience: 95, UpdatedAt: now.Add(-time.Hour)},
+				{ID: "n2", Label: "Persistor deployment fix", Type: "incident", Properties: map[string]any{"summary": "Resolved Persistor deploy issue in production"}, Salience: 20, UpdatedAt: now},
+			}, nil
+		},
+	}
+	log := logrus.New()
+	log.SetLevel(logrus.ErrorLevel)
+	svc := NewSearchService(store, embedder, log)
+
+	ctx := WithInternalRerankMode(context.Background(), "prototype")
+	nodes, err := svc.HybridSearch(ctx, "t1", "Persistor deploy fix", 1)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if receivedLimit != 3 {
+		t.Fatalf("expected rerank candidate overfetch limit 3, got %d", receivedLimit)
+	}
+	if len(nodes) != 1 || nodes[0].ID != "n2" {
+		t.Fatalf("expected reranked top result n2, got %#v", nodes)
+	}
+}
+
+func TestSearchService_HybridSearch_PrototypeReranksWithProfile(t *testing.T) {
+	now := time.Now()
+	embedder := &mockEmbedder{generate: func(_ context.Context, _ string) ([]float32, error) { return []float32{0.1, 0.2}, nil }}
+	store := &mockSearchStore{
+		hybridSearch: func(_ context.Context, _, _ string, _ []float32, _ int) ([]models.Node, error) {
+			return []models.Node{
+				{ID: "n1", Label: "Persistor deploy", Type: "note", Properties: map[string]any{"summary": "Operational notes"}, Salience: 140, UpdatedAt: now.Add(-time.Hour)},
+				{ID: "n2", Label: "Incident notes", Type: "incident", Properties: map[string]any{"summary": "Persistor deploy fix remediation"}, Salience: 20, UserBoosted: true, UpdatedAt: now.Add(-2 * time.Hour)},
+			}, nil
+		},
+	}
+	log := logrus.New()
+	log.SetLevel(logrus.ErrorLevel)
+	svc := NewSearchService(store, embedder, log)
+
+	baselineCtx := WithInternalRerankMode(context.Background(), "prototype")
+	baseline, err := svc.HybridSearch(baselineCtx, "t1", "Persistor deploy fix remediation", 1)
+	if err != nil {
+		t.Fatalf("unexpected baseline error: %v", err)
+	}
+	if len(baseline) != 1 || baseline[0].ID != "n1" {
+		t.Fatalf("expected default profile to keep n1 first, got %#v", baseline)
+	}
+
+	profileCtx := WithInternalRerankProfile(baselineCtx, "term_focus")
+	weighted, err := svc.HybridSearch(profileCtx, "t1", "Persistor deploy fix remediation", 1)
+	if err != nil {
+		t.Fatalf("unexpected weighted error: %v", err)
+	}
+	if len(weighted) != 1 || weighted[0].ID != "n2" {
+		t.Fatalf("expected term_focus profile to promote n2, got %#v", weighted)
 	}
 }

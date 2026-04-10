@@ -217,6 +217,200 @@ components:
             message:
               type: string
 
+    ReprocessNodesRequest:
+      type: object
+      properties:
+        batch_size:
+          type: integer
+          default: 100
+        search_text:
+          type: boolean
+        embeddings:
+          type: boolean
+
+    ReprocessNodesResult:
+      type: object
+      properties:
+        scanned:
+          type: integer
+        updated_search:
+          type: integer
+        queued_embeddings:
+          type: integer
+        remaining_search_text:
+          type: integer
+        remaining_embeddings:
+          type: integer
+        remaining_total:
+          type: integer
+
+    MaintenanceRunRequest:
+      type: object
+      properties:
+        batch_size:
+          type: integer
+          default: 100
+        refresh_search_text:
+          type: boolean
+        refresh_embeddings:
+          type: boolean
+        scan_stale_facts:
+          type: boolean
+        include_duplicate_candidates:
+          type: boolean
+
+    MaintenanceRunResult:
+      type: object
+      properties:
+        scanned:
+          type: integer
+        updated_search_text:
+          type: integer
+        queued_embeddings:
+          type: integer
+        stale_fact_nodes:
+          type: integer
+        superseded_nodes:
+          type: integer
+        duplicate_candidate_pairs:
+          type: integer
+        remaining_search_text:
+          type: integer
+        remaining_embeddings:
+          type: integer
+        remaining_maintenance_nodes:
+          type: integer
+
+    MergeSuggestionReason:
+      type: object
+      properties:
+        code:
+          type: string
+        description:
+          type: string
+        weight:
+          type: number
+          format: double
+
+    MergeSuggestionNodeRef:
+      type: object
+      properties:
+        id:
+          type: string
+        type:
+          type: string
+        label:
+          type: string
+
+    MergeSuggestion:
+      type: object
+      properties:
+        canonical:
+          $ref: "#/components/schemas/MergeSuggestionNodeRef"
+        duplicate:
+          $ref: "#/components/schemas/MergeSuggestionNodeRef"
+        score:
+          type: number
+          format: double
+        reasons:
+          type: array
+          items:
+            $ref: "#/components/schemas/MergeSuggestionReason"
+
+    RetrievalFeedbackRequest:
+      type: object
+      required: [query, outcome]
+      properties:
+        query:
+          type: string
+          maxLength: 500
+        search_mode:
+          type: string
+        intent:
+          type: string
+        internal_rerank:
+          type: string
+        internal_rerank_profile:
+          type: string
+        outcome:
+          type: string
+          enum: [helpful, unhelpful, missed]
+        retrieved_node_ids:
+          type: array
+          maxItems: 20
+          items: { type: string }
+        selected_node_ids:
+          type: array
+          maxItems: 20
+          items: { type: string }
+        expected_node_ids:
+          type: array
+          maxItems: 20
+          items: { type: string }
+        note:
+          type: string
+          maxLength: 500
+
+    RetrievalFeedbackRecord:
+      allOf:
+        - $ref: "#/components/schemas/RetrievalFeedbackRequest"
+        - type: object
+          properties:
+            id:
+              type: string
+            tenant_id:
+              type: string
+            normalized_query:
+              type: string
+            signals:
+              type: array
+              items: { type: string }
+            created_at:
+              type: string
+              format: date-time
+
+    RetrievalFeedbackQueryBucket:
+      type: object
+      properties:
+        normalized_query:
+          type: string
+        example_query:
+          type: string
+        search_mode:
+          type: string
+        outcome_counts:
+          type: object
+          additionalProperties: { type: integer }
+        signal_counts:
+          type: object
+          additionalProperties: { type: integer }
+        signals:
+          type: array
+          items: { type: string }
+        last_seen_at:
+          type: string
+          format: date-time
+
+    RetrievalFeedbackSummary:
+      type: object
+      properties:
+        total_events:
+          type: integer
+        outcome_counts:
+          type: object
+          additionalProperties: { type: integer }
+        signal_counts:
+          type: object
+          additionalProperties: { type: integer }
+        recent_events:
+          type: array
+          items:
+            $ref: "#/components/schemas/RetrievalFeedbackRecord"
+        query_breakdown:
+          type: array
+          items:
+            $ref: "#/components/schemas/RetrievalFeedbackQueryBucket"
+
 paths:
   /health:
     get:
@@ -791,6 +985,16 @@ paths:
           schema:
             type: integer
             default: 10
+        - name: internal_rerank
+          in: query
+          schema:
+            type: string
+            description: Internal-only rerank mode. `prototype` enables the bounded prototype reranker for comparison testing.
+        - name: internal_rerank_profile
+          in: query
+          schema:
+            type: string
+            description: Internal-only prototype rerank profile. Supported values are `default`, `term_focus`, and `salience_focus`.
       responses:
         "200":
           description: Hybrid search results
@@ -1117,6 +1321,139 @@ paths:
             application/json:
               schema:
                 type: object
+
+  /admin/reprocess-nodes:
+    post:
+      summary: Rebuild stored search text and/or queue embeddings for existing nodes
+      operationId: adminReprocessNodes
+      tags: [Admin]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ReprocessNodesRequest"
+      responses:
+        "200":
+          description: Reprocessing summary
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReprocessNodesResult"
+        "400":
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /admin/maintenance/run:
+    post:
+      summary: Run an explicit maintenance pass for refresh and consolidation scans
+      operationId: adminRunMaintenance
+      tags: [Admin]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MaintenanceRunRequest"
+      responses:
+        "200":
+          description: Maintenance summary
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MaintenanceRunResult"
+        "400":
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /admin/merge-suggestions:
+    get:
+      summary: List explainable duplicate candidate suggestions for manual review
+      operationId: adminListMergeSuggestions
+      tags: [Admin]
+      parameters:
+        - name: type
+          in: query
+          schema:
+            type: string
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 25
+        - name: min_score
+          in: query
+          schema:
+            type: number
+            format: double
+            default: 0.6
+      responses:
+        "200":
+          description: Merge suggestions
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  suggestions:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/MergeSuggestion"
+
+  /admin/retrieval-feedback:
+    post:
+      summary: Record one explicit retrieval feedback event for operator review
+      operationId: adminRecordRetrievalFeedback
+      tags: [Admin]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RetrievalFeedbackRequest"
+      responses:
+        "201":
+          description: Retrieval feedback stored
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RetrievalFeedbackRecord"
+        "400":
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+    get:
+      summary: Summarize recent retrieval feedback events
+      operationId: adminGetRetrievalFeedbackSummary
+      tags: [Admin]
+      parameters:
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 25
+            maximum: 100
+      responses:
+        "200":
+          description: Retrieval feedback summary
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RetrievalFeedbackSummary"
+        "400":
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
 
   /graphql:
     get:

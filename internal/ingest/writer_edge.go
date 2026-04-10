@@ -119,20 +119,23 @@ func (w *Writer) updateExistingEdge(
 	return nil
 }
 
-// resolveEntityInKG looks up an entity name in the KG via exact label match.
-// If found, it caches the result in nodeMap for future lookups.
+// resolveEntityInKG resolves an entity name against existing nodes.
+// Ambiguous candidates are treated as unresolved to avoid silent merges.
 func (w *Writer) resolveEntityInKG(
 	ctx context.Context,
 	name string,
 	nodeMap map[string]string,
 ) (string, bool) {
-	existing, err := w.findByName(ctx, name)
-	if err != nil || existing == nil {
+	resolution, err := w.resolveEntity(ctx, name, "")
+	if err != nil || resolution.Status != resolutionMatched || resolution.Match == nil || resolution.Match.Node == nil {
+		if err == nil && resolution != nil && resolution.Status == resolutionAmbiguous {
+			logEntityResolution(name, resolution)
+		}
 		return "", false
 	}
 	// Cache for future lookups in this ingest run
-	nodeMap[strings.ToLower(name)] = existing.ID
-	return existing.ID, true
+	nodeMap[strings.ToLower(name)] = resolution.Match.Node.ID
+	return resolution.Match.Node.ID, true
 }
 
 // WriteFacts patches extracted facts onto existing nodes.
@@ -165,7 +168,15 @@ func (w *Writer) writeFact(
 		}
 	}
 
-	props := map[string]any{fact.Property: fact.Value}
+	update := models.FactUpdate{Value: fact.Value, Source: w.source, Confidence: fact.Confidence}
+	if fact.Timestamp != nil {
+		update.Timestamp = *fact.Timestamp
+	}
+	props := map[string]any{
+		models.FactUpdatesProperty: map[string]models.FactUpdate{
+			fact.Property: update,
+		},
+	}
 
 	_, err := w.graph.PatchNodeProperties(ctx, nodeID, props)
 	if err != nil {
