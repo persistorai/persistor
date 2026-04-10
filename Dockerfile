@@ -60,6 +60,7 @@ ENV PORT=3030 \
     LOG_LEVEL=info \
     DB_MAX_CONNS=21 \
     EMBED_WORKERS=4 \
+    OLLAMA_MODEL=qwen3.5:9b \
     EMBEDDING_DIMENSIONS=1024 \
     EMBEDDING_MODEL=qwen3-embedding:0.6b \
     ENCRYPTION_PROVIDER=static \

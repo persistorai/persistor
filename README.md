@@ -129,6 +129,7 @@ curl http://localhost:3030/api/v1/ready
 | `LISTEN_HOST`         | `127.0.0.1`              | Listen address (must be loopback)               |
 | `CORS_ORIGINS`        | `http://localhost:3002`  | Comma-separated allowed origins                 |
 | `OLLAMA_URL`          | `http://localhost:11434` | Ollama API endpoint (must be localhost)         |
+| `OLLAMA_MODEL`        | `qwen3.5:9b`             | Default Ollama chat/extraction model            |
 | `EMBEDDING_MODEL`     | `qwen3-embedding:0.6b`   | Embedding model name                            |
 | `LOG_LEVEL`           | `info`                   | Log level                                       |
 | `ENCRYPTION_PROVIDER` | `static`                 | `static` (env key) or `vault` (HashiCorp Vault) |
@@ -173,6 +174,45 @@ make lint-fix       # Auto-fix lint issues
 make format         # gofmt + goimports
 make ci             # Full CI: format → vet → lint → test + coverage
 ```
+
+## Memory Evaluation
+
+Persistor includes an early evaluation harness for measuring memory retrieval quality against real benchmark questions.
+
+```bash
+persistor eval run --fixture ./testdata/eval/scout-memory-baseline.json
+persistor eval run --fixture ./testdata/eval/scout-memory-baseline.json --format table
+persistor eval run --fixture ./testdata/eval/scout-memory-phase2.json --format table
+```
+
+The evaluation output reports:
+
+- pass/fail per question
+- recall@k
+- precision@k
+- average latency
+- returned hits for each prompt
+
+Use this as a baseline before and after search or memory-quality changes.
+
+The phase 2 fixture adds harder prompts for:
+
+- temporal shorthand and date-based recall
+- paraphrased ownership questions
+- graph-aware context queries
+- policy and preference retrieval
+
+## Phase 1 Memory Quality Progress
+
+Phase 1 currently improves the memory system in these ways:
+
+- benchmark harness for repeatable retrieval evaluation
+- richer canonical embedding text for semantic search
+- expanded full-text indexing over label, type, and selected properties
+- lightweight intent-aware retrieval biasing
+- smarter memory-plugin result merging and deduplication
+
+The public search and memory tool names remain stable. Improvements are shipped behind the existing interfaces rather than through version-suffixed endpoint names.
 
 ## Deployment
 

@@ -65,6 +65,7 @@ services:
       # localhost-only validator for this non-loopback hostname.
       OLLAMA_URL:           "http://host.docker.internal:11434"
       OLLAMA_ALLOW_REMOTE:  "true"
+      OLLAMA_MODEL:         "qwen3.5:9b"
       EMBEDDING_MODEL:      "qwen3-embedding:0.6b"
       EMBEDDING_DIMENSIONS: "1024"
       EMBED_WORKERS:        "4"

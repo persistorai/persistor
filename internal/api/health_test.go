@@ -13,7 +13,7 @@ import (
 func TestLiveness_ReturnsOK(t *testing.T) {
 	t.Parallel()
 
-	h := api.NewHealthHandler(nil, nil, testLogger(), "test-v1", "", "test-model", 1024)
+	h := api.NewHealthHandler(nil, nil, testLogger(), "test-v1", "", "qwen3.5:9b", "test-model", 1024)
 
 	r := gin.New()
 	r.GET("/health", h.Liveness)
@@ -35,5 +35,9 @@ func TestLiveness_ReturnsOK(t *testing.T) {
 
 	if body["version"] != "test-v1" {
 		t.Errorf("expected version 'test-v1', got %v", body["version"])
+	}
+
+	if body["ollama_model"] != "qwen3.5:9b" {
+		t.Errorf("expected ollama_model 'qwen3.5:9b', got %v", body["ollama_model"])
 	}
 }

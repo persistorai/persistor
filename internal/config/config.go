@@ -31,6 +31,7 @@ type Config struct {
 	MetricsPort         string
 	CORSOrigins         []string
 	OllamaURL           string
+	OllamaModel         string
 	EmbeddingModel      string
 	EmbeddingDimensions int
 	LogLevel            string
@@ -52,6 +53,7 @@ func Load() (*Config, error) {
 		ListenHost:         envOrDefault("LISTEN_HOST", "127.0.0.1"),
 		MetricsPort:        envOrDefault("METRICS_PORT", "9091"),
 		OllamaURL:          envOrDefault("OLLAMA_URL", "http://localhost:11434"),
+		OllamaModel:        envOrDefault("OLLAMA_MODEL", "qwen3.5:9b"),
 		EmbeddingModel:     envOrDefault("EMBEDDING_MODEL", "qwen3-embedding:0.6b"),
 		LogLevel:           envOrDefault("LOG_LEVEL", "info"),
 		EncryptionProvider: envOrDefault("ENCRYPTION_PROVIDER", "static"),

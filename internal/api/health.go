@@ -24,12 +24,13 @@ type HealthHandler struct {
 	version             string
 	startTime           time.Time
 	ollamaURL           string
+	ollamaModel         string
 	embeddingModel      string
 	embeddingDimensions int
 }
 
 // NewHealthHandler creates a HealthHandler with the given dependencies.
-func NewHealthHandler(pool *dbpool.Pool, hub *ws.Hub, log *logrus.Logger, version, ollamaURL, embeddingModel string, embeddingDimensions int) *HealthHandler {
+func NewHealthHandler(pool *dbpool.Pool, hub *ws.Hub, log *logrus.Logger, version, ollamaURL, ollamaModel, embeddingModel string, embeddingDimensions int) *HealthHandler {
 	return &HealthHandler{
 		pool:                pool,
 		hub:                 hub,
@@ -38,6 +39,7 @@ func NewHealthHandler(pool *dbpool.Pool, hub *ws.Hub, log *logrus.Logger, versio
 		version:             version,
 		startTime:           time.Now(),
 		ollamaURL:           ollamaURL,
+		ollamaModel:         ollamaModel,
 		embeddingModel:      embeddingModel,
 		embeddingDimensions: embeddingDimensions,
 	}
@@ -54,6 +56,7 @@ type healthResponse struct {
 	Status              string  `json:"status"`
 	Version             string  `json:"version"`
 	Database            string  `json:"database"`
+	OllamaModel         string  `json:"ollama_model,omitempty"`
 	Embeddings          string  `json:"embeddings"`
 	EmbeddingDimensions int     `json:"embedding_dimensions"`
 	UptimeSeconds       float64 `json:"uptime_seconds"`
@@ -65,6 +68,7 @@ func (h *HealthHandler) Liveness(c *gin.Context) {
 		Status:              "ok",
 		Version:             h.version,
 		Database:            "connected",
+		OllamaModel:         h.ollamaModel,
 		Embeddings:          "unavailable",
 		EmbeddingDimensions: h.embeddingDimensions,
 		UptimeSeconds:       time.Since(h.startTime).Seconds(),

@@ -69,6 +69,10 @@ func TestLoad_Defaults(t *testing.T) {
 		t.Errorf("unexpected OllamaURL default: %s", cfg.OllamaURL)
 	}
 
+	if cfg.OllamaModel != "qwen3.5:9b" {
+		t.Errorf("unexpected OllamaModel default: %s", cfg.OllamaModel)
+	}
+
 	if cfg.EmbeddingModel != "qwen3-embedding:0.6b" {
 		t.Errorf("unexpected EmbeddingModel default: %s", cfg.EmbeddingModel)
 	}

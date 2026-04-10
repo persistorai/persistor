@@ -22,23 +22,18 @@ type OllamaClient struct {
 // OLLAMA_URL defaults to "http://localhost:11434".
 // OLLAMA_MODEL defaults to "qwen3.5:9b".
 func NewOllamaClient() *OllamaClient {
-	url := os.Getenv("OLLAMA_URL")
-	if url == "" {
-		url = "http://localhost:11434"
+	return NewOllamaClientWithURL(
+		envOrDefault("OLLAMA_URL", "http://localhost:11434"),
+		envOrDefault("OLLAMA_MODEL", "qwen3.5:9b"),
+	)
+}
+
+func envOrDefault(key, fallback string) string {
+	if value := os.Getenv(key); value != "" {
+		return value
 	}
 
-	model := os.Getenv("OLLAMA_MODEL")
-	if model == "" {
-		model = "qwen3.5:9b"
-	}
-
-	return &OllamaClient{
-		URL:   url,
-		Model: model,
-		client: &http.Client{
-			Timeout: 120 * time.Second,
-		},
-	}
+	return fallback
 }
 
 // NewOllamaClientWithURL creates a client with explicit URL and model.

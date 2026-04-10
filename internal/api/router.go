@@ -37,11 +37,12 @@ type RouterDeps struct {
 	TenantLookup     middleware.TenantLookup
 	EmbedWorker      *service.EmbedWorker // used by admin handler only
 	CORSOrigins      []string
-	Version          string
-	OllamaURL        string
+	Version             string
+	OllamaURL           string
+	OllamaModel         string
 	EmbeddingModel      string
 	EmbeddingDimensions int
-	EnablePlayground bool
+	EnablePlayground    bool
 }
 
 // Router-level limits.
@@ -76,7 +77,7 @@ func setupMiddleware(ctx context.Context, r *gin.Engine, deps *RouterDeps) {
 func registerRoutes(ctx context.Context, api *gin.RouterGroup, deps *RouterDeps) {
 	log := deps.Log
 
-	health := NewHealthHandler(deps.Pool, deps.Hub, log, deps.Version, deps.OllamaURL, deps.EmbeddingModel, deps.EmbeddingDimensions)
+	health := NewHealthHandler(deps.Pool, deps.Hub, log, deps.Version, deps.OllamaURL, deps.OllamaModel, deps.EmbeddingModel, deps.EmbeddingDimensions)
 	nodes := NewNodeHandler(deps.Nodes, log)
 	edges := NewEdgeHandler(deps.Edges, log)
 	search := NewSearchHandler(deps.Search, log)
@@ -152,6 +153,7 @@ func registerRoutes(ctx context.Context, api *gin.RouterGroup, deps *RouterDeps)
 
 	// Admin.
 	api.POST("/admin/backfill-embeddings", admin.BackfillEmbeddings)
+	api.POST("/admin/reprocess-nodes", admin.ReprocessNodes)
 
 	// WebSocket endpoint.
 	api.GET("/ws", wsHandler(ctx, log, deps.Hub, deps.CORSOrigins, deps.TenantLookup))
