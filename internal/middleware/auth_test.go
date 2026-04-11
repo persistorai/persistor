@@ -15,6 +15,7 @@ import (
 
 type mockTenantLookup struct {
 	validKeys map[string]string
+	scopes    map[string]middleware.AuthScope
 }
 
 func (m *mockTenantLookup) GetTenantByAPIKey(_ context.Context, apiKey string) (string, error) {
@@ -22,6 +23,21 @@ func (m *mockTenantLookup) GetTenantByAPIKey(_ context.Context, apiKey string) (
 		return tid, nil
 	}
 	return "", errors.New("invalid key")
+}
+
+func (m *mockTenantLookup) GetAuthPrincipalByAPIKey(_ context.Context, apiKey string) (middleware.AuthPrincipal, error) {
+	if tid, ok := m.validKeys[apiKey]; ok {
+		scope := middleware.ScopeReadWrite
+		if m.scopes != nil {
+			scope = m.scopes[apiKey]
+			if scope == "" {
+				scope = middleware.ScopeReadWrite
+			}
+		}
+		return middleware.AuthPrincipal{TenantID: tid, Scope: scope}, nil
+	}
+
+	return middleware.AuthPrincipal{}, errors.New("invalid key")
 }
 
 func TestAuthMiddleware(t *testing.T) {
@@ -107,6 +123,48 @@ func TestExtractBearerToken(t *testing.T) {
 			got := middleware.ExtractBearerToken(c)
 			if got != tt.want {
 				t.Errorf("ExtractBearerToken(%q) = %q, want %q", tt.header, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestRequireScope(t *testing.T) {
+	log := logrus.New()
+	log.SetLevel(logrus.PanicLevel)
+	lookup := &mockTenantLookup{
+		validKeys: map[string]string{
+			"user-key":  "tenant-1",
+			"admin-key": "tenant-1",
+		},
+		scopes: map[string]middleware.AuthScope{
+			"user-key":  middleware.ScopeReadWrite,
+			"admin-key": middleware.ScopeAdmin,
+		},
+	}
+
+	tests := []struct {
+		name       string
+		authHeader string
+		wantCode   int
+	}{
+		{"read_write blocked", "Bearer user-key", http.StatusForbidden},
+		{"admin allowed", "Bearer admin-key", http.StatusOK},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			r := gin.New()
+			r.Use(middleware.AuthMiddleware(lookup, log))
+			r.Use(middleware.RequireScope(middleware.ScopeAdmin, log))
+			r.GET("/test", func(c *gin.Context) { c.Status(http.StatusOK) })
+
+			w := httptest.NewRecorder()
+			req := httptest.NewRequest(http.MethodGet, "/test", http.NoBody)
+			req.Header.Set("Authorization", tt.authHeader)
+			r.ServeHTTP(w, req)
+
+			if w.Code != tt.wantCode {
+				t.Fatalf("got %d, want %d", w.Code, tt.wantCode)
 			}
 		})
 	}

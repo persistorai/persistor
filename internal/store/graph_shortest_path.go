@@ -3,7 +3,6 @@ package store
 import (
 	"context"
 	"fmt"
-	"math/rand/v2"
 
 	"github.com/persistorai/persistor/internal/models"
 )
@@ -14,10 +13,6 @@ func (s *GraphStore) ShortestPath( //nolint:gocognit,gocyclo,cyclop,funlen // BF
 	ctx context.Context,
 	tenantID, fromID, toID string,
 ) ([]models.Node, error) {
-	if fromID == toID {
-		return s.fetchPathNodes(ctx, tenantID, []string{fromID})
-	}
-
 	ctx, cancel := withTimeout(ctx)
 	defer cancel()
 
@@ -28,19 +23,20 @@ func (s *GraphStore) ShortestPath( //nolint:gocognit,gocyclo,cyclop,funlen // BF
 
 	defer tx.Rollback(ctx) //nolint:errcheck // best-effort rollback after commit.
 
-	// BFS safety caps.
+	if err := requireGraphNodesExist(ctx, tx, fromID, toID); err != nil {
+		return nil, err
+	}
+
+	if fromID == toID {
+		return s.fetchPathNodes(ctx, tenantID, []string{fromID})
+	}
+
+	// BFS safety cap.
 	const maxVisitedNodes = 10000
-	const maxFrontierPerHop = 500
 
 	visited := map[string]bool{fromID: true}
 	parent := map[string]string{} // child -> parent
 	frontier := []string{fromID}
-
-	neighborSQL := `(SELECT DISTINCT source, target FROM kg_edges
-		WHERE source = ANY($1) AND tenant_id = current_setting('app.tenant_id')::uuid LIMIT ` + fmt.Sprintf("%d", bfsNeighborLimit) + `)
-		UNION
-		(SELECT DISTINCT source, target FROM kg_edges
-		WHERE target = ANY($1) AND tenant_id = current_setting('app.tenant_id')::uuid LIMIT ` + fmt.Sprintf("%d", bfsNeighborLimit) + `)`
 
 	found := false
 
@@ -49,20 +45,15 @@ func (s *GraphStore) ShortestPath( //nolint:gocognit,gocyclo,cyclop,funlen // BF
 			break
 		}
 
-		rows, err := tx.Query(ctx, neighborSQL, frontier)
+		edges, err := bfsNeighborPairs(ctx, tx, frontier)
 		if err != nil {
 			return nil, fmt.Errorf("querying BFS neighbors at hop %d: %w", hop, err)
 		}
 
 		var nextFrontier []string
 
-		for rows.Next() {
-			var source, target string
-			if err := rows.Scan(&source, &target); err != nil {
-				rows.Close()
-				return nil, fmt.Errorf("scanning BFS edge: %w", err)
-			}
-
+		for _, edge := range edges {
+			source, target := edge[0], edge[1]
 			for _, pair := range [][2]string{{source, target}, {target, source}} {
 				from, to := pair[0], pair[1]
 				if visited[from] && !visited[to] {
@@ -75,20 +66,6 @@ func (s *GraphStore) ShortestPath( //nolint:gocognit,gocyclo,cyclop,funlen // BF
 					}
 				}
 			}
-		}
-
-		if err := rows.Err(); err != nil {
-			rows.Close()
-			return nil, fmt.Errorf("iterating BFS edges: %w", err)
-		}
-
-		rows.Close()
-
-		if len(nextFrontier) > maxFrontierPerHop {
-			rand.Shuffle(len(nextFrontier), func(i, j int) {
-				nextFrontier[i], nextFrontier[j] = nextFrontier[j], nextFrontier[i]
-			})
-			nextFrontier = nextFrontier[:maxFrontierPerHop]
 		}
 
 		frontier = nextFrontier

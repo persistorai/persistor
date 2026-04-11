@@ -9,10 +9,13 @@ import (
 
 // mockExportImportStore implements service.exportImportStore for tests.
 type mockExportImportStore struct {
-	nodes       []models.ExportNode
-	edges       []models.ExportEdge
-	errOnExport error
-	upsertErr   error
+	nodes                []models.ExportNode
+	edges                []models.ExportEdge
+	errOnExport          error
+	errOnExistingNodeIDs error
+	upsertErr            error
+	existingNodeIDsCalls int
+	lastExistingNodeIDs  []string
 }
 
 func (m *mockExportImportStore) ExportAllNodes(_ context.Context, _ string) ([]models.ExportNode, error) {
@@ -27,6 +30,27 @@ func (m *mockExportImportStore) ExportAllEdges(_ context.Context, _ string) ([]m
 		return nil, m.errOnExport
 	}
 	return m.edges, nil
+}
+
+func (m *mockExportImportStore) ExistingNodeIDs(_ context.Context, _ string, ids []string) (map[string]struct{}, error) {
+	m.existingNodeIDsCalls++
+	m.lastExistingNodeIDs = append([]string(nil), ids...)
+	if m.errOnExistingNodeIDs != nil {
+		return nil, m.errOnExistingNodeIDs
+	}
+
+	result := make(map[string]struct{})
+	existing := make(map[string]struct{}, len(m.nodes))
+	for _, node := range m.nodes {
+		existing[node.ID] = struct{}{}
+	}
+	for _, id := range ids {
+		if _, ok := existing[id]; ok {
+			result[id] = struct{}{}
+		}
+	}
+
+	return result, nil
 }
 
 func (m *mockExportImportStore) UpsertNodeFromExport(_ context.Context, _ string, _ models.ExportNode, _ bool) (string, error) {

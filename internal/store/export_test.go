@@ -203,3 +203,37 @@ func TestExportAllEdges_SortedBySourceTargetRelation(t *testing.T) {
 		}
 	}
 }
+
+func TestExistingNodeIDs_ReturnsOnlyMatches(t *testing.T) {
+	base, tenantID := setupTestBase(t)
+	es := store.NewExportStore(base)
+	ctx := context.Background()
+
+	now := time.Now().UTC().Truncate(time.Microsecond)
+	for _, node := range []models.ExportNode{
+		{ID: "a", Type: "t", Label: "A", Properties: map[string]any{}, CreatedAt: now, UpdatedAt: now},
+		{ID: "b", Type: "t", Label: "B", Properties: map[string]any{}, CreatedAt: now, UpdatedAt: now},
+	} {
+		if _, err := es.UpsertNodeFromExport(ctx, tenantID, node, false); err != nil {
+			t.Fatalf("UpsertNodeFromExport(%s): %v", node.ID, err)
+		}
+	}
+
+	got, err := es.ExistingNodeIDs(ctx, tenantID, []string{"a", "missing", "b"})
+	if err != nil {
+		t.Fatalf("ExistingNodeIDs: %v", err)
+	}
+
+	if len(got) != 2 {
+		t.Fatalf("len(got) = %d, want 2", len(got))
+	}
+	if _, ok := got["a"]; !ok {
+		t.Fatal("expected id a to be present")
+	}
+	if _, ok := got["b"]; !ok {
+		t.Fatal("expected id b to be present")
+	}
+	if _, ok := got["missing"]; ok {
+		t.Fatal("did not expect missing id to be present")
+	}
+}

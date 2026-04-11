@@ -53,6 +53,11 @@ function isSearchMode(v: string): v is SearchMode {
 const isPositiveFinite = (v: unknown): v is number =>
   typeof v === 'number' && Number.isFinite(v) && v > 0;
 
+const clampFiniteNumber = (value: unknown, fallback: number, min: number, max: number): number => {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return fallback;
+  return Math.min(max, Math.max(min, value));
+};
+
 /**
  * Merge partial user config with defaults.
  *
@@ -106,11 +111,15 @@ export function resolveConfig(raw: Record<string, unknown>): PersistorPluginConf
     : defaultConfig.persistor.searchLimit;
 
   const rawFileWeight = weightsRaw.file;
-  const fileWeight = typeof rawFileWeight === 'number' ? rawFileWeight : defaultConfig.weights.file;
+  const fileWeight = clampFiniteNumber(rawFileWeight, defaultConfig.weights.file, 0, 1);
 
   const rawPersistorWeight = weightsRaw.persistor;
-  const persistorWeight =
-    typeof rawPersistorWeight === 'number' ? rawPersistorWeight : defaultConfig.weights.persistor;
+  const persistorWeight = clampFiniteNumber(
+    rawPersistorWeight,
+    defaultConfig.weights.persistor,
+    0,
+    1,
+  );
 
   const rawContextOnGet = raw['persistorContextOnGet'];
   const persistorContextOnGet =

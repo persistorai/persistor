@@ -173,3 +173,51 @@ func (s *ExportStore) ExportAllEdges(ctx context.Context, tenantID string) ([]mo
 
 	return edges, nil
 }
+
+// ExistingNodeIDs returns the subset of ids that already exist for a tenant.
+func (s *ExportStore) ExistingNodeIDs(ctx context.Context, tenantID string, ids []string) (map[string]struct{}, error) {
+	if len(ids) == 0 {
+		return map[string]struct{}{}, nil
+	}
+
+	ctx, cancel := withTimeout(ctx)
+	defer cancel()
+
+	tx, err := s.beginReadTx(ctx, tenantID)
+	if err != nil {
+		return nil, fmt.Errorf("query existing node ids: %w", err)
+	}
+
+	defer tx.Rollback(ctx) //nolint:errcheck // best-effort rollback after commit.
+
+	rows, err := tx.Query(ctx, `
+		SELECT id
+		FROM kg_nodes
+		WHERE tenant_id = current_setting('app.tenant_id')::uuid
+		  AND id = ANY($1)
+	`, ids)
+	if err != nil {
+		return nil, fmt.Errorf("querying existing node ids: %w", err)
+	}
+
+	defer rows.Close()
+
+	found := make(map[string]struct{}, len(ids))
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, fmt.Errorf("scanning existing node id: %w", err)
+		}
+		found[id] = struct{}{}
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterating existing node ids: %w", err)
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return nil, fmt.Errorf("committing existing node id query: %w", err)
+	}
+
+	return found, nil
+}

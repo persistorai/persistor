@@ -145,6 +145,12 @@ func (h *GraphHandler) Path(c *gin.Context) {
 
 	nodes, err := h.repo.ShortestPath(c.Request.Context(), tenantID, from, to)
 	if err != nil {
+		if errors.Is(err, models.ErrNodeNotFound) {
+			respondError(c, http.StatusNotFound, ErrCodeNotFound, "node not found")
+
+			return
+		}
+
 		h.log.WithError(err).Error("finding shortest path")
 		respondError(c, http.StatusInternalServerError, ErrCodeInternalError, "internal server error")
 

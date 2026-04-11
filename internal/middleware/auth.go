@@ -21,6 +21,11 @@ type TenantLookup interface {
 	GetTenantByAPIKey(ctx context.Context, apiKey string) (string, error)
 }
 
+// PrincipalLookup optionally exposes auth scope metadata for an API key.
+type PrincipalLookup interface {
+	GetAuthPrincipalByAPIKey(ctx context.Context, apiKey string) (AuthPrincipal, error)
+}
+
 // truncateKey returns at most the first 4 characters of key followed by "...".
 func truncateKey(key string) string {
 	if len(key) > 4 {
@@ -58,7 +63,7 @@ func AuthMiddleware(lookup TenantLookup, log *logrus.Logger, guards ...*security
 			return
 		}
 
-		tenantID, err := lookup.GetTenantByAPIKey(c.Request.Context(), apiKey)
+		principal, err := lookupPrincipal(c.Request.Context(), lookup, apiKey)
 		if err != nil {
 			logAuthFailure(log, c, apiKey)
 
@@ -74,9 +79,23 @@ func AuthMiddleware(lookup TenantLookup, log *logrus.Logger, guards ...*security
 			guard.ResetKey(apiKey)
 		}
 
-		c.Set("tenant_id", tenantID)
+		c.Set("tenant_id", principal.TenantID)
+		c.Set(AuthScopeContextKey, principal.Scope)
 		c.Next()
 	}
+}
+
+func lookupPrincipal(ctx context.Context, lookup TenantLookup, apiKey string) (AuthPrincipal, error) {
+	if scopedLookup, ok := lookup.(PrincipalLookup); ok {
+		return scopedLookup.GetAuthPrincipalByAPIKey(ctx, apiKey)
+	}
+
+	tenantID, err := lookup.GetTenantByAPIKey(ctx, apiKey)
+	if err != nil {
+		return AuthPrincipal{}, err
+	}
+
+	return AuthPrincipal{TenantID: tenantID, Scope: ScopeReadWrite}, nil
 }
 
 // ExtractBearerToken extracts the API key from the Authorization header.

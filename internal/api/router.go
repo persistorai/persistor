@@ -47,10 +47,11 @@ type RouterDeps struct {
 
 // Router-level limits.
 const (
-	maxBodySize    = 10 << 20 // 10 MB
-	rateLimit      = 100      // requests per second per IP
-	rateBurst      = 200      // token bucket burst size
-	requestTimeout = 30 * time.Second
+	maxBodySize       = 10 << 20  // 10 MB
+	importMaxBodySize = 256 << 20 // 256 MB
+	rateLimit         = 100       // requests per second per IP
+	rateBurst         = 200       // token bucket burst size
+	requestTimeout    = 30 * time.Second
 )
 
 // setupMiddleware configures all middleware on the Gin engine.
@@ -61,7 +62,9 @@ func setupMiddleware(ctx context.Context, r *gin.Engine, deps *RouterDeps) {
 	r.Use(gin.Recovery())
 	r.Use(middleware.RequestTimeout(requestTimeout))
 	r.Use(middleware.SecurityHeaders())
-	r.Use(middleware.MaxBodySize(maxBodySize))
+	r.Use(middleware.MaxBodySizeByPath(maxBodySize, map[string]int64{
+		"/api/v1/import": importMaxBodySize,
+	}))
 	r.Use(cors.New(cors.Config{
 		AllowOrigins:     deps.CORSOrigins,
 		AllowMethods:     []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
@@ -105,7 +108,6 @@ func registerRoutes(ctx context.Context, api *gin.RouterGroup, deps *RouterDeps)
 	api.GET("/nodes/:id", nodes.Get)
 	api.PUT("/nodes/:id", nodes.Update)
 	api.PATCH("/nodes/:id/properties", nodes.PatchProperties)
-	api.DELETE("/nodes/:id", nodes.Delete)
 	api.POST("/nodes/:id/migrate", nodes.Migrate)
 	api.GET("/nodes/:id/history", history.GetHistory)
 
@@ -114,7 +116,6 @@ func registerRoutes(ctx context.Context, api *gin.RouterGroup, deps *RouterDeps)
 	api.POST("/edges", edges.Create)
 	api.PUT("/edges/:source/:target/:relation", edges.Update)
 	api.PATCH("/edges/:source/:target/:relation/properties", edges.PatchProperties)
-	api.DELETE("/edges/:source/:target/:relation", edges.Delete)
 
 	// Search.
 	api.GET("/search", search.FullText)
@@ -138,7 +139,6 @@ func registerRoutes(ctx context.Context, api *gin.RouterGroup, deps *RouterDeps)
 
 	// Audit.
 	api.GET("/audit", audit.Query)
-	api.DELETE("/audit", audit.Purge)
 
 	// GraphQL.
 	registerGraphQL(api, deps)
@@ -146,18 +146,24 @@ func registerRoutes(ctx context.Context, api *gin.RouterGroup, deps *RouterDeps)
 	// Stats.
 	api.GET("/stats", stats.GetStats)
 
+	adminOnly := api.Group("")
+	adminOnly.Use(middleware.RequireScope(middleware.ScopeAdmin, log))
+
 	// Export / Import.
-	api.GET("/export", exportImport.Export)
-	api.POST("/import", exportImport.Import)
-	api.POST("/import/validate", exportImport.Validate)
+	adminOnly.GET("/export", exportImport.Export)
+	adminOnly.POST("/import", exportImport.Import)
+	adminOnly.POST("/import/validate", exportImport.Validate)
 
 	// Admin.
-	api.POST("/admin/backfill-embeddings", admin.BackfillEmbeddings)
-	api.POST("/admin/reprocess-nodes", admin.ReprocessNodes)
-	api.POST("/admin/maintenance/run", admin.RunMaintenance)
-	api.GET("/admin/merge-suggestions", admin.ListMergeSuggestions)
-	api.POST("/admin/retrieval-feedback", admin.RecordRetrievalFeedback)
-	api.GET("/admin/retrieval-feedback", admin.GetRetrievalFeedbackSummary)
+	adminOnly.DELETE("/audit", audit.Purge)
+	adminOnly.DELETE("/nodes/:id", nodes.Delete)
+	adminOnly.DELETE("/edges/:source/:target/:relation", edges.Delete)
+	adminOnly.POST("/admin/backfill-embeddings", admin.BackfillEmbeddings)
+	adminOnly.POST("/admin/reprocess-nodes", admin.ReprocessNodes)
+	adminOnly.POST("/admin/maintenance/run", admin.RunMaintenance)
+	adminOnly.GET("/admin/merge-suggestions", admin.ListMergeSuggestions)
+	adminOnly.POST("/admin/retrieval-feedback", admin.RecordRetrievalFeedback)
+	adminOnly.GET("/admin/retrieval-feedback", admin.GetRetrievalFeedbackSummary)
 
 	// WebSocket endpoint.
 	api.GET("/ws", wsHandler(ctx, log, deps.Hub, deps.CORSOrigins, deps.TenantLookup))

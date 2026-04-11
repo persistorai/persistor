@@ -10,7 +10,7 @@ import (
 )
 
 const (
-	tenantCacheTTL     = 5 * time.Minute
+	tenantCacheTTL     = 5 * time.Second
 	negativeCacheTTL   = 30 * time.Second
 	maxCacheEntries    = 10000
 	cacheCleanupPeriod = 60 * time.Second
@@ -23,13 +23,13 @@ const negativeSentinel = "\x00negative"
 var errCachedNotFound = errors.New("tenant not found (cached)")
 
 type cachedTenant struct {
-	tenantID  string
+	principal AuthPrincipal
 	fetchedAt time.Time
 }
 
 // isNegative returns true if this entry represents a cached lookup failure.
 func (ct cachedTenant) isNegative() bool {
-	return ct.tenantID == negativeSentinel
+	return ct.principal.TenantID == negativeSentinel
 }
 
 // ttl returns the appropriate TTL for this entry.
@@ -90,6 +90,16 @@ func (c *CachedTenantLookup) evictLoop(ctx context.Context) {
 // GetTenantByAPIKey returns a cached tenant ID or delegates to the inner lookup.
 // Failed lookups are negatively cached for 30s to prevent brute-force DB hammering.
 func (c *CachedTenantLookup) GetTenantByAPIKey(ctx context.Context, apiKey string) (string, error) {
+	principal, err := c.GetAuthPrincipalByAPIKey(ctx, apiKey)
+	if err != nil {
+		return "", err
+	}
+
+	return principal.TenantID, nil
+}
+
+// GetAuthPrincipalByAPIKey returns a cached tenant principal or delegates to the inner lookup.
+func (c *CachedTenantLookup) GetAuthPrincipalByAPIKey(ctx context.Context, apiKey string) (AuthPrincipal, error) {
 	hk := hashKey(apiKey)
 
 	// Read path — RLock for concurrent cache hits.
@@ -98,20 +108,20 @@ func (c *CachedTenantLookup) GetTenantByAPIKey(ctx context.Context, apiKey strin
 	if ok && time.Since(entry.fetchedAt) < entry.ttl() {
 		c.mu.RUnlock()
 		if entry.isNegative() {
-			return "", errCachedNotFound
+			return AuthPrincipal{}, errCachedNotFound
 		}
-		return entry.tenantID, nil
+		return entry.principal, nil
 	}
 	c.mu.RUnlock()
 
 	// Cache miss or expired — fetch from inner.
-	tenantID, err := c.inner.GetTenantByAPIKey(ctx, apiKey)
+	principal, err := lookupPrincipal(ctx, c.inner, apiKey)
 	if err != nil {
 		// Negative cache: store failed lookup with short TTL.
 		c.mu.Lock()
-		c.cache[hk] = cachedTenant{tenantID: negativeSentinel, fetchedAt: time.Now()}
+		c.cache[hk] = cachedTenant{principal: AuthPrincipal{TenantID: negativeSentinel}, fetchedAt: time.Now()}
 		c.mu.Unlock()
-		return "", err
+		return AuthPrincipal{}, err
 	}
 
 	c.mu.Lock()
@@ -130,8 +140,8 @@ func (c *CachedTenantLookup) GetTenantByAPIKey(ctx context.Context, apiKey strin
 			delete(c.cache, k)
 		}
 	}
-	c.cache[hk] = cachedTenant{tenantID: tenantID, fetchedAt: time.Now()}
+	c.cache[hk] = cachedTenant{principal: principal, fetchedAt: time.Now()}
 	c.mu.Unlock()
 
-	return tenantID, nil
+	return principal, nil
 }

@@ -3,6 +3,9 @@ package store
 import (
 	"context"
 	"fmt"
+	"sort"
+
+	"github.com/jackc/pgx/v5"
 
 	"github.com/persistorai/persistor/internal/models"
 )
@@ -15,6 +18,77 @@ const (
 	maxTraverseHops   = 5    // caps BFS depth
 	maxPathHops       = 10   // caps shortest-path search depth
 )
+
+func graphNodeExists(ctx context.Context, tx pgx.Tx, nodeID string) (bool, error) {
+	var exists bool
+	if err := tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM kg_nodes WHERE tenant_id = current_setting('app.tenant_id')::uuid AND id = $1)`, nodeID).Scan(&exists); err != nil {
+		return false, fmt.Errorf("checking node existence: %w", err)
+	}
+
+	return exists, nil
+}
+
+func requireGraphNodesExist(ctx context.Context, tx pgx.Tx, nodeIDs ...string) error {
+	for _, nodeID := range nodeIDs {
+		exists, err := graphNodeExists(ctx, tx, nodeID)
+		if err != nil {
+			return err
+		}
+
+		if !exists {
+			return models.ErrNodeNotFound
+		}
+	}
+
+	return nil
+}
+
+func bfsNeighborPairs(ctx context.Context, tx pgx.Tx, frontier []string) ([][2]string, error) {
+	if len(frontier) == 0 {
+		return nil, nil
+	}
+
+	edges := make([][2]string, 0, len(frontier)*4)
+	neighborSQL := `(SELECT DISTINCT source, target FROM kg_edges
+		WHERE source = $1 AND tenant_id = current_setting('app.tenant_id')::uuid ORDER BY source, target LIMIT ` + fmt.Sprintf("%d", bfsNeighborLimit) + `)
+		UNION
+		(SELECT DISTINCT source, target FROM kg_edges
+		WHERE target = $1 AND tenant_id = current_setting('app.tenant_id')::uuid ORDER BY source, target LIMIT ` + fmt.Sprintf("%d", bfsNeighborLimit) + `)`
+
+	for _, nodeID := range frontier {
+		rows, err := tx.Query(ctx, neighborSQL, nodeID)
+		if err != nil {
+			return nil, fmt.Errorf("querying BFS neighbors for %q: %w", nodeID, err)
+		}
+
+		for rows.Next() {
+			var source, target string
+			if err := rows.Scan(&source, &target); err != nil {
+				rows.Close()
+				return nil, fmt.Errorf("scanning BFS edge: %w", err)
+			}
+
+			edges = append(edges, [2]string{source, target})
+		}
+
+		if err := rows.Err(); err != nil {
+			rows.Close()
+			return nil, fmt.Errorf("iterating BFS edges: %w", err)
+		}
+
+		rows.Close()
+	}
+
+	sort.Slice(edges, func(i, j int) bool {
+		if edges[i][0] != edges[j][0] {
+			return edges[i][0] < edges[j][0]
+		}
+
+		return edges[i][1] < edges[j][1]
+	})
+
+	return edges, nil
+}
 
 // Traverse performs application-level BFS from nodeID up to maxHops and returns the discovered subgraph.
 func (s *GraphStore) Traverse( //nolint:funlen,gocyclo,cyclop,gocognit // BFS loop with neighbor expansion is inherently multi-step.
@@ -41,56 +115,40 @@ func (s *GraphStore) Traverse( //nolint:funlen,gocyclo,cyclop,gocognit // BFS lo
 
 	defer tx.Rollback(ctx) //nolint:errcheck // best-effort rollback after commit.
 
-	// Verify the root node exists before traversal.
-	var exists bool
-	if err := tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM kg_nodes WHERE tenant_id = current_setting('app.tenant_id')::uuid AND id = $1)`, nodeID).Scan(&exists); err != nil {
-		return nil, fmt.Errorf("checking node existence: %w", err)
-	}
-
-	if !exists {
-		return nil, models.ErrNodeNotFound
+	if err := requireGraphNodesExist(ctx, tx, nodeID); err != nil {
+		return nil, err
 	}
 
 	// Application-level BFS with global visited set.
 	visited := map[string]bool{nodeID: true}
 	frontier := []string{nodeID}
 
-	neighborSQL := `(SELECT DISTINCT source, target FROM kg_edges
-		WHERE source = ANY($1) AND tenant_id = current_setting('app.tenant_id')::uuid ORDER BY source, target LIMIT ` + fmt.Sprintf("%d", bfsNeighborLimit) + `)
-		UNION
-		(SELECT DISTINCT source, target FROM kg_edges
-		WHERE target = ANY($1) AND tenant_id = current_setting('app.tenant_id')::uuid ORDER BY source, target LIMIT ` + fmt.Sprintf("%d", bfsNeighborLimit) + `)`
-
 	for hop := 0; hop < maxHops && len(frontier) > 0; hop++ {
-		rows, err := tx.Query(ctx, neighborSQL, frontier)
+		edges, err := bfsNeighborPairs(ctx, tx, frontier)
 		if err != nil {
 			return nil, fmt.Errorf("querying traverse neighbors at hop %d: %w", hop, err)
 		}
 
 		var nextFrontier []string
 
-		for rows.Next() {
-			var source, target string
-			if err := rows.Scan(&source, &target); err != nil {
-				rows.Close()
-				return nil, fmt.Errorf("scanning traverse edge: %w", err)
-			}
-
+		for _, edge := range edges {
+			source, target := edge[0], edge[1]
 			for _, pair := range [][2]string{{source, target}, {target, source}} {
 				from, to := pair[0], pair[1]
 				if visited[from] && !visited[to] {
+					if len(visited) >= traverseNodeLimit {
+						break
+					}
+
 					visited[to] = true
 					nextFrontier = append(nextFrontier, to)
 				}
 			}
-		}
 
-		if err := rows.Err(); err != nil {
-			rows.Close()
-			return nil, fmt.Errorf("iterating traverse edges: %w", err)
+			if len(visited) >= traverseNodeLimit {
+				break
+			}
 		}
-
-		rows.Close()
 
 		if len(visited) >= traverseNodeLimit {
 			break

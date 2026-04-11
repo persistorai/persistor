@@ -4,6 +4,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"sort"
 	"time"
 
 	"github.com/persistorai/persistor/internal/db"
@@ -17,6 +18,7 @@ import (
 type exportImportStore interface {
 	ExportAllNodes(ctx context.Context, tenantID string) ([]models.ExportNode, error)
 	ExportAllEdges(ctx context.Context, tenantID string) ([]models.ExportEdge, error)
+	ExistingNodeIDs(ctx context.Context, tenantID string, ids []string) (map[string]struct{}, error)
 	UpsertNodeFromExport(ctx context.Context, tenantID string, node models.ExportNode, overwrite bool) (string, error)
 	UpsertEdgeFromExport(ctx context.Context, tenantID string, edge models.ExportEdge, overwrite bool) (string, error)
 }
@@ -79,12 +81,12 @@ func (s *ExportImportService) ValidateImport(ctx context.Context, tenantID strin
 
 	errs = append(errs, validateNodes(data.Nodes)...)
 
-	dbNodeIDs, err := s.fetchDBNodeIDs(ctx, tenantID)
+	exportNodeIDs := buildNodeIDSet(data.Nodes)
+	dbNodeIDs, err := s.fetchDBNodeIDs(ctx, tenantID, exportNodeIDs, data.Edges)
 	if err != nil {
 		return nil, fmt.Errorf("fetching existing node IDs for validation: %w", err)
 	}
 
-	exportNodeIDs := buildNodeIDSet(data.Nodes)
 	errs = append(errs, validateEdges(data.Edges, exportNodeIDs, dbNodeIDs)...)
 
 	return errs, nil
@@ -188,20 +190,21 @@ func (s *ExportImportService) importEdges(
 	return nil
 }
 
-// fetchDBNodeIDs returns the set of node IDs that already exist in the DB for
-// a tenant. Used by ValidateImport to check that edge endpoints are resolvable.
-func (s *ExportImportService) fetchDBNodeIDs(ctx context.Context, tenantID string) (map[string]struct{}, error) {
-	existing, err := s.store.ExportAllNodes(ctx, tenantID)
-	if err != nil {
-		return nil, err
+// fetchDBNodeIDs returns the set of referenced node IDs that already exist in
+// the DB for a tenant. Used by ValidateImport to resolve edge endpoints without
+// exporting and decrypting the full tenant graph.
+func (s *ExportImportService) fetchDBNodeIDs(
+	ctx context.Context,
+	tenantID string,
+	exportNodeIDs map[string]struct{},
+	edges []models.ExportEdge,
+) (map[string]struct{}, error) {
+	idsToCheck := referencedDBNodeIDs(edges, exportNodeIDs)
+	if len(idsToCheck) == 0 {
+		return map[string]struct{}{}, nil
 	}
 
-	ids := make(map[string]struct{}, len(existing))
-	for _, n := range existing {
-		ids[n.ID] = struct{}{}
-	}
-
-	return ids, nil
+	return s.store.ExistingNodeIDs(ctx, tenantID, idsToCheck)
 }
 
 // applyNodeOptions applies ImportOptions to a node before storing it.
@@ -234,6 +237,26 @@ func buildNodeIDSet(nodes []models.ExportNode) map[string]struct{} {
 	for _, n := range nodes {
 		ids[n.ID] = struct{}{}
 	}
+
+	return ids
+}
+
+func referencedDBNodeIDs(edges []models.ExportEdge, exportNodeIDs map[string]struct{}) []string {
+	needed := make(map[string]struct{})
+	for _, e := range edges {
+		if _, ok := exportNodeIDs[e.Source]; !ok && e.Source != "" {
+			needed[e.Source] = struct{}{}
+		}
+		if _, ok := exportNodeIDs[e.Target]; !ok && e.Target != "" {
+			needed[e.Target] = struct{}{}
+		}
+	}
+
+	ids := make([]string, 0, len(needed))
+	for id := range needed {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
 
 	return ids
 }

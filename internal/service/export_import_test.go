@@ -3,6 +3,7 @@ package service_test
 import (
 	"context"
 	"errors"
+	"slices"
 	"testing"
 	"time"
 
@@ -180,5 +181,55 @@ func TestValidateImport_EdgeTargetInDB(t *testing.T) {
 
 	if len(errs) != 0 {
 		t.Errorf("expected no errors when edge target exists in DB, got: %v", errs)
+	}
+}
+
+func TestValidateImport_OnlyChecksReferencedDBNodeIDs(t *testing.T) {
+	store := &mockExportImportStore{
+		nodes: []models.ExportNode{{ID: "ghost"}, {ID: "unused-db-node"}},
+	}
+	svc := newTestService(store)
+
+	data := &models.ExportFormat{
+		Nodes: []models.ExportNode{{ID: "exists", Type: "t", Label: "X"}},
+		Edges: []models.ExportEdge{{Source: "exists", Target: "ghost", Relation: "r"}},
+	}
+
+	errList, err := svc.ValidateImport(context.Background(), "t1", data)
+	if err != nil {
+		t.Fatalf("ValidateImport: %v", err)
+	}
+	if len(errList) != 0 {
+		t.Fatalf("expected no errors, got %v", errList)
+	}
+	if store.existingNodeIDsCalls != 1 {
+		t.Fatalf("ExistingNodeIDs calls = %d, want 1", store.existingNodeIDsCalls)
+	}
+	if !slices.Equal(store.lastExistingNodeIDs, []string{"ghost"}) {
+		t.Fatalf("ExistingNodeIDs ids = %v, want [ghost]", store.lastExistingNodeIDs)
+	}
+}
+
+func TestValidateImport_SkipsDBLookupWhenExportContainsAllReferencedNodes(t *testing.T) {
+	store := &mockExportImportStore{}
+	svc := newTestService(store)
+
+	data := &models.ExportFormat{
+		Nodes: []models.ExportNode{
+			{ID: "a", Type: "t", Label: "A"},
+			{ID: "b", Type: "t", Label: "B"},
+		},
+		Edges: []models.ExportEdge{{Source: "a", Target: "b", Relation: "r"}},
+	}
+
+	errList, err := svc.ValidateImport(context.Background(), "t1", data)
+	if err != nil {
+		t.Fatalf("ValidateImport: %v", err)
+	}
+	if len(errList) != 0 {
+		t.Fatalf("expected no errors, got %v", errList)
+	}
+	if store.existingNodeIDsCalls != 0 {
+		t.Fatalf("ExistingNodeIDs calls = %d, want 0", store.existingNodeIDsCalls)
 	}
 }

@@ -70,17 +70,51 @@ function jsonResult(payload: unknown): ToolResult {
  * Search Persistor using the configured search mode.
  * Truncates query to 500 chars for safety.
  */
+function abortError(): Error {
+  return new DOMException('The operation was aborted', 'AbortError');
+}
+
+function throwIfAborted(signal?: AbortSignal): void {
+  if (signal?.aborted) throw abortError();
+}
+
+function withAbort<T>(promise: Promise<T>, signal?: AbortSignal): Promise<T> {
+  if (signal == null) return promise;
+  throwIfAborted(signal);
+
+  return new Promise<T>((resolve, reject) => {
+    const onAbort = () => {
+      signal.removeEventListener('abort', onAbort);
+      reject(abortError());
+    };
+
+    signal.addEventListener('abort', onAbort, { once: true });
+    promise.then(
+      (value) => {
+        signal.removeEventListener('abort', onAbort);
+        resolve(value);
+      },
+      (error: unknown) => {
+        signal.removeEventListener('abort', onAbort);
+        reject(error);
+      },
+    );
+  });
+}
+
 async function searchPersistorOnce(
   client: PersistorClient,
   query: string,
   config: PersistorPluginConfig,
+  signal?: AbortSignal,
 ): Promise<PersistorSearchResult[]> {
+  throwIfAborted(signal);
   const safeQuery = query.length > 500 ? query.slice(0, 500) : query;
   const params = { q: safeQuery, limit: config.persistor.searchLimit };
   const mode = config.persistor.searchMode;
-  if (mode === 'semantic') return await client.searchSemantic(params);
-  if (mode === 'text') return await client.search(params);
-  return await client.searchHybrid(params);
+  if (mode === 'semantic') return await withAbort(client.searchSemantic(params), signal);
+  if (mode === 'text') return await withAbort(client.search(params), signal);
+  return await withAbort(client.searchHybrid(params), signal);
 }
 
 function dedupePersistorResults(results: PersistorSearchResult[]): PersistorSearchResult[] {
@@ -96,15 +130,30 @@ async function searchPersistor(
   client: PersistorClient,
   queries: string[],
   config: PersistorPluginConfig,
+  signal?: AbortSignal,
 ): Promise<PersistorSearchResult[]> {
+  throwIfAborted(signal);
+
+  const settled = await Promise.allSettled(
+    queries.map((query) => searchPersistorOnce(client, query, config, signal)),
+  );
+
+  throwIfAborted(signal);
+
   const aggregated: PersistorSearchResult[] = [];
-  for (const query of queries) {
-    try {
-      aggregated.push(...(await searchPersistorOnce(client, query, config)));
-    } catch (e: unknown) {
-      logger.warn('Persistor search failed:', e);
+  for (const result of settled) {
+    if (result.status === 'fulfilled') {
+      aggregated.push(...result.value);
+      continue;
     }
+
+    if (result.reason instanceof DOMException && result.reason.name === 'AbortError') {
+      throw result.reason;
+    }
+
+    logger.warn('Persistor search failed:', result.reason);
   }
+
   return dedupePersistorResults(aggregated);
 }
 
@@ -131,8 +180,8 @@ export function createUnifiedSearchTool(
   wrappedTool.execute = async (
     toolCallId: string,
     params: Record<string, unknown>,
-    _signal?: AbortSignal,
-    _onUpdate?: (partialResult: ToolResult) => void,
+    signal?: AbortSignal,
+    onUpdate?: (partialResult: ToolResult) => void,
   ): Promise<ToolResult> => {
     const query = typeof params['query'] === 'string' ? params['query'] : '';
     const maxResults = typeof params['maxResults'] === 'number' ? params['maxResults'] : 20;
@@ -140,10 +189,14 @@ export function createUnifiedSearchTool(
 
     const retrievalContext = buildRetrievalContext(query, params);
 
+    throwIfAborted(signal);
+
     const [fileResult, persistorResult] = await Promise.allSettled([
-      originalExecute(toolCallId, params),
-      searchPersistor(persistorClient, retrievalContext.queryVariants, config),
+      originalExecute(toolCallId, params, signal, onUpdate),
+      searchPersistor(persistorClient, retrievalContext.queryVariants, config, signal),
     ]);
+
+    throwIfAborted(signal);
 
     const fileResults =
       fileResult.status === 'fulfilled' ? extractFileResults(fileResult.value) : [];

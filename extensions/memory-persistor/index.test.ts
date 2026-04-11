@@ -114,6 +114,26 @@ async function runTests(): Promise<void> {
     assert(c.weights.file === 0.5, 'weight not overridden');
   });
 
+  await test('config: weights clamp invalid and out-of-range values', () => {
+    const c = resolveConfig({
+      weights: { file: Number.NaN, persistor: Number.POSITIVE_INFINITY },
+    });
+    assert(c.weights.file === defaultConfig.weights.file, 'NaN should fall back to default');
+    assert(
+      c.weights.persistor === defaultConfig.weights.persistor,
+      'Infinity should fall back to default',
+    );
+
+    const clamped = resolveConfig({
+      weights: { file: -1, persistor: 4.2 },
+    });
+    assert(clamped.weights.file === 0, `expected file weight 0, got ${clamped.weights.file}`);
+    assert(
+      clamped.weights.persistor === 1,
+      `expected persistor weight 1, got ${clamped.weights.persistor}`,
+    );
+  });
+
   await test('config: env var resolution for apiKey', () => {
     process.env['TEST_PERSISTOR_KEY'] = 'secret123';
     const c = resolveConfig({ persistor: { apiKey: '${TEST_PERSISTOR_KEY}' } });
@@ -223,6 +243,7 @@ async function runTests(): Promise<void> {
   // --- Unified Search ---
   await test('search: session context expands persistor query and reports meta', async () => {
     const receivedQueries: string[] = [];
+    const startedQueries: string[] = [];
     const fileSearchTool = {
       name: 'memory_search',
       label: 'Memory Search',
@@ -243,16 +264,21 @@ async function runTests(): Promise<void> {
     };
     const searchClient = {
       searchHybrid: (input: { q: string }) => {
-        receivedQueries.push(input.q);
-        return Promise.resolve([
-          {
-            id: input.q.includes('Brian') ? 'person-1' : `query:${input.q}`,
-            type: 'person',
-            label: 'Brian',
-            properties: { project: 'Persistor' },
-            salience_score: 70,
-          },
-        ]);
+        startedQueries.push(input.q);
+        return new Promise((resolve) => {
+          setTimeout(() => {
+            receivedQueries.push(input.q);
+            resolve([
+              {
+                id: input.q.includes('Brian') ? 'person-1' : `query:${input.q}`,
+                type: 'person',
+                label: 'Brian',
+                properties: { project: 'Persistor' },
+                salience_score: 70,
+              },
+            ]);
+          }, input.q.includes('Brian') ? 30 : 5);
+        });
       },
       searchSemantic: () => Promise.resolve([]),
       search: () => Promise.resolve([]),
@@ -276,11 +302,65 @@ async function runTests(): Promise<void> {
       results: { source: string }[];
       meta: { sourcePreference: string; queryVariants: string[]; currentSessionEntities: string[] };
     };
-    assert(receivedQueries.length >= 2, `expected expanded queries, got ${receivedQueries.length}`);
+    assert(startedQueries.length >= 2, `expected expanded queries, got ${startedQueries.length}`);
+    assert(receivedQueries.length >= 2, `expected completed queries, got ${receivedQueries.length}`);
     assert(payload.meta.sourcePreference === 'both', 'expected combined source preference');
     assert(payload.meta.currentSessionEntities[0] === 'Brian', 'expected session entities in meta');
     assert(payload.results.some((entry) => entry.source === 'persistor'), 'expected persistor result');
     assert(payload.results.some((entry) => entry.source === 'file'), 'expected file result');
+  });
+
+  await test('search: forwards AbortSignal and rejects promptly when canceled', async () => {
+    let receivedSignal: AbortSignal | undefined;
+    let fileSearchStarted = false;
+    const fileSearchTool = {
+      name: 'memory_search',
+      label: 'Memory Search',
+      description: 'search files',
+      parameters: {},
+      execute: (
+        _id: string,
+        _params: Record<string, unknown>,
+        signal?: AbortSignal,
+      ) => {
+        receivedSignal = signal;
+        fileSearchStarted = true;
+        return new Promise((resolve, reject) => {
+          signal?.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError')), {
+            once: true,
+          });
+          setTimeout(
+            () => resolve({ content: [{ type: 'text' as const, text: JSON.stringify({ results: [] }) }], details: undefined }),
+            100,
+          );
+        });
+      },
+    };
+    const searchClient = {
+      searchHybrid: () => new Promise((resolve) => setTimeout(() => resolve([]), 100)),
+      searchSemantic: () => Promise.resolve([]),
+      search: () => Promise.resolve([]),
+    };
+    const tool = createUnifiedSearchTool(
+      fileSearchTool as unknown as OpenClawTool,
+      searchClient as unknown as PersistorClient,
+      cfg,
+    );
+
+    const controller = new AbortController();
+    const pending = tool.execute('t5', { query: 'cancel me' }, controller.signal);
+    setTimeout(() => controller.abort(), 10);
+
+    let aborted = false;
+    try {
+      await pending;
+    } catch (error) {
+      aborted = error instanceof DOMException && error.name === 'AbortError';
+    }
+
+    assert(fileSearchStarted, 'expected file search to start');
+    assert(receivedSignal === controller.signal, 'expected AbortSignal to be forwarded');
+    assert(aborted, 'expected search to reject with AbortError');
   });
 
   console.log(`\n${passed} passed, ${failed} failed`);
