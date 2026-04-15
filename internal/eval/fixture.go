@@ -58,7 +58,10 @@ func LoadFixture(path string) (*Fixture, error) {
 	if err != nil {
 		return nil, fmt.Errorf("read fixture: %w", err)
 	}
+	return parseFixture(data)
+}
 
+func parseFixture(data []byte) (*Fixture, error) {
 	var fixture Fixture
 	if err := json.Unmarshal(data, &fixture); err != nil {
 		return nil, fmt.Errorf("parse fixture: %w", err)
@@ -73,24 +76,31 @@ func LoadFixture(path string) (*Fixture, error) {
 	}
 
 	for i, q := range fixture.Questions {
-		if q.Prompt == "" {
-			return nil, fmt.Errorf("question %d: prompt is required", i)
-		}
-		expected := buildExpectedSet(q)
-		if len(expected) == 0 {
-			return nil, fmt.Errorf("question %d: at least one expected node id or label is required", i)
-		}
-		if q.PreferredFirstNodeID != "" {
-			if _, ok := expected[normalizeExpected("id", q.PreferredFirstNodeID)]; !ok {
-				return nil, fmt.Errorf("question %d: preferred first node id must also be listed in expected_node_ids", i)
-			}
-		}
-		if q.PreferredFirstLabel != "" {
-			if _, ok := expected[normalizeExpected("label", q.PreferredFirstLabel)]; !ok {
-				return nil, fmt.Errorf("question %d: preferred first label must also be listed in expected_labels", i)
-			}
+		if err := validateQuestion(i, q); err != nil {
+			return nil, err
 		}
 	}
 
 	return &fixture, nil
+}
+
+func validateQuestion(i int, q Question) error {
+	if q.Prompt == "" {
+		return fmt.Errorf("question %d: prompt is required", i)
+	}
+	expected := buildExpectedSet(q)
+	if len(expected) == 0 {
+		return fmt.Errorf("question %d: at least one expected node id or label is required", i)
+	}
+	if q.PreferredFirstNodeID != "" {
+		if _, ok := expected[normalizeExpected("id", q.PreferredFirstNodeID)]; !ok {
+			return fmt.Errorf("question %d: preferred first node id must also be listed in expected_node_ids", i)
+		}
+	}
+	if q.PreferredFirstLabel != "" {
+		if _, ok := expected[normalizeExpected("label", q.PreferredFirstLabel)]; !ok {
+			return fmt.Errorf("question %d: preferred first label must also be listed in expected_labels", i)
+		}
+	}
+	return nil
 }

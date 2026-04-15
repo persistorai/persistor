@@ -39,6 +39,7 @@ type IngestReport struct {
 	FinalizeDuration       time.Duration
 	WriteDuration          time.Duration
 	TotalDuration          time.Duration
+	Diagnostics            IngestDiagnostics
 }
 
 // KnownEntityFetcher can retrieve existing entity names from the graph.
@@ -73,6 +74,8 @@ func (ing *Ingester) Ingest(
 	chunkOpts := ChunkOpts{MaxTokens: opts.ChunkTokens}
 	chunks := ChunkMarkdown(string(text), chunkOpts)
 	report := &IngestReport{Chunks: len(chunks), StartedAt: startedAt}
+	diagnostics := newDiagnosticsCollector()
+	ing.writer = ing.writer.WithDiagnostics(diagnostics)
 
 	emitProgress(opts.Progress, ProgressEvent{
 		Source:      opts.Source,
@@ -125,6 +128,7 @@ func (ing *Ingester) Ingest(
 		report = buildDryRunReport(report, allEntities, allRels)
 		report.CompletedAt = time.Now()
 		report.TotalDuration = report.CompletedAt.Sub(startedAt)
+		report.Diagnostics = diagnostics.snapshot()
 		emitProgress(opts.Progress, ProgressEvent{
 			Source:        opts.Source,
 			Stage:         "done",
@@ -135,6 +139,7 @@ func (ing *Ingester) Ingest(
 			CreatedNodes:  report.CreatedNodes,
 			CreatedEdges:  report.CreatedEdges,
 			Errors:        len(report.Errors),
+			Alerts:        append([]string(nil), report.Diagnostics.Alerts...),
 			Elapsed:       report.TotalDuration,
 		})
 		return report, nil
@@ -143,6 +148,7 @@ func (ing *Ingester) Ingest(
 	report, err = ing.writeAll(ctx, report, allEntities, allRels, allFacts)
 	report.CompletedAt = time.Now()
 	report.TotalDuration = report.CompletedAt.Sub(startedAt)
+	report.Diagnostics = diagnostics.snapshot()
 	emitProgress(opts.Progress, ProgressEvent{
 		Source:        opts.Source,
 		Stage:         "done",
@@ -156,6 +162,7 @@ func (ing *Ingester) Ingest(
 		CreatedEdges:  report.CreatedEdges,
 		SkippedEdges:  report.SkippedEdges,
 		Errors:        len(report.Errors),
+		Alerts:        append([]string(nil), report.Diagnostics.Alerts...),
 		Elapsed:       report.TotalDuration,
 	})
 	if err != nil {

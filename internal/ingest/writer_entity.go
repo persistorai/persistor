@@ -16,8 +16,10 @@ func (w *Writer) writeEntity(
 ) (string, entityAction, error) {
 	resolution, err := w.resolveEntity(ctx, ent.Name, ent.Type)
 	if err != nil {
+		w.recordAPIFailure(err)
 		return "", 0, fmt.Errorf("resolving entity %q: %w", ent.Name, err)
 	}
+	w.recordEntityResolution(resolution.Status)
 
 	if resolution.Status == resolutionMatched && resolution.Match != nil && resolution.Match.Node != nil {
 		id, err := w.updateEntity(ctx, resolution.Match.Node, ent)
@@ -68,6 +70,7 @@ func (w *Writer) createEntity(ctx context.Context, ent ExtractedEntity) (string,
 
 	node, err := w.graph.CreateNode(ctx, req)
 	if err != nil {
+		w.recordAPIFailure(err)
 		return "", fmt.Errorf("creating node %q: %w", ent.Name, err)
 	}
 
@@ -95,6 +98,7 @@ func (w *Writer) updateEntity(
 
 	_, err := w.graph.PatchNodeProperties(ctx, existing.ID, merged)
 	if err != nil {
+		w.recordAPIFailure(err)
 		return "", fmt.Errorf("updating node %q: %w", ent.Name, err)
 	}
 

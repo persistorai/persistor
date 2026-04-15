@@ -17,6 +17,7 @@ type ProgressEvent struct {
 	CreatedEdges  int
 	SkippedEdges  int
 	Errors        int
+	Alerts        []string
 	Elapsed       time.Duration
 	StageElapsed  time.Duration
 }

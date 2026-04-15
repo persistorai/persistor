@@ -29,6 +29,7 @@ func (ing *Ingester) extractAll(
 		})
 
 		entities, rels, facts := ing.extractChunk(ctx, chunk, report, knownEntities)
+		ing.writer.recordChunkThroughput(chunk.Index+1, time.Since(eventStart), len(entities), len(rels), len(facts))
 		allEntities = append(allEntities, entities...)
 		allRels = append(allRels, rels...)
 		allFacts = append(allFacts, facts...)
@@ -59,6 +60,10 @@ func (ing *Ingester) extractChunk(
 ) ([]ExtractedEntity, []ExtractedRelationship, []ExtractedFact) {
 	result, err := ing.extractor.ExtractWithRetry(ctx, chunk.Text, knownEntities...)
 	if err != nil {
+		if isParseError(err) {
+			ing.writer.recordParseFailure()
+		}
+		ing.writer.recordAPIFailure(err)
 		report.Errors = append(report.Errors,
 			fmt.Sprintf("chunk %d: %v", chunk.Index, err))
 		return nil, nil, nil

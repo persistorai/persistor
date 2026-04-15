@@ -285,6 +285,59 @@ func TestSearchService_HybridSearch_BeliefAwareShaping(t *testing.T) {
 	}
 }
 
+func TestSearchService_FullTextSearch_TemporalShapingPrefersRecent(t *testing.T) {
+	now := time.Date(2026, 4, 14, 12, 0, 0, 0, time.UTC)
+	store := &mockSearchStore{
+		fullTextSearch: func(_ context.Context, _, query, _ string, _ float64, _ int) ([]models.Node, error) {
+			if query != "current deployment status" {
+				return []models.Node{}, nil
+			}
+			return []models.Node{
+				{ID: "n1", Label: "Deployment status archive", Salience: 90, UpdatedAt: now.Add(-30 * 24 * time.Hour)},
+				{ID: "n2", Label: "Deployment status current", Salience: 20, UpdatedAt: now.Add(-2 * time.Hour)},
+			}, nil
+		},
+	}
+	log := logrus.New()
+	log.SetLevel(logrus.ErrorLevel)
+	svc := NewSearchService(store, nil, log)
+
+	nodes, err := svc.FullTextSearch(context.Background(), "t1", "current deployment status", "", 0, 2)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(nodes) != 2 || nodes[0].ID != "n2" {
+		t.Fatalf("expected recent node n2 first, got %#v", nodes)
+	}
+}
+
+func TestSearchService_HybridSearch_TemporalShapingPrefersHistoricalYearMatch(t *testing.T) {
+	now := time.Date(2026, 4, 14, 12, 0, 0, 0, time.UTC)
+	embedder := &mockEmbedder{generate: func(_ context.Context, _ string) ([]float32, error) { return []float32{0.1, 0.2}, nil }}
+	store := &mockSearchStore{
+		hybridSearch: func(_ context.Context, _, query string, _ []float32, _ int) ([]models.Node, error) {
+			if query != "history of platform migration 2024" {
+				return []models.Node{}, nil
+			}
+			return []models.Node{
+				{ID: "n1", Label: "Platform migration recap", Salience: 80, UpdatedAt: now, Properties: map[string]any{"summary": "Recap published in 2026"}},
+				{ID: "n2", Label: "Platform migration", Salience: 25, UpdatedAt: now.Add(-365 * 24 * time.Hour), Properties: map[string]any{"happened_on": "2024-06-10", "summary": "Initial migration completed in 2024"}},
+			}, nil
+		},
+	}
+	log := logrus.New()
+	log.SetLevel(logrus.ErrorLevel)
+	svc := NewSearchService(store, embedder, log)
+
+	nodes, err := svc.HybridSearch(context.Background(), "t1", "history of platform migration 2024", 2)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(nodes) != 2 || nodes[0].ID != "n2" {
+		t.Fatalf("expected historical year-matched node n2 first, got %#v", nodes)
+	}
+}
+
 func TestSearchService_HybridSearch_PrototypeReranksWithProfile(t *testing.T) {
 	now := time.Now()
 	embedder := &mockEmbedder{generate: func(_ context.Context, _ string) ([]float32, error) { return []float32{0.1, 0.2}, nil }}

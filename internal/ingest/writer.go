@@ -3,6 +3,7 @@ package ingest
 import (
 	"context"
 	"strings"
+	"time"
 
 	"github.com/persistorai/persistor/client"
 )
@@ -31,15 +32,54 @@ type WriteReport struct {
 
 // Writer writes extracted entities, relationships, and facts to the graph.
 type Writer struct {
-	graph    GraphClient
-	source   string
-	episodic EpisodicClient
-	tenantID string
+	graph       GraphClient
+	source      string
+	episodic    EpisodicClient
+	tenantID    string
+	diagnostics *diagnosticsCollector
 }
 
 // NewWriter creates a Writer that uses the given GraphClient and source tag.
 func NewWriter(graph GraphClient, source string) *Writer {
 	return &Writer{graph: graph, source: source}
+}
+
+func (w *Writer) WithDiagnostics(diag *diagnosticsCollector) *Writer {
+	if w == nil {
+		return nil
+	}
+	w.diagnostics = diag
+	return w
+}
+
+func (w *Writer) recordParseFailure() {
+	if w != nil && w.diagnostics != nil {
+		w.diagnostics.recordParseFailure()
+	}
+}
+
+func (w *Writer) recordAPIFailure(err error) {
+	if w != nil && w.diagnostics != nil {
+		w.diagnostics.recordAPIFailure(err)
+	}
+}
+
+func (w *Writer) recordEntityResolution(status entityResolutionStatus) {
+	if w != nil && w.diagnostics != nil {
+		w.diagnostics.recordEntityResolution(status)
+	}
+}
+
+func (w *Writer) recordUnknownRelations(count int) {
+	if w != nil && w.diagnostics != nil {
+		w.diagnostics.recordUnknownRelations(count)
+	}
+}
+
+func (w *Writer) recordChunkThroughput(chunkIndex int, duration time.Duration, entities, rels, facts int) {
+	if w != nil && w.diagnostics != nil {
+		w.diagnostics.recordChunkThroughput(chunkIndex, duration, entities, rels, facts)
+	}
 }
 
 // WriteEntities creates or updates nodes for each entity, returning a name-to-ID map.

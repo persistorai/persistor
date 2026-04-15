@@ -114,6 +114,43 @@ func TestLoadFixtureRejectsInvalidPreferredFirstExpectation(t *testing.T) {
 	}
 }
 
+func TestLoadFixtureOrFailureCorpus(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	path := filepath.Join(dir, "failure-corpus.json")
+	content := `{
+  "name": "known-failures",
+  "description": "Replayable misses and edge cases",
+  "cases": [
+    {
+      "id": "ownership-contrast",
+      "prompt": "Which project belongs to Brian personally instead of Dirt Road Systems?",
+      "category": "contradiction_handling",
+      "search_mode": "hybrid",
+      "expected_labels": ["Persistor"],
+      "preferred_first_label": "Persistor",
+      "failure_mode": "wrong-top-hit",
+      "known_bad_labels": ["Dirt Road Systems"]
+    }
+  ]
+}`
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		t.Fatalf("write corpus: %v", err)
+	}
+
+	fixture, err := LoadFixtureOrFailureCorpus(path)
+	if err != nil {
+		t.Fatalf("LoadFixtureOrFailureCorpus returned error: %v", err)
+	}
+	if fixture.Name != "known-failures" {
+		t.Fatalf("expected corpus fixture name, got %q", fixture.Name)
+	}
+	if len(fixture.Questions) != 1 || fixture.Questions[0].PreferredFirstLabel != "Persistor" {
+		t.Fatalf("unexpected converted fixture: %#v", fixture)
+	}
+}
+
 func TestFixtureApplyPrototypeRerankProfile(t *testing.T) {
 	t.Parallel()
 

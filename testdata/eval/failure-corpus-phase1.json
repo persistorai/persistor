@@ -1,0 +1,29 @@
+{
+  "name": "failure-corpus-phase1",
+  "description": "Replayable known-bad retrievals and edge cases for regression checks.",
+  "cases": [
+    {
+      "id": "ownership-contrast-company-bias",
+      "prompt": "Which project belongs to Brian personally instead of Dirt Road Systems?",
+      "category": "contradiction_handling",
+      "search_mode": "hybrid",
+      "limit": 6,
+      "expected_labels": ["Persistor"],
+      "preferred_first_label": "Persistor",
+      "failure_mode": "wrong_top_hit_company_bias",
+      "known_bad_labels": ["Dirt Road Systems"],
+      "notes": "Regression target for cases where the company node outranks the Brian-owned exception."
+    },
+    {
+      "id": "durable-profile-file-wording",
+      "prompt": "Which file should I read for Brian's durable profile, USER.md or the graph summary?",
+      "category": "file_vs_graph_preference",
+      "search_mode": "hybrid",
+      "limit": 6,
+      "expected_labels": ["Brian Colinger"],
+      "preferred_first_label": "Brian Colinger",
+      "failure_mode": "adjacent_node_distraction",
+      "notes": "Replay wording that mentions files directly so canonical Brian retrieval stays centered."
+    }
+  ]
+}

@@ -262,6 +262,61 @@ func TestRunnerComparePrototypeProfiles(t *testing.T) {
 	}
 }
 
+func TestRunnerComparePrototypeProfilesSummarizesQuestionLevelChanges(t *testing.T) {
+	t.Parallel()
+
+	runner := NewRunner(fakeSearchClient{
+		hybrid: func(_ context.Context, query string, opts *client.SearchOptions) ([]client.Node, error) {
+			switch query {
+			case "Which project belongs to Brian personally instead of Dirt Road Systems?":
+				if opts.InternalRerankProfile == "term_focus" {
+					return []client.Node{{ID: "persistor", Label: "Persistor", Type: "project"}}, nil
+				}
+				return []client.Node{{ID: "dirt-road-systems", Label: "Dirt Road Systems", Type: "company"}}, nil
+			case "Who is Big Jerry?":
+				return []client.Node{{ID: "big-jerry", Label: "Big Jerry", Type: "animal"}}, nil
+			default:
+				return nil, nil
+			}
+		},
+	})
+
+	comparison, err := runner.ComparePrototypeProfiles(context.Background(), &Fixture{
+		Name: "memory-fixture",
+		Questions: []Question{
+			{
+				Prompt:              "Which project belongs to Brian personally instead of Dirt Road Systems?",
+				SearchMode:          "hybrid_rerank",
+				ExpectedLabels:      []string{"Persistor"},
+				PreferredFirstLabel: "Persistor",
+			},
+			{
+				Prompt:              "Who is Big Jerry?",
+				SearchMode:          "hybrid_rerank",
+				ExpectedLabels:      []string{"Big Jerry"},
+				PreferredFirstLabel: "Big Jerry",
+			},
+		},
+	}, []string{"term_focus"})
+	if err != nil {
+		t.Fatalf("ComparePrototypeProfiles returned error: %v", err)
+	}
+
+	summary := comparison.Summary["term_focus"]
+	if summary.Improved != 1 || summary.Regressed != 0 {
+		t.Fatalf("expected one improvement and no regressions, got %#v", summary)
+	}
+	if len(summary.ChangedQuestions) != 1 {
+		t.Fatalf("expected one changed question, got %#v", summary.ChangedQuestions)
+	}
+	if summary.ChangedQuestions[0].Prompt != "Which project belongs to Brian personally instead of Dirt Road Systems?" {
+		t.Fatalf("unexpected changed question: %#v", summary.ChangedQuestions[0])
+	}
+	if summary.ChangedQuestions[0].Change != "improved" {
+		t.Fatalf("expected improved delta, got %#v", summary.ChangedQuestions[0])
+	}
+}
+
 func TestRunnerComparePrototypeProfilesSummarizesDeltas(t *testing.T) {
 	t.Parallel()
 

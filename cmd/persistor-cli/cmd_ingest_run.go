@@ -232,9 +232,27 @@ func printReport(source string, report *ingest.IngestReport, dryRun bool) {
 	if report.CreatedEpisodes > 0 || report.CreatedEvents > 0 {
 		fmt.Fprintf(os.Stderr, "  Episodic:  %d episodes, %d events\n", report.CreatedEpisodes, report.CreatedEvents)
 	}
+	printDiagnostics(report.Diagnostics)
 
 	for _, e := range report.Errors {
 		fmt.Fprintf(os.Stderr, "  Error: %s\n", e)
+	}
+}
+
+func printDiagnostics(diag ingest.IngestDiagnostics) {
+	if diag.EntityResolutionAmbiguous == 0 && diag.EntityResolutionMisses == 0 && diag.API4xxFailures == 0 && diag.API5xxFailures == 0 && diag.ParseFailures == 0 && diag.UnknownRelationCount == 0 && len(diag.ThroughputDrops) == 0 {
+		return
+	}
+	fmt.Fprintf(os.Stderr, "  Diagnostics: resolution=%d ambiguous/%d no-match, api=%d 4xx/%d 5xx, parse=%d, unknown=%d\n",
+		diag.EntityResolutionAmbiguous,
+		diag.EntityResolutionMisses,
+		diag.API4xxFailures,
+		diag.API5xxFailures,
+		diag.ParseFailures,
+		diag.UnknownRelationCount,
+	)
+	for _, alert := range diag.Alerts {
+		fmt.Fprintf(os.Stderr, "  Alert: %s\n", alert)
 	}
 }
 

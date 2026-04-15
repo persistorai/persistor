@@ -49,6 +49,7 @@ func (w *Writer) writeRelationship(
 
 	if !models.IsCanonicalRelation(rel.Relation) {
 		report.UnknownRelations = append(report.UnknownRelations, *rel)
+		w.recordUnknownRelations(1)
 		report.SkippedEdges++
 		return
 	}
@@ -89,6 +90,7 @@ func (w *Writer) createEdge(
 
 	// If edge already exists (409), update it with new data
 	if !strings.Contains(err.Error(), "409") {
+		w.recordAPIFailure(err)
 		return fmt.Errorf("creating edge %s->%s: %w", rel.Source, rel.Target, err)
 	}
 
@@ -113,6 +115,7 @@ func (w *Writer) updateExistingEdge(
 
 	_, err := w.graph.UpdateEdge(ctx, sourceID, targetID, rel.Relation, updateReq)
 	if err != nil {
+		w.recordAPIFailure(err)
 		return fmt.Errorf("updating edge %s->%s: %w", rel.Source, rel.Target, err)
 	}
 
@@ -127,8 +130,13 @@ func (w *Writer) resolveEntityInKG(
 	nodeMap map[string]string,
 ) (string, bool) {
 	resolution, err := w.resolveEntity(ctx, name, "")
-	if err != nil || resolution.Status != resolutionMatched || resolution.Match == nil || resolution.Match.Node == nil {
-		if err == nil && resolution != nil && resolution.Status == resolutionAmbiguous {
+	if err != nil {
+		w.recordAPIFailure(err)
+		return "", false
+	}
+	w.recordEntityResolution(resolution.Status)
+	if resolution.Status != resolutionMatched || resolution.Match == nil || resolution.Match.Node == nil {
+		if resolution != nil && resolution.Status == resolutionAmbiguous {
 			logEntityResolution(name, resolution)
 		}
 		return "", false
@@ -180,6 +188,7 @@ func (w *Writer) writeFact(
 
 	_, err := w.graph.PatchNodeProperties(ctx, nodeID, props)
 	if err != nil {
+		w.recordAPIFailure(err)
 		return fmt.Errorf("patching fact on %q: %w", fact.Subject, err)
 	}
 
