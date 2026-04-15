@@ -70,16 +70,21 @@ type RecallNeighbor struct {
 
 // RecallEpisode captures a recent linked event and optional episode context.
 type RecallEpisode struct {
-	EventID         string     `json:"event_id"`
-	Kind            string     `json:"kind"`
-	Title           string     `json:"title"`
-	Summary         string     `json:"summary,omitempty"`
-	OccurredAt      *time.Time `json:"occurred_at,omitempty"`
-	Confidence      float64    `json:"confidence,omitempty"`
-	EpisodeID       *string    `json:"episode_id,omitempty"`
-	EpisodeTitle    string     `json:"episode_title,omitempty"`
-	EpisodeStatus   string     `json:"episode_status,omitempty"`
-	LinkedEntityIDs []string   `json:"linked_entity_ids,omitempty"`
+	EventID             string     `json:"event_id"`
+	Kind                string     `json:"kind"`
+	Title               string     `json:"title"`
+	Summary             string     `json:"summary,omitempty"`
+	OccurredAt          *time.Time `json:"occurred_at,omitempty"`
+	Confidence          float64    `json:"confidence,omitempty"`
+	EpisodeID           *string    `json:"episode_id,omitempty"`
+	EpisodeTitle        string     `json:"episode_title,omitempty"`
+	EpisodeStatus       string     `json:"episode_status,omitempty"`
+	LinkedEntityIDs     []string   `json:"linked_entity_ids,omitempty"`
+	EventCount          int        `json:"event_count,omitempty"`
+	EventKinds          []string   `json:"event_kinds,omitempty"`
+	OpenItemCount       int        `json:"open_item_count,omitempty"`
+	LatestOutcomeTitle  string     `json:"latest_outcome_title,omitempty"`
+	LatestOutcomeStatus string     `json:"latest_outcome_status,omitempty"`
 }
 
 // RecallDecision captures a still-open decision-like event.

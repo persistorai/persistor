@@ -203,6 +203,88 @@ func TestSearchService_HybridSearch_PrototypeReranksCandidates(t *testing.T) {
 	}
 }
 
+func TestSearchService_FullTextSearch_BeliefAwareShaping(t *testing.T) {
+	store := &mockSearchStore{
+		fullTextSearch: func(_ context.Context, _, query, _ string, _ float64, _ int) ([]models.Node, error) {
+			if query != "alice" {
+				return []models.Node{}, nil
+			}
+			return []models.Node{
+				{
+					ID:       "n1",
+					Label:    "Alice profile draft",
+					Salience: 90,
+					Properties: map[string]any{
+						"city":                     "Chicago",
+						models.FactBeliefsProperty: map[string]any{"city": map[string]any{"preferred_value": "Chicago", "preferred_confidence": 0.62, "evidence_count": 2, "status": models.FactBeliefStatusContested, "claims": []map[string]any{{"value": "Chicago", "preferred": true, "last_observed_at": "2026-03-01T12:00:00Z"}, {"value": "Austin", "last_observed_at": "2026-03-05T12:00:00Z"}}}},
+					},
+				},
+				{
+					ID:       "n2",
+					Label:    "Alice",
+					Salience: 20,
+					Properties: map[string]any{
+						"city":                     "Chicago",
+						models.FactBeliefsProperty: map[string]any{"city": map[string]any{"preferred_value": "Chicago", "preferred_confidence": 0.96, "evidence_count": 4, "status": models.FactBeliefStatusSupported, "claims": []map[string]any{{"value": "Chicago", "preferred": true, "last_observed_at": "2026-04-10T12:00:00Z"}}}},
+					},
+				},
+			}, nil
+		},
+	}
+	log := logrus.New()
+	log.SetLevel(logrus.ErrorLevel)
+	svc := NewSearchService(store, nil, log)
+
+	nodes, err := svc.FullTextSearch(context.Background(), "t1", "Alice", "", 0, 2)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(nodes) != 2 || nodes[0].ID != "n2" {
+		t.Fatalf("expected supported belief node n2 first, got %#v", nodes)
+	}
+}
+
+func TestSearchService_HybridSearch_BeliefAwareShaping(t *testing.T) {
+	embedder := &mockEmbedder{generate: func(_ context.Context, _ string) ([]float32, error) { return []float32{0.1, 0.2}, nil }}
+	store := &mockSearchStore{
+		hybridSearch: func(_ context.Context, _, query string, _ []float32, _ int) ([]models.Node, error) {
+			if query != "release plan" {
+				return []models.Node{}, nil
+			}
+			return []models.Node{
+				{
+					ID:       "n1",
+					Label:    "Release plan archive",
+					Salience: 80,
+					Properties: map[string]any{
+						models.FactBeliefsProperty: map[string]any{"status": map[string]any{"preferred_value": "complete", "preferred_confidence": 0.4, "evidence_count": 1, "status": models.FactBeliefStatusSuperseded, "claims": []map[string]any{{"value": "complete", "preferred": true, "last_observed_at": "2025-01-01T12:00:00Z"}}}},
+					},
+				},
+				{
+					ID:       "n2",
+					Label:    "Release plan",
+					Salience: 30,
+					Properties: map[string]any{
+						"status":                   "active",
+						models.FactBeliefsProperty: map[string]any{"status": map[string]any{"preferred_value": "active", "preferred_confidence": 0.9, "evidence_count": 3, "status": models.FactBeliefStatusSupported, "claims": []map[string]any{{"value": "active", "preferred": true, "last_observed_at": "2026-04-10T12:00:00Z"}}}},
+					},
+				},
+			}, nil
+		},
+	}
+	log := logrus.New()
+	log.SetLevel(logrus.ErrorLevel)
+	svc := NewSearchService(store, embedder, log)
+
+	nodes, err := svc.HybridSearch(context.Background(), "t1", "release plan", 2)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(nodes) != 2 || nodes[0].ID != "n2" {
+		t.Fatalf("expected supported current node n2 first, got %#v", nodes)
+	}
+}
+
 func TestSearchService_HybridSearch_PrototypeReranksWithProfile(t *testing.T) {
 	now := time.Now()
 	embedder := &mockEmbedder{generate: func(_ context.Context, _ string) ([]float32, error) { return []float32{0.1, 0.2}, nil }}

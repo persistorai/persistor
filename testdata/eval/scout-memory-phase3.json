@@ -1,0 +1,77 @@
+{
+  "name": "scout-memory-phase3",
+  "questions": [
+    {
+      "prompt": "Who is Big Jerry?",
+      "category": "factual_recall",
+      "search_mode": "hybrid",
+      "limit": 5,
+      "expected_labels": ["Big Jerry"],
+      "preferred_first_label": "Big Jerry",
+      "notes": "Core entity lookup should still return the canonical deer node first"
+    },
+    {
+      "prompt": "What happened on Christmas Eve 2025?",
+      "category": "temporal_recall",
+      "search_mode": "hybrid",
+      "limit": 5,
+      "expected_labels": ["DeerPrint", "Christmas Eve Breakthrough"],
+      "preferred_first_label": "Christmas Eve Breakthrough",
+      "notes": "Temporal phrasing should surface the event node ahead of broader project context"
+    },
+    {
+      "prompt": "What changed in DeerPrint production on Apr 1 and Apr 2?",
+      "category": "temporal_recall",
+      "search_mode": "hybrid",
+      "limit": 6,
+      "expected_labels": ["DeerPrint"],
+      "preferred_first_label": "DeerPrint",
+      "notes": "Date shorthand plus product name should keep the DeerPrint production memory on top"
+    },
+    {
+      "prompt": "What is Brian's stance on soft deletes?",
+      "category": "factual_recall",
+      "search_mode": "hybrid",
+      "limit": 5,
+      "expected_labels": ["Brian Colinger"],
+      "preferred_first_label": "Brian Colinger",
+      "notes": "Architecture preference phrasing should resolve through Brian's canonical memory"
+    },
+    {
+      "prompt": "Which project belongs to Brian personally instead of Dirt Road Systems?",
+      "category": "contradiction_handling",
+      "search_mode": "hybrid",
+      "limit": 6,
+      "expected_labels": ["Persistor"],
+      "preferred_first_label": "Persistor",
+      "notes": "Negative ownership wording should still choose the Brian-owned project instead of the company node"
+    },
+    {
+      "prompt": "What project is not owned by Dirt Road Systems?",
+      "category": "contradiction_handling",
+      "search_mode": "hybrid",
+      "limit": 5,
+      "expected_labels": ["Persistor"],
+      "preferred_first_label": "Persistor",
+      "notes": "Contrasting ownership query should favor the exception, not the dominant company association"
+    },
+    {
+      "prompt": "What is Big Jerry connected to?",
+      "category": "graph_preference",
+      "search_mode": "hybrid",
+      "limit": 6,
+      "expected_labels": ["Big Jerry"],
+      "preferred_first_label": "Big Jerry",
+      "notes": "Graph-aware phrasing should keep the anchor entity first even when neighbors are expanded"
+    },
+    {
+      "prompt": "Which file should I read for Brian's durable profile, USER.md or the graph summary?",
+      "category": "file_vs_graph_preference",
+      "search_mode": "hybrid",
+      "limit": 6,
+      "expected_labels": ["Brian Colinger"],
+      "preferred_first_label": "Brian Colinger",
+      "notes": "When query wording names a durable profile file, retrieval should still center the canonical Brian node rather than a stray adjacent node"
+    }
+  ]
+}

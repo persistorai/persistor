@@ -68,7 +68,7 @@ func (s *RecallService) BuildRecallPack(ctx context.Context, tenantID string, re
 	pack.Contradictions = buildContradictions(coreNodes, req.ContradictionLimit)
 	pack.StrongestEvidence = buildEvidence(coreNodes, req.EvidenceLimit)
 
-	eventContexts, err := s.store.ListEventContexts(ctx, tenantID, req.NodeIDs, nil, req.RecentEpisodeLimit)
+	eventContexts, err := s.store.ListEventContexts(ctx, tenantID, req.NodeIDs, nil, req.RecentEpisodeLimit*3)
 	if err != nil {
 		return nil, err
 	}
@@ -177,26 +177,96 @@ func (s *RecallService) buildNeighbors(ctx context.Context, tenantID string, cor
 }
 
 func buildRecentEpisodes(contexts []models.RecallEventContext, limit int) []models.RecallEpisode {
-	out := make([]models.RecallEpisode, 0, minInt(limit, len(contexts)))
+	type assembledEpisode struct {
+		recall          models.RecallEpisode
+		latestOutcomeAt *time.Time
+		latestOutcomeID string
+		linkedEntityIDs map[string]struct{}
+		eventKinds      map[string]struct{}
+	}
+
+	assembled := make([]*assembledEpisode, 0, len(contexts))
+	byKey := make(map[string]*assembledEpisode, len(contexts))
 	for _, item := range contexts {
-		recall := models.RecallEpisode{
-			EventID:         item.Event.ID,
-			Kind:            item.Event.Kind,
-			Title:           item.Event.Title,
-			Summary:         item.Event.Summary,
-			OccurredAt:      recallOccurredAt(item.Event),
-			Confidence:      item.Event.Confidence,
-			LinkedEntityIDs: sortedCopy(item.LinkedEntityIDs),
-		}
+		key := item.Event.ID
 		if item.Episode != nil {
-			recall.EpisodeID = &item.Episode.ID
-			recall.EpisodeTitle = item.Episode.Title
-			recall.EpisodeStatus = item.Episode.Status
+			key = "episode:" + item.Episode.ID
 		}
-		out = append(out, recall)
-		if len(out) == limit {
-			break
+		current, ok := byKey[key]
+		if !ok {
+			current = &assembledEpisode{
+				recall: models.RecallEpisode{
+					EventID:         item.Event.ID,
+					Kind:            item.Event.Kind,
+					Title:           item.Event.Title,
+					Summary:         item.Event.Summary,
+					OccurredAt:      recallOccurredAt(item.Event),
+					Confidence:      item.Event.Confidence,
+					LinkedEntityIDs: []string{},
+					EventCount:      0,
+					EventKinds:      []string{},
+				},
+				linkedEntityIDs: make(map[string]struct{}),
+				eventKinds:      make(map[string]struct{}),
+			}
+			if item.Episode != nil {
+				current.recall.EpisodeID = &item.Episode.ID
+				current.recall.EpisodeTitle = item.Episode.Title
+				current.recall.EpisodeStatus = item.Episode.Status
+			}
+			byKey[key] = current
+			assembled = append(assembled, current)
 		}
+
+		current.recall.EventCount++
+		current.eventKinds[item.Event.Kind] = struct{}{}
+		for _, entityID := range item.LinkedEntityIDs {
+			current.linkedEntityIDs[entityID] = struct{}{}
+		}
+		if openDecisionStatus(item) != "" && isDecisionLike(item.Event.Kind) {
+			current.recall.OpenItemCount++
+		}
+		if item.Event.Kind == models.EventKindOutcome {
+			if compareTimePtr(recallOccurredAt(item.Event), current.latestOutcomeAt) > 0 ||
+				(compareTimePtr(recallOccurredAt(item.Event), current.latestOutcomeAt) == 0 && item.Event.ID < current.latestOutcomeID) {
+				current.latestOutcomeAt = recallOccurredAt(item.Event)
+				current.latestOutcomeID = item.Event.ID
+				current.recall.LatestOutcomeTitle = item.Event.Title
+				current.recall.LatestOutcomeStatus = eventStatus(item.Event.Properties)
+			}
+		}
+		if compareTimePtr(recallOccurredAt(item.Event), current.recall.OccurredAt) > 0 ||
+			(compareTimePtr(recallOccurredAt(item.Event), current.recall.OccurredAt) == 0 && item.Event.ID < current.recall.EventID) {
+			current.recall.EventID = item.Event.ID
+			current.recall.Kind = item.Event.Kind
+			current.recall.Title = item.Event.Title
+			current.recall.Summary = item.Event.Summary
+			current.recall.OccurredAt = recallOccurredAt(item.Event)
+			current.recall.Confidence = item.Event.Confidence
+		}
+	}
+
+	sort.SliceStable(assembled, func(i, j int) bool {
+		if compareTimePtr(assembled[i].recall.OccurredAt, assembled[j].recall.OccurredAt) != 0 {
+			return compareTimePtr(assembled[i].recall.OccurredAt, assembled[j].recall.OccurredAt) > 0
+		}
+		if assembled[i].recall.EpisodeTitle != assembled[j].recall.EpisodeTitle {
+			return assembled[i].recall.EpisodeTitle < assembled[j].recall.EpisodeTitle
+		}
+		if assembled[i].recall.Title != assembled[j].recall.Title {
+			return assembled[i].recall.Title < assembled[j].recall.Title
+		}
+		return assembled[i].recall.EventID < assembled[j].recall.EventID
+	})
+	if len(assembled) > limit {
+		assembled = assembled[:limit]
+	}
+
+	out := make([]models.RecallEpisode, 0, len(assembled))
+	for _, item := range assembled {
+		item.recall.LinkedEntityIDs = mapKeysSorted(item.linkedEntityIDs)
+		item.recall.EventKinds = mapKeysSorted(item.eventKinds)
+		out = append(out, item.recall)
 	}
 	return out
 }
@@ -237,6 +307,27 @@ func openDecisionStatus(item models.RecallEventContext) string {
 	}
 	if item.Episode != nil && item.Episode.Status == models.EpisodeStatusOpen {
 		return models.EpisodeStatusOpen
+	}
+	return ""
+}
+
+func isDecisionLike(kind string) bool {
+	switch kind {
+	case models.EventKindDecision, models.EventKindTask, models.EventKindPromise:
+		return true
+	default:
+		return false
+	}
+}
+
+func eventStatus(props map[string]any) string {
+	for _, raw := range []any{props["status"], props["state"], props["decision_status"], props["outcome_status"]} {
+		if status, ok := raw.(string); ok {
+			status = strings.ToLower(strings.TrimSpace(status))
+			if status != "" {
+				return status
+			}
+		}
 	}
 	return ""
 }
@@ -437,6 +528,15 @@ func compareTimePtr(a, b *time.Time) int {
 
 func sortedCopy(values []string) []string {
 	out := append([]string(nil), values...)
+	sort.Strings(out)
+	return out
+}
+
+func mapKeysSorted(values map[string]struct{}) []string {
+	out := make([]string, 0, len(values))
+	for value := range values {
+		out = append(out, value)
+	}
 	sort.Strings(out)
 	return out
 }

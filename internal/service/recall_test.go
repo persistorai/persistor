@@ -44,15 +44,22 @@ func TestRecallService_BuildRecallPack(t *testing.T) {
 				return &models.NeighborResult{}, nil
 			}
 		},
-		listEventContexts: func(_ context.Context, _ string, _ []string, kinds []string, _ int) ([]models.RecallEventContext, error) {
+		listEventContexts: func(_ context.Context, _ string, _ []string, kinds []string, limit int) ([]models.RecallEventContext, error) {
 			if len(kinds) == 0 {
+				if limit != models.DefaultRecallRecentEpisodeLimit*3 {
+					t.Fatalf("recent episode limit = %d, want %d", limit, models.DefaultRecallRecentEpisodeLimit*3)
+				}
 				episodeID := "ep-1"
 				return []models.RecallEventContext{{
 					Event:           models.EventRecord{ID: "ev-2", Kind: models.EventKindMessage, Title: "Status update", Summary: "Shared progress update", OccurredAt: timePtr(now.Add(-1 * time.Hour)), Confidence: 0.8, CreatedAt: now.Add(-1 * time.Hour)},
 					Episode:         &models.Episode{ID: episodeID, Title: "Sprint sync", Status: models.EpisodeStatusOpen},
-					LinkedEntityIDs: []string{"topic-a", "topic-b"},
+					LinkedEntityIDs: []string{"topic-b", "topic-a"},
 				}, {
-					Event:           models.EventRecord{ID: "ev-1", Kind: models.EventKindDecision, Title: "Choose recall slice", Summary: "Keep scope tight", OccurredAt: timePtr(now.Add(-2 * time.Hour)), Confidence: 0.9, CreatedAt: now.Add(-2 * time.Hour)},
+					Event:           models.EventRecord{ID: "ev-outcome", Kind: models.EventKindOutcome, Title: "Shipped slice", Summary: "Recall pack shipped", OccurredAt: timePtr(now.Add(-45 * time.Minute)), Confidence: 0.7, CreatedAt: now.Add(-45 * time.Minute), Properties: map[string]any{"outcome_status": "done"}},
+					Episode:         &models.Episode{ID: episodeID, Title: "Sprint sync", Status: models.EpisodeStatusOpen},
+					LinkedEntityIDs: []string{"topic-a"},
+				}, {
+					Event:           models.EventRecord{ID: "ev-1", Kind: models.EventKindDecision, Title: "Choose recall slice", Summary: "Keep scope tight", OccurredAt: timePtr(now.Add(-2 * time.Hour)), Confidence: 0.9, CreatedAt: now.Add(-2 * time.Hour), Properties: map[string]any{"status": "pending"}},
 					Episode:         &models.Episode{ID: "ep-2", Title: "Phase 3 planning", Status: models.EpisodeStatusOpen},
 					LinkedEntityIDs: []string{"topic-b"},
 				}}, nil
@@ -85,8 +92,14 @@ func TestRecallService_BuildRecallPack(t *testing.T) {
 	if len(pack.NotableNeighbors) < 2 || pack.NotableNeighbors[1].Node.ID != "node-2" {
 		t.Fatalf("second notable neighbor = %#v", pack.NotableNeighbors)
 	}
-	if len(pack.RecentEpisodes) != 2 || pack.RecentEpisodes[0].EventID != "ev-2" {
+	if len(pack.RecentEpisodes) != 2 || pack.RecentEpisodes[0].EventID != "ev-outcome" {
 		t.Fatalf("recent episodes = %#v", pack.RecentEpisodes)
+	}
+	if got := pack.RecentEpisodes[0]; got.EventCount != 2 || got.OpenItemCount != 0 || got.LatestOutcomeTitle != "Shipped slice" || len(got.LinkedEntityIDs) != 2 || got.LinkedEntityIDs[0] != "topic-a" || len(got.EventKinds) != 2 {
+		t.Fatalf("assembled recent episode = %#v", got)
+	}
+	if got := pack.RecentEpisodes[1]; got.OpenItemCount != 1 || got.EventCount != 1 {
+		t.Fatalf("second recent episode = %#v", got)
 	}
 	if len(pack.OpenDecisions) != 1 || pack.OpenDecisions[0].EventID != "ev-3" {
 		t.Fatalf("open decisions = %#v", pack.OpenDecisions)

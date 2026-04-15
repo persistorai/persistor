@@ -64,14 +64,20 @@ func newEvalRunCmd() *cobra.Command {
 }
 
 func printEvalTable(report *eval.Report) {
-	headers := []string{"PROMPT", "MODE", "PROFILE", "PASS", "FOUND", "EXPECTED", "RETURNED", "LATENCY_MS"}
+	headers := []string{"PROMPT", "CATEGORY", "MODE", "PROFILE", "PASS", "TOP1", "FOUND", "EXPECTED", "RETURNED", "LATENCY_MS"}
 	rows := make([][]string, 0, len(report.Results))
 	for _, result := range report.Results {
+		top1 := ""
+		if result.PreferredFirstExpectation != "" {
+			top1 = fmt.Sprintf("%t", result.PreferredFirstMatched)
+		}
 		rows = append(rows, []string{
 			result.Prompt,
+			result.Category,
 			result.SearchMode,
 			result.InternalRerankProfile,
 			fmt.Sprintf("%t", result.Passed),
+			top1,
 			fmt.Sprintf("%d", result.FoundExpectedCount),
 			fmt.Sprintf("%d", result.ExpectedCount),
 			fmt.Sprintf("%d", result.ReturnedCount),

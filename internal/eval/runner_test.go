@@ -107,6 +107,63 @@ func TestRunnerRunMatchesExpectedLabels(t *testing.T) {
 	}
 }
 
+func TestRunnerRunTracksCategoryBreakdownAndTopHitPreference(t *testing.T) {
+	t.Parallel()
+
+	runner := NewRunner(fakeSearchClient{
+		hybrid: func(_ context.Context, query string, _ *client.SearchOptions) ([]client.Node, error) {
+			switch query {
+			case "What happened on Christmas Eve 2025?":
+				return []client.Node{{ID: "christmas-eve-breakthrough", Label: "Christmas Eve Breakthrough", Type: "event"}}, nil
+			case "Which project belongs to Brian personally instead of Dirt Road Systems?":
+				return []client.Node{
+					{ID: "dirt-road-systems", Label: "Dirt Road Systems", Type: "company"},
+					{ID: "persistor", Label: "Persistor", Type: "project"},
+				}, nil
+			default:
+				return nil, nil
+			}
+		},
+	})
+
+	report, err := runner.Run(context.Background(), &Fixture{
+		Name: "memory-fixture",
+		Questions: []Question{
+			{
+				Prompt:              "What happened on Christmas Eve 2025?",
+				Category:            "temporal_recall",
+				ExpectedLabels:      []string{"Christmas Eve Breakthrough"},
+				PreferredFirstLabel: "Christmas Eve Breakthrough",
+			},
+			{
+				Prompt:              "Which project belongs to Brian personally instead of Dirt Road Systems?",
+				Category:            "file_vs_graph_preference",
+				ExpectedLabels:      []string{"Persistor"},
+				PreferredFirstLabel: "Persistor",
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Run returned error: %v", err)
+	}
+
+	if report.Passed != 1 || report.Failed != 1 {
+		t.Fatalf("expected 1 pass and 1 fail, got %#v", report)
+	}
+	if len(report.Categories) != 2 {
+		t.Fatalf("expected 2 category summaries, got %#v", report.Categories)
+	}
+	if !report.Results[0].PreferredFirstMatched {
+		t.Fatalf("expected first result top-hit preference to pass, got %#v", report.Results[0])
+	}
+	if report.Results[1].PreferredFirstMatched {
+		t.Fatalf("expected second result top-hit preference to fail, got %#v", report.Results[1])
+	}
+	if report.Results[1].Passed {
+		t.Fatalf("expected second result to fail overall, got %#v", report.Results[1])
+	}
+}
+
 func TestRunnerRunCapturesSearchErrors(t *testing.T) {
 	t.Parallel()
 
@@ -194,10 +251,47 @@ func TestRunnerComparePrototypeProfiles(t *testing.T) {
 	if len(comparison.Profiles) != 2 {
 		t.Fatalf("expected 2 profile reports, got %d", len(comparison.Profiles))
 	}
+	if len(comparison.Summary) != 2 {
+		t.Fatalf("expected 2 profile summaries, got %d", len(comparison.Summary))
+	}
 	if got := calls[0]; got != "default" {
 		t.Fatalf("expected baseline to use default profile, got %q", got)
 	}
 	if calls[1] != "term_focus" || calls[2] != "salience_focus" {
 		t.Fatalf("unexpected profile call order: %v", calls)
+	}
+}
+
+func TestRunnerComparePrototypeProfilesSummarizesDeltas(t *testing.T) {
+	t.Parallel()
+
+	runner := NewRunner(fakeSearchClient{
+		hybrid: func(_ context.Context, _ string, opts *client.SearchOptions) ([]client.Node, error) {
+			if opts.InternalRerankProfile == "term_focus" {
+				return []client.Node{{ID: "persistor", Label: "Persistor", Type: "project"}}, nil
+			}
+			return []client.Node{{ID: "dirt-road-systems", Label: "Dirt Road Systems", Type: "company"}}, nil
+		},
+	})
+
+	comparison, err := runner.ComparePrototypeProfiles(context.Background(), &Fixture{
+		Name: "memory-fixture",
+		Questions: []Question{{
+			Prompt:              "Which project belongs to Brian personally instead of Dirt Road Systems?",
+			SearchMode:          "hybrid_rerank",
+			ExpectedLabels:      []string{"Persistor"},
+			PreferredFirstLabel: "Persistor",
+		}},
+	}, []string{"term_focus"})
+	if err != nil {
+		t.Fatalf("ComparePrototypeProfiles returned error: %v", err)
+	}
+
+	summary := comparison.Summary["term_focus"]
+	if summary.PassedDelta != 1 || summary.FailedDelta != -1 {
+		t.Fatalf("expected delta summary to show improvement, got %#v", summary)
+	}
+	if summary.RecallAtKDelta <= 0 || summary.PrecisionAtKDelta <= 0 {
+		t.Fatalf("expected positive metric deltas, got %#v", summary)
 	}
 }

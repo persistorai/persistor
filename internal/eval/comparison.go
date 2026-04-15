@@ -7,8 +7,17 @@ import (
 
 // ComparisonReport captures baseline and profile-specific evaluation reports.
 type ComparisonReport struct {
-	Baseline Report            `json:"baseline"`
-	Profiles map[string]Report `json:"profiles,omitempty"`
+	Baseline Report                       `json:"baseline"`
+	Profiles map[string]Report            `json:"profiles,omitempty"`
+	Summary  map[string]ComparisonSummary `json:"summary,omitempty"`
+}
+
+// ComparisonSummary captures bounded metric deltas versus the baseline report.
+type ComparisonSummary struct {
+	PassedDelta       int     `json:"passed_delta"`
+	FailedDelta       int     `json:"failed_delta"`
+	RecallAtKDelta    float64 `json:"recall_at_k_delta"`
+	PrecisionAtKDelta float64 `json:"precision_at_k_delta"`
 }
 
 // ComparePrototypeProfiles runs the fixture once with the default rerank profile,
@@ -25,6 +34,7 @@ func (r *Runner) ComparePrototypeProfiles(ctx context.Context, fixture *Fixture,
 	report := &ComparisonReport{
 		Baseline: *baseline,
 		Profiles: make(map[string]Report),
+		Summary:  make(map[string]ComparisonSummary),
 	}
 	for _, profile := range profiles {
 		profile = strings.TrimSpace(strings.ToLower(profile))
@@ -38,6 +48,12 @@ func (r *Runner) ComparePrototypeProfiles(ctx context.Context, fixture *Fixture,
 			return nil, err
 		}
 		report.Profiles[profile] = *candidateReport
+		report.Summary[profile] = ComparisonSummary{
+			PassedDelta:       candidateReport.Passed - baseline.Passed,
+			FailedDelta:       candidateReport.Failed - baseline.Failed,
+			RecallAtKDelta:    candidateReport.RecallAtK - baseline.RecallAtK,
+			PrecisionAtKDelta: candidateReport.PrecisionAtK - baseline.PrecisionAtK,
+		}
 	}
 	return report, nil
 }

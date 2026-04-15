@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"sort"
 
 	"github.com/persistorai/persistor/internal/models"
 )
@@ -172,6 +173,9 @@ func scanRecallEventContextRow(scan func(dest ...any) error) (*models.RecallEven
 		}
 		episodePtr = &episode
 	}
+
+	sort.Strings(linkedEntityIDs)
+	sort.Strings(linkedRoles)
 
 	return &models.RecallEventContext{
 		Event:           record,

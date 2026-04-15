@@ -3,6 +3,7 @@ package ingest
 import (
 	"context"
 	"fmt"
+	"time"
 )
 
 // extractAll runs the extractor on each chunk, collecting all results.
@@ -11,16 +12,39 @@ func (ing *Ingester) extractAll(
 	chunks []Chunk,
 	report *IngestReport,
 	knownEntities []string,
+	opts IngestOpts,
 ) ([]ExtractedEntity, []ExtractedRelationship, []ExtractedFact) {
 	var allEntities []ExtractedEntity
 	var allRels []ExtractedRelationship
 	var allFacts []ExtractedFact
 
 	for _, chunk := range chunks {
+		eventStart := time.Now()
+		emitProgress(opts.Progress, ProgressEvent{
+			Source:      opts.Source,
+			Stage:       "extracting",
+			ChunkIndex:  chunk.Index + 1,
+			TotalChunks: len(chunks),
+			Elapsed:     time.Since(report.StartedAt),
+		})
+
 		entities, rels, facts := ing.extractChunk(ctx, chunk, report, knownEntities)
 		allEntities = append(allEntities, entities...)
 		allRels = append(allRels, rels...)
 		allFacts = append(allFacts, facts...)
+
+		emitProgress(opts.Progress, ProgressEvent{
+			Source:        opts.Source,
+			Stage:         "extracted",
+			ChunkIndex:    chunk.Index + 1,
+			TotalChunks:   len(chunks),
+			Entities:      len(allEntities),
+			Relationships: len(allRels),
+			Facts:         len(allFacts),
+			Errors:        len(report.Errors),
+			Elapsed:       time.Since(report.StartedAt),
+			StageElapsed:  time.Since(eventStart),
+		})
 	}
 
 	return allEntities, allRels, allFacts

@@ -16,10 +16,13 @@ type Fixture struct {
 // Question defines one benchmark question and its expected hits.
 type Question struct {
 	Prompt                string   `json:"prompt"`
+	Category              string   `json:"category,omitempty"`
 	SearchMode            string   `json:"search_mode,omitempty"`
 	Limit                 int      `json:"limit,omitempty"`
 	ExpectedNodeIDs       []string `json:"expected_node_ids,omitempty"`
 	ExpectedLabels        []string `json:"expected_labels,omitempty"`
+	PreferredFirstNodeID  string   `json:"preferred_first_node_id,omitempty"`
+	PreferredFirstLabel   string   `json:"preferred_first_label,omitempty"`
 	Notes                 string   `json:"notes,omitempty"`
 	InternalRerankProfile string   `json:"internal_rerank_profile,omitempty"`
 }
@@ -73,8 +76,19 @@ func LoadFixture(path string) (*Fixture, error) {
 		if q.Prompt == "" {
 			return nil, fmt.Errorf("question %d: prompt is required", i)
 		}
-		if len(q.ExpectedNodeIDs) == 0 && len(q.ExpectedLabels) == 0 {
+		expected := buildExpectedSet(q)
+		if len(expected) == 0 {
 			return nil, fmt.Errorf("question %d: at least one expected node id or label is required", i)
+		}
+		if q.PreferredFirstNodeID != "" {
+			if _, ok := expected[normalizeExpected("id", q.PreferredFirstNodeID)]; !ok {
+				return nil, fmt.Errorf("question %d: preferred first node id must also be listed in expected_node_ids", i)
+			}
+		}
+		if q.PreferredFirstLabel != "" {
+			if _, ok := expected[normalizeExpected("label", q.PreferredFirstLabel)]; !ok {
+				return nil, fmt.Errorf("question %d: preferred first label must also be listed in expected_labels", i)
+			}
 		}
 	}
 

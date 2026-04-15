@@ -58,6 +58,7 @@ func (s *SearchService) FullTextSearch(
 	if err != nil {
 		return nil, err
 	}
+	results = shapeBeliefAwareNodes(results, limit)
 	results = mergeExpandedNodes(results, s.rescueByLabel(ctx, tenantID, query), limit)
 	return mergeExpandedNodes(results, s.expandFromGraph(ctx, tenantID, results, limit), limit), nil
 }
@@ -138,6 +139,8 @@ func (s *SearchService) HybridSearch(
 		if len(results) > 0 {
 			if shouldPrototypeRerank(ctx, limit) {
 				results = prototypeRerankNodesWithProfile(query, results, limit, InternalRerankProfile(ctx))
+			} else {
+				results = shapeBeliefAwareNodes(results, limit)
 			}
 			results = mergeExpandedNodes(results, s.rescueByLabel(ctx, tenantID, query), limit)
 			return mergeExpandedNodes(results, s.expandFromGraph(ctx, tenantID, results, limit), limit), nil

@@ -3,6 +3,7 @@ package ingest
 import (
 	"context"
 	"fmt"
+	"time"
 )
 
 // writeAll writes entities, relationships, and facts to the graph.
@@ -13,23 +14,29 @@ func (ing *Ingester) writeAll(
 	rels []ExtractedRelationship,
 	facts []ExtractedFact,
 ) (*IngestReport, error) {
+	writeStarted := time.Now()
 	nodeMap, err := ing.writeEntities(ctx, report, entities)
 	if err != nil {
+		report.WriteDuration = time.Since(writeStarted)
 		return report, err
 	}
 
 	if err := ing.writeRelationships(ctx, report, rels, nodeMap); err != nil {
+		report.WriteDuration = time.Since(writeStarted)
 		return report, err
 	}
 
 	if err := ing.writeFacts(ctx, facts, nodeMap, report); err != nil {
+		report.WriteDuration = time.Since(writeStarted)
 		return report, err
 	}
 
 	if err := ing.writeEpisodic(ctx, entities, rels, nodeMap, report); err != nil {
+		report.WriteDuration = time.Since(writeStarted)
 		return report, err
 	}
 
+	report.WriteDuration = time.Since(writeStarted)
 	return report, nil
 }
 
