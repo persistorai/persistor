@@ -69,7 +69,7 @@ func TestLoad_Defaults(t *testing.T) {
 		t.Errorf("unexpected OllamaURL default: %s", cfg.OllamaURL)
 	}
 
-	if cfg.OllamaModel != "qwen3.5:9b" {
+	if cfg.OllamaModel != "gemma4:e4b" {
 		t.Errorf("unexpected OllamaModel default: %s", cfg.OllamaModel)
 	}
 

@@ -20,11 +20,11 @@ type OllamaClient struct {
 
 // NewOllamaClient creates a client with defaults from env vars.
 // OLLAMA_URL defaults to "http://localhost:11434".
-// OLLAMA_MODEL defaults to "qwen3.5:9b".
+// OLLAMA_MODEL defaults to "gemma4:e4b".
 func NewOllamaClient() *OllamaClient {
 	return NewOllamaClientWithURL(
 		envOrDefault("OLLAMA_URL", "http://localhost:11434"),
-		envOrDefault("OLLAMA_MODEL", "qwen3.5:9b"),
+		envOrDefault("OLLAMA_MODEL", "gemma4:e4b"),
 	)
 }
 

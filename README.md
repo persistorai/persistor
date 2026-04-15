@@ -132,7 +132,7 @@ curl http://localhost:3030/api/v1/ready
 | `LISTEN_HOST`         | `127.0.0.1`              | Listen address (must be loopback)               |
 | `CORS_ORIGINS`        | `http://localhost:3002`  | Comma-separated allowed origins                 |
 | `OLLAMA_URL`          | `http://localhost:11434` | Ollama API endpoint (must be localhost)         |
-| `OLLAMA_MODEL`        | `qwen3.5:9b`             | Default Ollama chat/extraction model            |
+| `OLLAMA_MODEL`        | `gemma4:e4b`             | Default Ollama chat/extraction model            |
 | `EMBEDDING_MODEL`     | `qwen3-embedding:0.6b`   | Embedding model name                            |
 | `LOG_LEVEL`           | `info`                   | Log level                                       |
 | `ENCRYPTION_PROVIDER` | `static`                 | `static` (env key) or `vault` (HashiCorp Vault) |
