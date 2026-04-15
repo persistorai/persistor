@@ -15,6 +15,7 @@ func newIngestCmd() *cobra.Command {
 		reviewUnknown bool
 		resolveID     string
 		resolveAs     string
+		chunkTokens   int
 	)
 
 	cmd := &cobra.Command{
@@ -25,13 +26,14 @@ func newIngestCmd() *cobra.Command {
 By default, reads from stdin. Use --scan to process a directory of .md files.
 Requires a running Ollama instance for LLM extraction.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runIngest(cmd, dryRun, source, scanDir, reviewUnknown, resolveID, resolveAs)
+			return runIngest(cmd, dryRun, source, scanDir, reviewUnknown, resolveID, resolveAs, chunkTokens)
 		},
 	}
 
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Show what would be ingested without writing")
 	cmd.Flags().StringVar(&source, "source", "", "Source tag (default: stdin or filename)")
 	cmd.Flags().StringVar(&scanDir, "scan", "", "Directory to scan for .md files")
+	cmd.Flags().IntVar(&chunkTokens, "chunk-tokens", 600, "Approximate max tokens per ingest chunk")
 	cmd.Flags().BoolVar(&reviewUnknown, "review-unknown", false, "List unresolved unknown relation types")
 	cmd.Flags().StringVar(&resolveID, "resolve", "", "Resolve an unknown relation by ID")
 	cmd.Flags().StringVar(&resolveAs, "as", "", "Canonical type to resolve as (use with --resolve)")
@@ -45,6 +47,7 @@ func runIngest(
 	source, scanDir string,
 	reviewUnknown bool,
 	resolveID, resolveAs string,
+	chunkTokens int,
 ) error {
 	if reviewUnknown {
 		return handleReviewUnknown()
@@ -54,7 +57,7 @@ func runIngest(
 		return handleResolve(resolveID, resolveAs)
 	}
 
-	return runIngestion(cmd, dryRun, source, scanDir)
+	return runIngestion(cmd, dryRun, source, scanDir, chunkTokens)
 }
 
 func handleReviewUnknown() error {

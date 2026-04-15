@@ -10,9 +10,10 @@ import (
 
 // IngestOpts configures the ingest pipeline.
 type IngestOpts struct {
-	Source  string
-	DryRun  bool
-	ScanDir string
+	Source      string
+	DryRun      bool
+	ScanDir     string
+	ChunkTokens int
 }
 
 // IngestReport summarizes the results of ingestion.
@@ -57,12 +58,15 @@ func (ing *Ingester) Ingest(
 		return nil, fmt.Errorf("reading input: %w", err)
 	}
 
-	chunks := ChunkMarkdown(string(text), ChunkOpts{})
+	chunkOpts := ChunkOpts{MaxTokens: opts.ChunkTokens}
+	chunks := ChunkMarkdown(string(text), chunkOpts)
 	report := &IngestReport{Chunks: len(chunks)}
 
 	// Fetch known entities to guide consistent naming
 	var knownEntities []string
-	if ing.entityFetch != nil {
+	if envOrDefault("PERSISTOR_INGEST_DISABLE_KNOWN_ENTITIES", "") == "1" {
+		knownEntities = nil
+	} else if ing.entityFetch != nil {
 		names, err := ing.entityFetch.FetchTopEntityNames(ctx, 50)
 		if err != nil {
 			// Non-fatal — continue without known entities
@@ -73,6 +77,7 @@ func (ing *Ingester) Ingest(
 	}
 
 	allEntities, allRels, allFacts := ing.extractAll(ctx, chunks, report, knownEntities)
+	allEntities, allRels, allFacts = FinalizeExtraction(allEntities, allRels, allFacts, knownEntities, string(text))
 
 	if opts.DryRun {
 		return buildDryRunReport(report, allEntities, allRels), nil

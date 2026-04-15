@@ -33,13 +33,14 @@ func (ing *Ingester) extractChunk(
 	report *IngestReport,
 	knownEntities []string,
 ) ([]ExtractedEntity, []ExtractedRelationship, []ExtractedFact) {
-	result, err := ing.extractor.Extract(ctx, chunk.Text, knownEntities...)
+	result, err := ing.extractor.ExtractWithRetry(ctx, chunk.Text, knownEntities...)
 	if err != nil {
 		report.Errors = append(report.Errors,
 			fmt.Sprintf("chunk %d: %v", chunk.Index, err))
 		return nil, nil, nil
 	}
 
+	result = PostProcessExtraction(result, knownEntities)
 	return result.Entities, result.Relationships, result.Facts
 }
 

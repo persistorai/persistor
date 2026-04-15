@@ -1,6 +1,9 @@
 package ingest
 
-import "strings"
+import (
+	"strconv"
+	"strings"
+)
 
 const (
 	defaultMaxTokens = 2000
@@ -40,7 +43,15 @@ func ChunkMarkdown(text string, opts ChunkOpts) []Chunk {
 
 func applyDefaults(opts ChunkOpts) ChunkOpts {
 	if opts.MaxTokens == 0 {
-		opts.MaxTokens = defaultMaxTokens
+		if override := envOrDefault("PERSISTOR_INGEST_MAX_TOKENS", ""); override != "" {
+			if parsed, err := strconv.Atoi(override); err == nil && parsed > 0 {
+				opts.MaxTokens = parsed
+			} else {
+				opts.MaxTokens = defaultMaxTokens
+			}
+		} else {
+			opts.MaxTokens = defaultMaxTokens
+		}
 	}
 	if opts.Overlap == 0 {
 		opts.Overlap = defaultOverlap

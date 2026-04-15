@@ -206,6 +206,36 @@ func TestGetNodeByLabel_UsesAliasFallbacks(t *testing.T) {
 	}
 }
 
+func TestGetNodeByLabel_AmbiguousAliasReturnsNil(t *testing.T) {
+	base, tenantID := setupTestBase(t)
+	ns := store.NewNodeStore(base)
+	as := store.NewAliasStore(base)
+	ctx := context.Background()
+
+	first, err := ns.CreateNode(ctx, tenantID, models.CreateNodeRequest{Type: "company", Label: "International Business Machines"})
+	if err != nil {
+		t.Fatalf("CreateNode(first): %v", err)
+	}
+	second, err := ns.CreateNode(ctx, tenantID, models.CreateNodeRequest{Type: "company", Label: "IBM Consulting"})
+	if err != nil {
+		t.Fatalf("CreateNode(second): %v", err)
+	}
+	if _, err := as.CreateAlias(ctx, tenantID, models.CreateAliasRequest{NodeID: first.ID, Alias: "IBM", AliasType: "nickname"}); err != nil {
+		t.Fatalf("CreateAlias(first): %v", err)
+	}
+	if _, err := as.CreateAlias(ctx, tenantID, models.CreateAliasRequest{NodeID: second.ID, Alias: "IBM", AliasType: "nickname"}); err != nil {
+		t.Fatalf("CreateAlias(second): %v", err)
+	}
+
+	got, err := ns.GetNodeByLabel(ctx, tenantID, "IBM")
+	if err != nil {
+		t.Fatalf("GetNodeByLabel ambiguous alias: %v", err)
+	}
+	if got != nil {
+		t.Fatalf("GetNodeByLabel ambiguous alias = %#v, want nil", got)
+	}
+}
+
 func TestEncryptionRoundtrip(t *testing.T) {
 	base, tenantID := setupTestBase(t)
 	ns := store.NewNodeStore(base)

@@ -2,14 +2,67 @@ package ingest
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
 	"github.com/persistorai/persistor/client"
 )
 
+type resolverMockGraphClient struct {
+	idNodes      map[string]*client.Node
+	labelNodes   map[string]*client.Node
+	searchNodes  []client.Node
+	createdNodes []client.CreateNodeRequest
+	patchedProps map[string]map[string]any
+	nodeIDSeq    int
+}
+
+func newResolverMockGraphClient() *resolverMockGraphClient {
+	return &resolverMockGraphClient{
+		idNodes:      make(map[string]*client.Node),
+		labelNodes:   make(map[string]*client.Node),
+		patchedProps: make(map[string]map[string]any),
+	}
+}
+
+func (m *resolverMockGraphClient) GetNode(_ context.Context, id string) (*client.Node, error) {
+	return m.idNodes[id], nil
+}
+
+func (m *resolverMockGraphClient) GetNodeByLabel(_ context.Context, label string) (*client.Node, error) {
+	return m.labelNodes[label], nil
+}
+
+func (m *resolverMockGraphClient) SearchNodes(_ context.Context, _ string, _ int) ([]client.Node, error) {
+	return m.searchNodes, nil
+}
+
+func (m *resolverMockGraphClient) CreateNode(_ context.Context, req *client.CreateNodeRequest) (*client.Node, error) {
+	m.nodeIDSeq++
+	m.createdNodes = append(m.createdNodes, *req)
+	return &client.Node{ID: fmt.Sprintf("node-%d", m.nodeIDSeq), Label: req.Label, Type: req.Type}, nil
+}
+
+func (m *resolverMockGraphClient) UpdateNode(_ context.Context, id string, _ *client.UpdateNodeRequest) (*client.Node, error) {
+	return &client.Node{ID: id}, nil
+}
+
+func (m *resolverMockGraphClient) PatchNodeProperties(_ context.Context, id string, props map[string]any) (*client.Node, error) {
+	m.patchedProps[id] = props
+	return &client.Node{ID: id}, nil
+}
+
+func (m *resolverMockGraphClient) CreateEdge(_ context.Context, req *client.CreateEdgeRequest) (*client.Edge, error) {
+	return &client.Edge{Source: req.Source, Target: req.Target, Relation: req.Relation}, nil
+}
+
+func (m *resolverMockGraphClient) UpdateEdge(_ context.Context, source, target, relation string, _ *client.UpdateEdgeRequest) (*client.Edge, error) {
+	return &client.Edge{Source: source, Target: target, Relation: relation}, nil
+}
+
 func TestResolveEntity_ExactIDWins(t *testing.T) {
-	gc := newMockGraphClient()
+	gc := newResolverMockGraphClient()
 	gc.idNodes["node-123"] = &client.Node{ID: "node-123", Label: "Alice", Type: "person"}
 
 	w := NewWriter(gc, "test-source")
@@ -29,7 +82,7 @@ func TestResolveEntity_ExactIDWins(t *testing.T) {
 }
 
 func TestResolveEntity_AliasAwareExactLookup(t *testing.T) {
-	gc := newMockGraphClient()
+	gc := newResolverMockGraphClient()
 	gc.labelNodes["IBM"] = &client.Node{ID: "org-1", Label: "International Business Machines", Type: "company"}
 
 	w := NewWriter(gc, "test-source")
@@ -49,7 +102,7 @@ func TestResolveEntity_AliasAwareExactLookup(t *testing.T) {
 }
 
 func TestResolveEntity_TypeAwareMatchAutoUpdates(t *testing.T) {
-	gc := newMockGraphClient()
+	gc := newResolverMockGraphClient()
 	gc.searchNodes = []client.Node{{ID: "acme-1", Label: "Acme, Inc.", Type: "company", UpdatedAt: time.Now()}}
 
 	w := NewWriter(gc, "test-source")
@@ -69,7 +122,7 @@ func TestResolveEntity_TypeAwareMatchAutoUpdates(t *testing.T) {
 }
 
 func TestResolveEntity_AmbiguousCandidatesDoNotAutoMatch(t *testing.T) {
-	gc := newMockGraphClient()
+	gc := newResolverMockGraphClient()
 	now := time.Now()
 	gc.searchNodes = []client.Node{
 		{ID: "alpha-1", Label: "Alpha Labs", Type: "company", UpdatedAt: now},
@@ -104,7 +157,7 @@ func TestResolveEntity_AmbiguousCandidatesDoNotAutoMatch(t *testing.T) {
 }
 
 func TestResolveEntityInKG_AmbiguousMatchSkipsRelationshipResolution(t *testing.T) {
-	gc := newMockGraphClient()
+	gc := newResolverMockGraphClient()
 	now := time.Now()
 	gc.searchNodes = []client.Node{
 		{ID: "alpha-1", Label: "Alpha Labs", Type: "company", UpdatedAt: now},

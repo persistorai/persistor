@@ -102,7 +102,8 @@ func (s *NodeStore) ListNodes(
 }
 
 // GetNodeByLabel retrieves a node by exact label match first, then by exact or
-// normalized alias match. Returns nil, nil when no match is found.
+// normalized alias match. Ambiguous exact/alias matches return nil, nil so
+// callers do not silently merge onto the wrong node.
 func (s *NodeStore) GetNodeByLabel(ctx context.Context, tenantID, label string) (*models.Node, error) {
 	ctx, cancel := withTimeout(ctx)
 	defer cancel()
@@ -140,7 +141,7 @@ func (s *NodeStore) GetNodeByLabel(ctx context.Context, tenantID, label string) 
 		)
 		SELECT id, tenant_id, type, label, properties,
 			access_count, last_accessed, salience_score, superseded_by,
-			user_boosted, created_at, updated_at
+			user_boosted, created_at, updated_at, match_rank
 		FROM (
 			SELECT * FROM label_match
 			UNION ALL
@@ -149,20 +150,47 @@ func (s *NodeStore) GetNodeByLabel(ctx context.Context, tenantID, label string) 
 			SELECT * FROM alias_normalized_match
 		) matches
 		ORDER BY match_rank ASC, salience_score DESC, updated_at DESC
-		LIMIT 1`
+		LIMIT 2`
 
-	row := tx.QueryRow(ctx, query, trimmed, normalized)
-
-	n, err := scanNode(row.Scan)
+	rows, err := tx.Query(ctx, query, trimmed, normalized)
 	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, nil
-		}
+		return nil, fmt.Errorf("querying node by label: %w", err)
+	}
+	defer rows.Close()
 
-		return nil, fmt.Errorf("scanning node by label: %w", err)
+	type rankedNode struct {
+		node *models.Node
+		rank int
+	}
+	matches := make([]rankedNode, 0, 2)
+	for rows.Next() {
+		var rank int
+		n, err := scanNode(func(dest ...any) error {
+			withRank := append(dest, &rank)
+			return rows.Scan(withRank...)
+		})
+		if err != nil {
+			return nil, fmt.Errorf("scanning node by label: %w", err)
+		}
+		matches = append(matches, rankedNode{node: n, rank: rank})
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterating node by label rows: %w", err)
+	}
+	if len(matches) == 0 {
+		if err := tx.Commit(ctx); err != nil {
+			return nil, fmt.Errorf("committing get node by label: %w", err)
+		}
+		return nil, nil
+	}
+	if len(matches) > 1 && matches[0].rank == matches[1].rank {
+		if err := tx.Commit(ctx); err != nil {
+			return nil, fmt.Errorf("committing ambiguous get node by label: %w", err)
+		}
+		return nil, nil
 	}
 
-	if err := s.decryptNode(ctx, tenantID, n); err != nil {
+	if err := s.decryptNode(ctx, tenantID, matches[0].node); err != nil {
 		return nil, err
 	}
 
@@ -170,7 +198,7 @@ func (s *NodeStore) GetNodeByLabel(ctx context.Context, tenantID, label string) 
 		return nil, fmt.Errorf("committing get node by label: %w", err)
 	}
 
-	return n, nil
+	return matches[0].node, nil
 }
 
 // GetNode retrieves a single node by ID (pure read, no side effects).

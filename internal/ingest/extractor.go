@@ -78,7 +78,8 @@ var entityTypeAliases = map[string]string{
 	"api":          "technology",
 	"plugin":       "technology",
 	"extension":    "technology",
-	"agent":        "project",
+	"agent":        "service",
+	"assistant":    "service",
 	"product":      "project",
 	"application":  "project",
 	"app":          "project",
@@ -120,8 +121,12 @@ func (e *Extractor) parseResponse(raw string) (*ExtractionResult, error) {
 	}
 
 	result.Entities = filterValidEntities(result.Entities, e.log)
+	if envOrDefault("PERSISTOR_INGEST_DISABLE_POSTPROCESS", "") == "1" {
+		return &result, nil
+	}
+	processed := PostProcessExtraction(&result, nil)
 
-	return &result, nil
+	return processed, nil
 }
 
 func filterValidEntities(entities []ExtractedEntity, log *logrus.Logger) []ExtractedEntity {
@@ -148,6 +153,10 @@ func filterValidEntities(entities []ExtractedEntity, log *logrus.Logger) []Extra
 }
 
 func buildPrompt(chunk string, knownEntities []string) string {
+	if strings.EqualFold(strings.TrimSpace(envOrDefault("PERSISTOR_INGEST_PROMPT_VARIANT", "current")), "legacy") {
+		return strings.Replace(legacyExtractionPrompt, "{text}", chunk, 1)
+	}
+
 	prompt := extractionPrompt
 
 	// Inject known entities section if available
@@ -176,10 +185,12 @@ CRITICAL RULES FOR ENTITY NAMES:
   BAD: "PostgreSQL — relational database", "DeerPrint — AI deer identification system"
 - Use the FULL PROPER NAME of a person, not just first name. "Brian Colinger" not "Brian".
 - Use the CANONICAL name of a project/product. "DeerPrint" not "DeerPrint Platform" or "DeerPrint Production".
+- Preserve exact legal/company suffixes when written. "Rebuy, Inc." should stay "Rebuy, Inc.", not "Rebuy".
 - Do NOT create separate entities for aspects of the same thing:
   BAD: "DeerPrint API", "DeerPrint Frontend", "DeerPrint Database" (these are parts, not entities)
   GOOD: "DeerPrint" (one entity, with facts about its components)
 - Service names and systemd units are NOT entities. "persistor.service" is just how Persistor runs.
+- AI assistants/agents are type "service", not "project", unless the text clearly refers to a software product.
 - Only extract entities that are INDEPENDENTLY NOTABLE — something you would write a reference page about.
 
 Output ONLY valid JSON:
@@ -197,6 +208,8 @@ Output ONLY valid JSON:
 
 ENTITY NAME CONSISTENCY:
 If the text mentions the same entity by different names or variations, pick ONE canonical name and use it everywhere. For example, if text says "Brian" and "Brian Colinger", always use "Brian Colinger".
+When a person is referred to by first name only but the full name is inferable from the same document, always use the full name.
+Known entities are only for canonicalization. Never emit a known entity unless some part of that entity is explicitly mentioned in this chunk.
 
 ENTITY TYPES must be one of: person, project, company, technology, event, decision, concept, place, animal, service
 
@@ -232,12 +245,27 @@ Rules:
 
 WHAT TO EXTRACT:
 - Real people with names (not "the team" or "users")
-- Named projects, products, companies, organizations
-- Specific technologies, languages, frameworks (PostgreSQL, Go, PyTorch — not "the database")
+- Named projects, products, companies, organizations central to the document
+- Specific technologies, languages, frameworks when they are system-relevant
 - Named places (cities, states, properties — not "the office")
 - Significant events with names or dates
 - Concrete decisions with consequences
 - Key facts: dates, amounts, measurements, versions, statuses
+
+SUPPRESS BY DEFAULT:
+- Voice/persona names like "Roger" unless the document is specifically about that entity
+- Providers/vendors mentioned only as supporting detail (email providers, infrastructure vendors, etc.) unless central to the document
+- Abstract concepts like trust, honesty, faith, mission, principles unless the text clearly treats them as tracked standalone entities
+- Separate first-name and full-name variants of the same person
+
+RELATIONSHIP CONSERVATISM:
+- Only emit a relationship when the text states it directly and it would be useful as durable KG structure.
+- Prefer facts over relationships when the connection is descriptive, biographical, interpretive, or ambiguous.
+- Do NOT invent social/partnership relationships from tone, mission language, or identity statements.
+- In autobiographical/profile text, prioritize the main person, immediate family, current company, major past employers, primary project, primary location, and major durable conditions. Skip pets, entertainment, supporting tools, secondary technologies, and potential buyers unless they are clearly central.
+- If a person built a project or product, use created. Use product_of only for project or product -> company relationships.
+- For family direction, use child_of from person to parent and parent_of from parent to child.
+- Do NOT emit duplicate first-name/full-name entities for the same person.
 
 WHAT NOT TO EXTRACT:
 - Generic nouns: "code", "the system", "the project", "production", "the database"

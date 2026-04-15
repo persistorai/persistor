@@ -25,6 +25,11 @@ func RepairJSON(raw string) string {
 	}
 
 	repaired = closeBrackets(repaired)
+	if json.Valid([]byte(repaired)) {
+		return repaired
+	}
+
+	repaired = normalizeArrayObjectBoundaries(repaired)
 	return repaired
 }
 
@@ -102,6 +107,15 @@ func isTrailingComma(runes []rune, i int) bool {
 }
 
 // closeBrackets counts unclosed brackets and appends closing ones.
+func normalizeArrayObjectBoundaries(s string) string {
+	replacer := strings.NewReplacer(
+		"]{", "},{",
+		"}[{", ",[{",
+		"}{", "},{",
+	)
+	return replacer.Replace(s)
+}
+
 func closeBrackets(s string) string {
 	s = stripTrailingCommas(s)
 

@@ -237,10 +237,10 @@ func (s *SearchStore) HybridSearch(
 				)
 		),
 		fts AS (
-			SELECT id, tenant_id, MAX(rank) AS rank
+			SELECT fts_raw.id AS id, fts_raw.tenant_id AS tenant_id, MAX(fts_raw.rank) AS rank
 			FROM fts_raw
-			GROUP BY id, tenant_id
-			ORDER BY rank DESC
+			GROUP BY fts_raw.id, fts_raw.tenant_id
+			ORDER BY MAX(fts_raw.rank) DESC
 			LIMIT $4
 		),
 		vec AS (

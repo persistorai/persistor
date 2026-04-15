@@ -45,10 +45,11 @@ func NewOpenAIClientWithConfig(baseURL, model, apiKey string) *OpenAIClient {
 
 // openaiRequest is the request body for the chat completions endpoint.
 type openaiRequest struct {
-	Model       string        `json:"model"`
-	Messages    []chatMessage `json:"messages"`
-	Temperature float64       `json:"temperature"`
-	MaxTokens   int           `json:"max_tokens"`
+	Model               string        `json:"model"`
+	Messages            []chatMessage `json:"messages"`
+	Temperature         float64       `json:"temperature,omitempty"`
+	MaxTokens           int           `json:"max_tokens,omitempty"`
+	MaxCompletionTokens int           `json:"max_completion_tokens,omitempty"`
 }
 
 // openaiResponse is the response from the chat completions endpoint.
@@ -84,8 +85,13 @@ func (c *OpenAIClient) buildRequest(prompt string) ([]byte, error) {
 		Messages: []chatMessage{
 			{Role: "user", Content: prompt},
 		},
-		Temperature: 0.3,
-		MaxTokens:   4096,
+	}
+
+	if usesCompletionTokens(c.Model) {
+		req.MaxCompletionTokens = 4096
+	} else {
+		req.Temperature = 0.3
+		req.MaxTokens = 4096
 	}
 
 	return json.Marshal(req)
@@ -109,6 +115,10 @@ func (c *OpenAIClient) doRequest(ctx context.Context, body []byte) (string, erro
 	defer resp.Body.Close()
 
 	return parseOpenAIResponse(resp)
+}
+
+func usesCompletionTokens(model string) bool {
+	return len(model) >= 5 && model[:5] == "gpt-5"
 }
 
 func parseOpenAIResponse(resp *http.Response) (string, error) {

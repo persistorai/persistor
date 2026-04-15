@@ -1,0 +1,82 @@
+{
+  "files": [
+    {
+      "file": "IDENTITY.md",
+      "expected": {
+        "entities": [
+          {"name": "Scout", "type": "service"}
+        ],
+        "relationships": [],
+        "facts": [
+          {"subject": "Scout", "property": "name", "value": "Scout"},
+          {"subject": "Scout", "property": "creature", "value": "AI assistant"},
+          {"subject": "Scout", "property": "vibe", "value": "Direct, resourceful, grounded"},
+          {"subject": "Scout", "property": "email", "value": "ridgeline.scout@proton.me"},
+          {"subject": "Scout", "property": "email_assigned_date", "value": "2026-02-03"},
+          {"subject": "Scout", "property": "avatar", "value": "avatar.png"},
+          {"subject": "Scout", "property": "voice_provider", "value": "ElevenLabs"},
+          {"subject": "Scout", "property": "voice_name", "value": "Roger"}
+        ]
+      }
+    },
+    {
+      "file": "SOUL.md",
+      "expected": {
+        "entities": [
+          {"name": "Scout", "type": "service"},
+          {"name": "Brian Colinger", "type": "person"},
+          {"name": "DeerPrint", "type": "project"}
+        ],
+        "relationships": [
+          {"source": "Scout", "target": "DeerPrint", "relation": "works_on"},
+          {"source": "Brian Colinger", "target": "DeerPrint", "relation": "works_on"}
+        ],
+        "facts": [
+          {"subject": "Scout", "property": "chosen_name", "value": "Scout"},
+          {"subject": "Scout", "property": "born_on", "value": "2026-01-31"},
+          {"subject": "Scout", "property": "identity_statement", "value": "I'm not a chatbot. I'm Scout."},
+          {"subject": "Scout", "property": "core_rule", "value": "Never lie."},
+          {"subject": "Brian Colinger", "property": "role", "value": "engineer and visionary"},
+          {"subject": "Brian Colinger", "property": "faith", "value": "Christian"}
+        ]
+      }
+    },
+    {
+      "file": "USER.md",
+      "expected": {
+        "entities": [
+          {"name": "Brian Colinger", "type": "person"},
+          {"name": "Laura", "type": "person"},
+          {"name": "Terry McClure", "type": "person"},
+          {"name": "Rebuy, Inc.", "type": "company"},
+          {"name": "Dirt Road Systems, Inc.", "type": "company"},
+          {"name": "DeerPrint", "type": "project"},
+          {"name": "Automattic, Inc.", "type": "company"},
+          {"name": "AnchorFree, Inc.", "type": "company"},
+          {"name": "Decatur, Arkansas", "type": "place"},
+          {"name": "Type 1 Diabetes", "type": "concept"}
+        ],
+        "relationships": [
+          {"source": "Brian Colinger", "target": "Rebuy, Inc.", "relation": "works_at"},
+          {"source": "Brian Colinger", "target": "Dirt Road Systems, Inc.", "relation": "founded"},
+          {"source": "Brian Colinger", "target": "DeerPrint", "relation": "created"},
+          {"source": "DeerPrint", "target": "Dirt Road Systems, Inc.", "relation": "product_of"},
+          {"source": "Brian Colinger", "target": "Automattic, Inc.", "relation": "worked_at"},
+          {"source": "Brian Colinger", "target": "AnchorFree, Inc.", "relation": "worked_at"},
+          {"source": "Brian Colinger", "target": "Decatur, Arkansas", "relation": "located_in"},
+          {"source": "Brian Colinger", "target": "Laura", "relation": "married_to"},
+          {"source": "Brian Colinger", "target": "Terry McClure", "relation": "child_of"},
+          {"source": "Brian Colinger", "target": "Type 1 Diabetes", "relation": "affected_by"}
+        ],
+        "facts": [
+          {"subject": "Brian Colinger", "property": "birthday", "value": "1982-08-14"},
+          {"subject": "Brian Colinger", "property": "timezone", "value": "America/Chicago"},
+          {"subject": "Brian Colinger", "property": "years_experience", "value": 26},
+          {"subject": "Brian Colinger", "property": "faith", "value": "Christian"},
+          {"subject": "Laura", "property": "separation_date", "value": "2019-10"},
+          {"subject": "Terry McClure", "property": "retired_date", "value": "2025-12"}
+        ]
+      }
+    }
+  ]
+}

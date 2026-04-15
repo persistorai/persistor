@@ -14,7 +14,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func runIngestion(cmd *cobra.Command, dryRun bool, source, scanDir string) error {
+func runIngestion(cmd *cobra.Command, dryRun bool, source, scanDir string, chunkTokens int) error {
 	llmClient := ingest.NewLLMClient()
 	fmt.Fprintf(os.Stderr, "LLM provider: %s\n", ingest.LLMProviderName(llmClient))
 
@@ -26,10 +26,10 @@ func runIngestion(cmd *cobra.Command, dryRun bool, source, scanDir string) error
 	gc := ingest.NewPersistorClient(apiClient)
 
 	if scanDir != "" {
-		return scanAndIngest(cmd.Context(), ext, gc, scanDir, dryRun)
+		return scanAndIngest(cmd.Context(), ext, gc, scanDir, dryRun, chunkTokens)
 	}
 
-	return ingestStdin(cmd.Context(), ext, gc, source, dryRun)
+	return ingestStdin(cmd.Context(), ext, gc, source, dryRun, chunkTokens)
 }
 
 func checkLLMHealth(client ingest.LLMClient) error {
@@ -74,6 +74,7 @@ func ingestStdin(
 	gc ingest.GraphClient,
 	source string,
 	dryRun bool,
+	chunkTokens int,
 ) error {
 	if source == "" {
 		source = "stdin"
@@ -84,8 +85,9 @@ func ingestStdin(
 	ing := ingest.NewIngester(ext, w, fetcher)
 
 	report, err := ing.Ingest(ctx, os.Stdin, ingest.IngestOpts{
-		Source: source,
-		DryRun: dryRun,
+		Source:     source,
+		DryRun:     dryRun,
+		ChunkTokens: chunkTokens,
 	})
 	if err != nil {
 		return fmt.Errorf("ingestion failed: %w", err)
@@ -102,6 +104,7 @@ func scanAndIngest(
 	gc ingest.GraphClient,
 	dir string,
 	dryRun bool,
+	chunkTokens int,
 ) error {
 	entries, err := findMarkdownFiles(dir)
 	if err != nil {
@@ -114,7 +117,7 @@ func scanAndIngest(
 	}
 
 	for _, path := range entries {
-		if err := ingestFile(ctx, ext, gc, path, dryRun); err != nil {
+		if err := ingestFile(ctx, ext, gc, dir, path, dryRun, chunkTokens); err != nil {
 			fmt.Fprintf(os.Stderr, "Error processing %s: %v\n", path, err)
 		}
 	}
@@ -145,8 +148,10 @@ func ingestFile(
 	ctx context.Context,
 	ext *ingest.Extractor,
 	gc ingest.GraphClient,
+	dir string,
 	path string,
 	dryRun bool,
+	chunkTokens int,
 ) error {
 	f, err := os.Open(path)
 	if err != nil {
@@ -154,14 +159,19 @@ func ingestFile(
 	}
 	defer f.Close()
 
-	source := filepath.Base(path)
+	source, err := filepath.Rel(dir, path)
+	if err != nil {
+		return fmt.Errorf("determining relative source for %s: %w", path, err)
+	}
+	source = filepath.ToSlash(source)
 	w := ingest.NewWriter(gc, source)
 	fetcher := ingest.NewClientEntityFetcher(apiClient)
 	ing := ingest.NewIngester(ext, w, fetcher)
 
 	report, err := ing.Ingest(ctx, f, ingest.IngestOpts{
-		Source: source,
-		DryRun: dryRun,
+		Source:      source,
+		DryRun:      dryRun,
+		ChunkTokens: chunkTokens,
 	})
 	if err != nil {
 		return fmt.Errorf("ingesting %s: %w", path, err)
