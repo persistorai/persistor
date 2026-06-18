@@ -1,0 +1,25 @@
+# Markdownlint configuration for persistor.
+# https://github.com/DavidAnson/markdownlint
+
+default: true
+
+# Line length — relaxed for tables and long URLs.
+MD013:
+  line_length: 120
+  heading_line_length: 80
+  code_block_line_length: 120
+  tables: false
+
+# Allow duplicate headings in different sections.
+MD024:
+  siblings_only: true
+
+# Allow trailing punctuation in headings (e.g., "Why?").
+MD026:
+  punctuation: ".,;:"
+
+# Allow inline HTML (needed for badges, details/summary).
+MD033: false
+
+# Allow bare URLs (common in READMEs).
+MD034: false

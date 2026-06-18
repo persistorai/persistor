@@ -1,0 +1,32 @@
+{
+  "name": "synthetic-eval",
+  "questions": [
+    { "prompt": "safety protocol for navigating polar storms", "category": "fact", "search_mode": "text", "expected_node_ids": ["syn:aurora"], "notes": "tail fact — invisible to a core-only static surface" },
+    { "prompt": "who founded the Northwind logistics company", "category": "fact", "search_mode": "text", "expected_node_ids": ["syn:vega"] },
+    { "prompt": "solar propulsion system powering the cargo airships", "category": "fact", "search_mode": "text", "expected_node_ids": ["syn:helios"] },
+    { "prompt": "remote research station at the northern ice field", "category": "fact", "search_mode": "text", "expected_node_ids": ["syn:glacier"] },
+    { "prompt": "ballast and buoyancy control on the airships", "category": "fact", "search_mode": "text", "expected_node_ids": ["syn:ballast"] },
+    { "prompt": "the flagship airship of the fleet", "category": "fact", "search_mode": "text", "expected_node_ids": ["syn:raven"] },
+    { "prompt": "the home port city of the expedition", "category": "fact", "search_mode": "text", "expected_node_ids": ["syn:meridian"] },
+    { "prompt": "the overall mission and big picture of the expedition", "category": "fact", "search_mode": "text", "expected_node_ids": ["syn:memory"], "notes": "answerable from the core/always-loaded surface" },
+    { "prompt": "who are the crew of the expedition", "category": "fact", "search_mode": "text", "expected_node_ids": ["syn:identity"] },
+    { "prompt": "how do the airships adjust their altitude and stay aloft", "category": "fact", "search_mode": "text", "expected_node_ids": ["syn:ballast"], "notes": "paraphrase of buoyancy control" },
+
+    { "prompt": "when did the maiden voyage of the Raven depart", "category": "episodic", "search_mode": "text", "expected_node_ids": ["syn:first-flight"] },
+    { "prompt": "when was the fleet grounded by a storm for weeks", "category": "episodic", "search_mode": "text", "expected_node_ids": ["syn:storm-1991"] },
+    { "prompt": "where was the Meridian Accord signed", "category": "episodic", "search_mode": "text", "expected_node_ids": ["syn:summit"] },
+    { "prompt": "the great aurora storm that grounded the fleet", "category": "episodic", "search_mode": "text", "expected_node_ids": ["syn:storm-1991"] },
+
+    { "prompt": "the agreement that came out of the logistics summit", "category": "association", "search_mode": "text", "expected_node_ids": ["syn:summit"] },
+    { "prompt": "how are the cargo airships powered", "category": "association", "search_mode": "text", "expected_node_ids": ["syn:helios"] },
+    { "prompt": "where does the northern research happen", "category": "association", "search_mode": "text", "expected_node_ids": ["syn:glacier"] },
+    { "prompt": "what vessel leads the fleet on expeditions", "category": "association", "search_mode": "text", "expected_node_ids": ["syn:raven"] },
+
+    { "prompt": "what lifting gas do the airships currently use", "category": "contradiction", "search_mode": "text", "expected_node_ids": ["syn:fuel-2"], "notes": "current = helium; the superseded hydrogen note must not surface" },
+    { "prompt": "who commands the Raven now", "category": "contradiction", "search_mode": "text", "expected_node_ids": ["syn:captain-2"], "notes": "current = Orion; superseded Vega-command note must not surface" },
+    { "prompt": "the lifting gas safety conversion of the fleet", "category": "contradiction", "search_mode": "text", "expected_node_ids": ["syn:fuel-2"] },
+
+    { "prompt": "the Raven's cargo payload capacity in 1989", "category": "temporal", "search_mode": "text", "expected_node_ids": ["syn:payload-1989"], "notes": "time-bound — coexists with the 1996 figure" },
+    { "prompt": "the Raven's payload capacity after the 1996 upgrades", "category": "temporal", "search_mode": "text", "expected_node_ids": ["syn:payload-1996"] }
+  ]
+}

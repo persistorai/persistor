@@ -1,0 +1,35 @@
+# Binaries and build output
+/bin/
+bin/
+dist/
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+__debug_bin*
+debug
+
+# Test / coverage
+coverage/
+coverage.out
+coverage.html
+
+# Go workspace and vendoring
+go.work
+go.work.sum
+vendor/
+
+# Environment and secrets
+.env
+.env.local
+
+# Editor / tooling scratch
+tmp/
+.cache/
+
+# Local exports and scratch data — never commit
+data/exports/
+data/backups/

@@ -1,0 +1,82 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Build & Test
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_USER: persistor
+          POSTGRES_PASSWORD: persistor
+          POSTGRES_DB: persistor_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      CI_DATABASE_URL: postgres://persistor:persistor@localhost:5432/persistor_test?sslmode=disable
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+
+      - name: Build
+        run: go build ./...
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Fresh-install migrations
+        # Runs the full migration chain against the empty service database.
+        # Side effect: leaves a fully-migrated schema for the store
+        # integration tests below.
+        env:
+          TEST_MIGRATE_DATABASE_URL: ${{ env.CI_DATABASE_URL }}
+        run: go test ./internal/db/ -run TestRunMigrationsFreshDatabase -v -count=1
+
+      - name: Tests (unit + store integration)
+        env:
+          TEST_DATABASE_URL: ${{ env.CI_DATABASE_URL }}
+        run: go test -race -count=1 ./...
+
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+
+      - uses: golangci/golangci-lint-action@v6
+        with:
+          version: v1.64.8
+          # The prebuilt v1.64.8 binary was compiled with go1.24, older than
+          # this repo's Go — goinstall builds it with the setup-go toolchain,
+          # matching the local install.
+          install-mode: goinstall
+
+# Retrieval eval is wired into the test job above via TestProseFirstEval_BeatsStaticBaseline
+# (internal/index): it seeds a synthetic prose corpus and gates on text-mode FTS
+# recall@k per category — no embedding backend required. The real PII-bearing
+# fixtures live in the private scout repo and are run there, never in this product repo.
