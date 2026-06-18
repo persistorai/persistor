@@ -1,0 +1,5 @@
+vendor/
+node_modules/
+bin/
+coverage/
+CODE_REVIEW_*.md

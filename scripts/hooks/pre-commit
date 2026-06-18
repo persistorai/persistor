@@ -1,0 +1,66 @@
+#!/usr/bin/env bash
+# Pre-commit hook: lint Go + Markdown before allowing commit.
+# Bypass with: git commit --no-verify
+set -euo pipefail
+
+export PATH="/usr/local/go/bin:$HOME/go/bin:$PATH"
+
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+NC='\033[0m'
+FAILED=0
+
+echo "🔍 Running pre-commit checks..."
+
+# --- Go checks (only if .go files staged) ---
+GO_FILES=$(git diff --cached --name-only --diff-filter=ACM -- '*.go' || true)
+if [ -n "$GO_FILES" ]; then
+  echo "  ▸ gofmt..."
+  UNFMT=$(gofmt -l $GO_FILES 2>/dev/null || true)
+  if [ -n "$UNFMT" ]; then
+    echo -e "${RED}  ✗ gofmt: these files need formatting:${NC}"
+    echo "$UNFMT" | sed 's/^/    /'
+    FAILED=1
+  fi
+
+  echo "  ▸ go vet..."
+  if ! /usr/local/go/bin/go vet ./... 2>/dev/null; then
+    echo -e "${RED}  ✗ go vet failed${NC}"
+    FAILED=1
+  fi
+
+  echo "  ▸ golangci-lint..."
+  if command -v golangci-lint &>/dev/null; then
+    if ! golangci-lint run --new-from-rev=HEAD ./... 2>/dev/null; then
+      echo -e "${RED}  ✗ golangci-lint found issues${NC}"
+      FAILED=1
+    fi
+  else
+    if ! ~/go/bin/golangci-lint run --new-from-rev=HEAD ./... 2>/dev/null; then
+      echo -e "${RED}  ✗ golangci-lint found issues${NC}"
+      FAILED=1
+    fi
+  fi
+fi
+
+# --- Markdown checks (only if .md files staged) ---
+MD_FILES=$(git diff --cached --name-only --diff-filter=ACM -- '*.md' || true)
+if [ -n "$MD_FILES" ]; then
+  echo "  ▸ markdownlint..."
+  if command -v markdownlint &>/dev/null; then
+    if ! markdownlint $MD_FILES 2>/dev/null; then
+      echo -e "${RED}  ✗ markdownlint found issues${NC}"
+      FAILED=1
+    fi
+  else
+    echo "  ⚠ markdownlint not installed, skipping"
+  fi
+fi
+
+# --- Result ---
+if [ $FAILED -ne 0 ]; then
+  echo -e "\n${RED}Pre-commit checks failed. Fix issues or use --no-verify to bypass.${NC}"
+  exit 1
+fi
+
+echo -e "${GREEN}✓ All pre-commit checks passed.${NC}"

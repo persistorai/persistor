@@ -1,0 +1,30 @@
+# Auto-detect text files and normalize line endings.
+* text=auto
+
+# Go source files.
+*.go text diff=golang eol=lf
+go.mod text eol=lf
+go.sum text eol=lf
+
+# Shell scripts — always LF.
+*.sh text eol=lf
+
+# SQL migrations — always LF.
+*.sql text eol=lf
+
+# Config / docs.
+*.md text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+*.json text eol=lf
+*.toml text eol=lf
+
+# Makefile must use tabs (LF endings).
+Makefile text eol=lf
+
+# Binary files — never diff.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary

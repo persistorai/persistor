@@ -1,0 +1,33 @@
+{
+  "_comment": "Persistor wiring for Claude Code. Merge these blocks into ~/.claude/settings.json (do NOT overwrite the whole file). Replace the placeholder paths with where you installed the wrapper and hooks. The MCP server and hooks read DATABASE_URL, PERSISTOR_TENANT_ID, and PERSISTOR_NOTES_DIR from the environment (the wrapper and hooks source them from an env file). NOTE: Claude Code reads MCP servers from ~/.claude.json (via `claude mcp add`), not from settings.json — register the server with `claude mcp add persistor /path/to/persistor-mcp.sh`. The mcpServers block here is shown only for reference. See harness/claude-code/README.md.",
+  "mcpServers": {
+    "persistor": {
+      "command": "/path/to/persistor-mcp.sh"
+    }
+  },
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "startup|resume",
+        "hooks": [
+          { "type": "command", "command": "/path/to/hooks/session-start.sh", "timeout": 10 }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [
+          { "type": "command", "command": "/path/to/hooks/session-end.sh", "timeout": 10 }
+        ]
+      }
+    ],
+    "PreCompact": [
+      {
+        "matcher": "auto|manual",
+        "hooks": [
+          { "type": "command", "command": "/path/to/hooks/pre-compact-nudge.sh", "timeout": 10 }
+        ]
+      }
+    ]
+  }
+}
