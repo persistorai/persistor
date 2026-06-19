@@ -53,6 +53,7 @@ func (s *Store) SearchNotes(ctx context.Context, tenantID, query string, opts Se
 		     websearch_to_tsquery('english', $1) wq
 		WHERE c.tenant_id = current_setting('app.tenant_id')::uuid
 		  AND c.search_tsv @@ wq
+		  AND n.deleted = FALSE
 		  AND (n.superseded = FALSE OR $2)
 		  AND ($3 = '' OR n.tier = $3)
 		GROUP BY n.id, n.title, n.kind, n.tier, n.superseded

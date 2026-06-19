@@ -31,7 +31,7 @@ func (s *Store) CoreNotes(ctx context.Context, tenantID string) ([]NoteRecord, e
 			`SELECT id, kind, tier, title, body, source_path
 			   FROM notes
 			  WHERE tenant_id = current_setting('app.tenant_id')::uuid
-			    AND tier = 'core' AND superseded = FALSE
+			    AND tier = 'core' AND superseded = FALSE AND deleted = FALSE
 			  ORDER BY id`)
 		if err != nil {
 			return fmt.Errorf("querying core notes: %w", err)
@@ -61,7 +61,7 @@ func (s *Store) LoadNotes(ctx context.Context, tenantID string, ids []string) ([
 			`SELECT id, kind, tier, title, body, source_path
 			   FROM notes
 			  WHERE tenant_id = current_setting('app.tenant_id')::uuid
-			    AND id = ANY($1)`, ids)
+			    AND id = ANY($1) AND deleted = FALSE`, ids)
 		if err != nil {
 			return fmt.Errorf("querying notes: %w", err)
 		}
