@@ -33,3 +33,7 @@ tmp/
 # Local exports and scratch data — never commit
 data/exports/
 data/backups/
+
+CODE_REVIEW_*.md
+CODE_REVIEW_*.json
+AGENT_TASK*.md
