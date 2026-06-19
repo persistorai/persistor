@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"strings"
 	"text/tabwriter"
 
 	"github.com/sirupsen/logrus"
@@ -30,12 +31,11 @@ type searchOpts struct {
 func newSearchCmd() *cobra.Command {
 	o := searchOpts{}
 	cmd := &cobra.Command{
-		Use:              "search <query>",
-		Short:            "Search the index (full-text over note chunks)",
-		Args:             cobra.MinimumNArgs(1),
-		PersistentPreRun: func(cmd *cobra.Command, args []string) {}, // skip HTTP client
+		Use:   "search <query>",
+		Short: "Search the index (full-text over note chunks)",
+		Args:  cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			o.query = joinArgs(args)
+			o.query = strings.Join(args, " ")
 			return runSearch(cmd.Context(), &o)
 		},
 	}
@@ -100,16 +100,4 @@ func emitHits(hits []index.NoteHit) error {
 		fmt.Fprintf(w, "%.4f\t%s\t%s\t%s\t%s\n", h.Rank, h.Tier, h.Kind, id, h.Title)
 	}
 	return w.Flush()
-}
-
-// joinArgs reassembles a multi-word query passed as separate args.
-func joinArgs(args []string) string {
-	out := ""
-	for i, a := range args {
-		if i > 0 {
-			out += " "
-		}
-		out += a
-	}
-	return out
 }

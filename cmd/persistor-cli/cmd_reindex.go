@@ -29,10 +29,7 @@ type reindexOpts struct {
 // newReindexCmd builds `persistor reindex`: the file-sync indexer. It walks the
 // notes repo and Claude Code's auto-memory dir, archives Claude's (local-only)
 // notes into a durable git-tracked location, and re-indexes only files whose
-// content changed.
-//
-// This is a local DB command: it connects straight to Postgres, so it skips the
-// HTTP client setup that other subcommands use.
+// content changed. Like every subcommand it connects straight to Postgres.
 func newReindexCmd() *cobra.Command {
 	o := reindexOpts{}
 	cmd := &cobra.Command{
@@ -50,7 +47,6 @@ Configuration (flags override env):
   --notes-dir     notes repo root        (env PERSISTOR_NOTES_DIR)
   --claude-memory Claude auto-memory dir (env CLAUDE_MEMORY_DIR; optional)
   --archive-dir   durable archive target (default <notes-dir>/data/claude-memory)`,
-		PersistentPreRun: func(cmd *cobra.Command, args []string) {}, // skip HTTP client
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runReindex(cmd.Context(), &o)
 		},

@@ -33,9 +33,8 @@ type briefOpts struct {
 func newBriefCmd() *cobra.Command {
 	o := briefOpts{}
 	cmd := &cobra.Command{
-		Use:              "brief",
-		Short:            "Assemble the dynamic memory working-set (Core + retrieved Tail)",
-		PersistentPreRun: func(cmd *cobra.Command, args []string) {}, // skip HTTP client
+		Use:   "brief",
+		Short: "Assemble the dynamic memory working-set (Core + retrieved Tail)",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runBrief(cmd.Context(), &o)
 		},
