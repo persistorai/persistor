@@ -39,6 +39,10 @@ func RunMigrations(ctx context.Context, pool *dbpool.Pool, log *logrus.Logger, f
 	}
 	defer sqlDB.Close()
 
+	// Session-scoped (is_local=false) on purpose: migrations are DDL that runs
+	// across goose's own statements rather than one wrapped transaction, so the
+	// setting must outlive any single tx. DDL isn't subject to RLS, so the
+	// all-zeros placeholder tenant is only here to satisfy policy evaluation.
 	if _, err := sqlDB.ExecContext(ctx, "SELECT set_config('app.tenant_id', '00000000-0000-0000-0000-000000000000', false)"); err != nil {
 		return fmt.Errorf("initializing migration tenant setting: %w", err)
 	}
