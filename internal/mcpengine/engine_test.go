@@ -1,4 +1,4 @@
-package main
+package mcpengine_test
 
 import (
 	"context"
@@ -13,12 +13,13 @@ import (
 
 	"github.com/persistorai/persistor/internal/dbpool"
 	"github.com/persistorai/persistor/internal/index"
+	"github.com/persistorai/persistor/internal/mcpengine"
 )
 
 // newTestEngine connects to TEST_DATABASE_URL (skipping when unset), seeds a
 // synthetic corpus, and returns an Engine plus the notes dir. The schema is
 // assumed migrated (the loop gate runs the fresh-migration step first).
-func newTestEngine(t *testing.T) *Engine {
+func newTestEngine(t *testing.T) *mcpengine.Engine {
 	t.Helper()
 	dbURL := os.Getenv("TEST_DATABASE_URL")
 	if dbURL == "" {
@@ -62,7 +63,7 @@ func newTestEngine(t *testing.T) *Engine {
 	}
 
 	notesDir := filepath.Join(dir, "memory", "atomic")
-	return NewEngine(store, indexer, tenantID, roots, notesDir)
+	return mcpengine.NewEngine(store, indexer, tenantID, roots, notesDir)
 }
 
 func writeFile(t *testing.T, dir, rel, content string) {
@@ -82,7 +83,7 @@ func TestEngine_RoundTrip(t *testing.T) {
 	ctx := context.Background()
 
 	// search: finds the Aurora note.
-	sr, err := e.Search(ctx, SearchInput{Query: "polar storm protocol"})
+	sr, err := e.Search(ctx, mcpengine.SearchInput{Query: "polar storm protocol"})
 	if err != nil {
 		t.Fatalf("search: %v", err)
 	}
@@ -91,7 +92,7 @@ func TestEngine_RoundTrip(t *testing.T) {
 	}
 
 	// get: returns the full body.
-	gr, err := e.Get(ctx, GetInput{ID: "scout:memory-daily-aurora"})
+	gr, err := e.Get(ctx, mcpengine.GetInput{ID: "scout:memory-daily-aurora"})
 	if err != nil {
 		t.Fatalf("get: %v", err)
 	}
@@ -100,7 +101,7 @@ func TestEngine_RoundTrip(t *testing.T) {
 	}
 
 	// write: add a new note that supersedes the Aurora protocol.
-	wr, err := e.Write(ctx, &WriteInput{
+	wr, err := e.Write(ctx, &mcpengine.WriteInput{
 		Path: "aurora-v2.md", ID: "scout:aurora-v2", Supersedes: "scout:memory-daily-aurora",
 		Body: "# Aurora Protocol v2\n\nUpdated polar storm protocol.",
 	})
@@ -112,7 +113,7 @@ func TestEngine_RoundTrip(t *testing.T) {
 	}
 
 	// search again: stale note hidden, correction surfaces.
-	sr, err = e.Search(ctx, SearchInput{Query: "polar storm protocol"})
+	sr, err = e.Search(ctx, mcpengine.SearchInput{Query: "polar storm protocol"})
 	if err != nil {
 		t.Fatalf("search 2: %v", err)
 	}
@@ -124,7 +125,7 @@ func TestEngine_RoundTrip(t *testing.T) {
 	}
 
 	// brief: Core (the SOUL note) is always present.
-	br, err := e.Brief(ctx, BriefInput{Seed: "polar storm"})
+	br, err := e.Brief(ctx, mcpengine.BriefInput{Seed: "polar storm"})
 	if err != nil {
 		t.Fatalf("brief: %v", err)
 	}
@@ -134,13 +135,13 @@ func TestEngine_RoundTrip(t *testing.T) {
 }
 
 // TestMCPRoundTrip drives the server over an in-memory transport with a real MCP
-// client, proving the wire protocol + schema inference work end to end.
+// client, proving the wire protocol + schema inference work end to end through
+// the shared NewServer constructor.
 func TestMCPRoundTrip(t *testing.T) {
 	e := newTestEngine(t)
 	ctx := context.Background()
 
-	server := mcp.NewServer(&mcp.Implementation{Name: "persistor-test", Version: "test"}, nil)
-	registerTools(server, e)
+	server := mcpengine.NewServer(e, "test")
 
 	serverTr, clientTr := mcp.NewInMemoryTransports()
 	if _, err := server.Connect(ctx, serverTr, nil); err != nil {
@@ -164,7 +165,7 @@ func TestMCPRoundTrip(t *testing.T) {
 		t.Fatalf("tool returned error: %+v", res.Content)
 	}
 
-	var out SearchOutput
+	var out mcpengine.SearchOutput
 	reMarshal(t, res.StructuredContent, &out)
 	if !hasResult(out.Results, "scout:memory-daily-aurora") {
 		t.Errorf("MCP search missed aurora: %+v", out.Results)
@@ -180,20 +181,20 @@ func TestEngine_WriteRejectsSelfSupersede(t *testing.T) {
 
 	// The note at notes/widget.md resolves to id "scout:widget" (the test engine's
 	// notesDir is <dir>/memory/atomic under root "scout"; derive accordingly).
-	first, err := e.Write(ctx, &WriteInput{Path: "widget.md", Body: "# Widget\n\nOriginal."})
+	first, err := e.Write(ctx, &mcpengine.WriteInput{Path: "widget.md", Body: "# Widget\n\nOriginal."})
 	if err != nil {
 		t.Fatalf("first write: %v", err)
 	}
 	selfID := "scout:" + "memory-atomic-widget"
 
 	// Self-supersede (same path → same id) must be rejected, not a silent no-op.
-	_, err = e.Write(ctx, &WriteInput{Path: "widget.md", Supersedes: selfID, Body: "# Widget\n\nEdit."})
+	_, err = e.Write(ctx, &mcpengine.WriteInput{Path: "widget.md", Supersedes: selfID, Body: "# Widget\n\nEdit."})
 	if err == nil {
 		t.Errorf("self-supersede write should error, got nil (first wrote %q)", first.Written)
 	}
 
 	// Superseding a DIFFERENT note (new path) is allowed and forks history.
-	w, err := e.Write(ctx, &WriteInput{Path: "widget-v2.md", Supersedes: selfID, Body: "# Widget v2\n\nNew."})
+	w, err := e.Write(ctx, &mcpengine.WriteInput{Path: "widget-v2.md", Supersedes: selfID, Body: "# Widget v2\n\nNew."})
 	if err != nil {
 		t.Fatalf("legitimate supersede write: %v", err)
 	}
@@ -202,7 +203,7 @@ func TestEngine_WriteRejectsSelfSupersede(t *testing.T) {
 	}
 }
 
-func hasResult(rs []SearchHit, id string) bool {
+func hasResult(rs []mcpengine.SearchHit, id string) bool {
 	for i := range rs {
 		if rs[i].ID == id {
 			return true
