@@ -8,8 +8,8 @@ import (
 	"strings"
 )
 
-// MirrorMarkdown makes dest a durable mirror of every *.md file under src
-// : Claude Code's auto-memory lives in a local-only
+// MirrorMarkdown makes dest a durable mirror of every *.md file under src:
+// Claude Code's auto-memory lives in a local-only
 // directory that isn't backed up, so we copy it into a git-tracked location
 // before indexing. The mirror is exact — markdown files removed from src are
 // pruned from dest — so deletions propagate to the index. Non-markdown files in
