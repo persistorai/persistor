@@ -54,7 +54,6 @@ Plan shape:
      "supersedes": "notes:old-topic-id",
      "body": "# Topic\n\nLatest understanding ..."}
   ]}`,
-		PersistentPreRun: func(cmd *cobra.Command, args []string) {}, // skip HTTP client
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runConsolidate(cmd.Context(), &o)
 		},

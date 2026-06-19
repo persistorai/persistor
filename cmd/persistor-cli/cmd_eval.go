@@ -32,9 +32,8 @@ func newEvalCmd() *cobra.Command {
 	o := reindexOpts{}
 	var fixturePath string
 	cmd := &cobra.Command{
-		Use:              "eval --fixture <path>",
-		Short:            "Score the index against retrieval baselines",
-		PersistentPreRun: func(cmd *cobra.Command, args []string) {}, // skip HTTP client
+		Use:   "eval --fixture <path>",
+		Short: "Score the index against retrieval baselines",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runEval(cmd.Context(), &o, fixturePath)
 		},
