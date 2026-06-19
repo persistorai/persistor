@@ -72,6 +72,9 @@ func TestApplyPlan_RejectsBadPlans(t *testing.T) {
 		{"empty body", index.PlanNote{Path: "note.md", Body: "  \n"}},
 		{"bad kind", index.PlanNote{Path: "note.md", Kind: "nonsense", Body: "x"}},
 		{"bad tier", index.PlanNote{Path: "note.md", Tier: "middle", Body: "x"}},
+		{"id with uppercase", index.PlanNote{Path: "note.md", ID: "Big-Jerry", Body: "x"}},
+		{"id with space", index.PlanNote{Path: "note.md", ID: "big jerry", Body: "x"}},
+		{"id with slash", index.PlanNote{Path: "note.md", ID: "scout/big-jerry", Body: "x"}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
