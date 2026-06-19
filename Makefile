@@ -5,6 +5,7 @@ GO_MODULE := github.com/briancolinger/persistor
 GO_PACKAGES := ./...
 GO_TEST_FLAGS := -v -race
 BINARY_DIR := bin
+INSTALL_DIR ?= $(HOME)/.local/bin
 
 VERSION    := $(shell git describe --tags --always --dirty 2>/dev/null || cat VERSION)
 COMMIT     := $(shell git rev-parse --short HEAD 2>/dev/null || echo "unknown")
@@ -96,15 +97,17 @@ setup-hooks:
 ## Install all binaries.
 install: install-cli install-mcp
 
-## Install the CLI binary.
+## Install the CLI binary (to ~/.local/bin by default; override with INSTALL_DIR=).
 install-cli: build-cli
-	sudo cp bin/persistor /usr/local/bin/persistor
-	@echo "Installed persistor to /usr/local/bin/persistor"
+	@mkdir -p $(INSTALL_DIR)
+	cp bin/persistor $(INSTALL_DIR)/persistor
+	@echo "Installed persistor to $(INSTALL_DIR)/persistor"
 
-## Install the MCP server binary.
+## Install the MCP server binary (to ~/.local/bin by default; override with INSTALL_DIR=).
 install-mcp: build-mcp
-	sudo cp bin/persistor-mcp /usr/local/bin/persistor-mcp
-	@echo "Installed persistor-mcp to /usr/local/bin/persistor-mcp"
+	@mkdir -p $(INSTALL_DIR)
+	cp bin/persistor-mcp $(INSTALL_DIR)/persistor-mcp
+	@echo "Installed persistor-mcp to $(INSTALL_DIR)/persistor-mcp"
 
 ## Download dependencies.
 deps:
