@@ -88,7 +88,11 @@ func runConsolidate(ctx context.Context, o *consolidateOpts) error {
 
 	// Reject a self-supersede before writing anything: a note whose supersedes
 	// resolves to its own id forks no history.
-	checkRoots := []index.Root{index.NotesRoot(o.notesDir)}
+	notesRoot, err := index.NotesRoot(o.notesDir)
+	if err != nil {
+		return err
+	}
+	checkRoots := []index.Root{notesRoot}
 	for i := range plan.Notes {
 		n := &plan.Notes[i]
 		if err := index.CheckSelfSupersede(checkRoots, o.writeDir, n.Path, n.ID, n.Supersedes); err != nil {

@@ -106,7 +106,11 @@ func assembleFromDisk(o *briefOpts, seed string) (index.WorkingSet, error) {
 	if o.notesDir == "" {
 		return index.WorkingSet{}, fmt.Errorf("index unavailable and no --notes-dir/PERSISTOR_NOTES_DIR for the degrade path")
 	}
-	core, err := index.CoreFromDisk([]index.Root{index.NotesRoot(o.notesDir)})
+	notesRoot, err := index.NotesRoot(o.notesDir)
+	if err != nil {
+		return index.WorkingSet{}, err
+	}
+	core, err := index.CoreFromDisk([]index.Root{notesRoot})
 	if err != nil {
 		return index.WorkingSet{}, err
 	}

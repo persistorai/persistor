@@ -30,6 +30,19 @@ func rmFile(t *testing.T, dir, rel string) {
 	}
 }
 
+// writeSymlink creates a symlink at dir/rel pointing to target, creating parent
+// directories. Shared by tests that exercise the include path guardrails.
+func writeSymlink(t *testing.T, dir, rel, target string) {
+	t.Helper()
+	p := filepath.Join(dir, filepath.FromSlash(rel))
+	if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := os.Symlink(target, p); err != nil {
+		t.Fatalf("symlink %s -> %s: %v", rel, target, err)
+	}
+}
+
 func mustContain(t *testing.T, s, sub string) {
 	t.Helper()
 	if !strings.Contains(s, sub) {
