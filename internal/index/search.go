@@ -27,7 +27,8 @@ type SearchOpts struct {
 }
 
 // SearchNotes runs full-text search over chunk tsvectors, deduplicates to the
-// owning notes, and ranks each note by its best chunk. This is the// primary retrieval path: deterministic, debuggable, no embeddings.
+// owning notes, and ranks each note by its best chunk. This is the primary
+// retrieval path: deterministic, debuggable, no embeddings.
 func (s *Store) SearchNotes(ctx context.Context, tenantID, query string, opts SearchOpts) ([]NoteHit, error) {
 	ctx, cancel := context.WithTimeout(ctx, storeQueryTimeout)
 	defer cancel()

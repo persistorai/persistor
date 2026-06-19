@@ -1,14 +1,16 @@
 package index
 
 import (
+	"context"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 )
 
-// SeedQuery builds a retrieval seed from cheap, always-available session signals
-// : the working directory's name, the git remote (if any), and the
+// SeedQuery builds a retrieval seed from cheap, always-available session
+// signals: the working directory's name, the git remote (if any), and the
 // project's README/dir title. The result is a space-joined term list handed to
 // FTS — the OR-of-terms retrieval (search.go) turns it into a recall query.
 //
@@ -37,7 +39,9 @@ func SeedQuery(cwd string, extraTopics ...string) string {
 // gitRemoteName returns the last path segment of the origin remote URL (the repo
 // name), or "" when cwd is not a git repo / git is unavailable.
 func gitRemoteName(cwd string) string {
-	cmd := exec.Command("git", "-C", cwd, "config", "--get", "remote.origin.url")
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "git", "-C", cwd, "config", "--get", "remote.origin.url")
 	out, err := cmd.Output()
 	if err != nil {
 		return ""
