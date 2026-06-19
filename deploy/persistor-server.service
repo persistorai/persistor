@@ -1,0 +1,35 @@
+[Unit]
+Description=Persistor remote MCP memory daemon (tailnet-bound)
+Documentation=https://github.com/persistorai/persistor
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=%h/.local/bin/persistor-server
+Restart=on-failure
+RestartSec=5
+
+# Configuration lives outside the unit so no secrets are baked in. Copy
+# deploy/persistor-server.env.example to ~/.persistor/server.env and fill it in.
+#
+# Phase P1 is tailnet-only and UNAUTHENTICATED: set PERSISTOR_LISTEN_ADDR to the
+# Tailscale IP (e.g. 100.x.y.z:8088), never a public interface. For verification
+# point PERSISTOR_TENANT_ID at a THROWAWAY tenant and PERSISTOR_NOTES_DIR at a
+# throwaway dir — never warp-core's live scout:/claude: memory.
+EnvironmentFile=%h/.persistor/server.env
+
+# Hardening: the daemon needs Postgres and its own notes dir, nothing more.
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectKernelTunables=true
+ProtectControlGroups=true
+PrivateTmp=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+# memory_write persists notes under PERSISTOR_NOTES_DIR / PERSISTOR_WRITE_DIR.
+# ProtectSystem=strict makes the filesystem read-only, so grant just those paths:
+#   ReadWritePaths=%h/persistor-remote-test
+# Add a matching ReadWritePaths line for whatever notes dir you configure.
+
+[Install]
+WantedBy=default.target
