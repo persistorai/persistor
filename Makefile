@@ -16,10 +16,10 @@ LDFLAGS := -s -w \
 	-X main.commit=$(COMMIT) \
 	-X main.buildDate=$(BUILD_DATE)
 
-.PHONY: build build-cli build-mcp clean test test-race test-coverage lint lint-fix lint-md format vet ci deps tidy setup-hooks install install-cli install-mcp
+.PHONY: build build-cli build-mcp build-server clean test test-race test-coverage lint lint-fix lint-md format vet ci deps tidy setup-hooks install install-cli install-mcp install-server
 
 ## Build all binaries.
-build: build-cli build-mcp
+build: build-cli build-mcp build-server
 
 ## Build the CLI binary.
 build-cli:
@@ -32,6 +32,12 @@ build-mcp:
 	@echo "Building persistor-mcp..."
 	@mkdir -p $(BINARY_DIR)
 	$(GO) build -ldflags="$(LDFLAGS)" -o $(BINARY_DIR)/persistor-mcp ./cmd/persistor-mcp
+
+## Build the remote MCP HTTP daemon binary.
+build-server:
+	@echo "Building persistor-server..."
+	@mkdir -p $(BINARY_DIR)
+	$(GO) build -ldflags="$(LDFLAGS)" -o $(BINARY_DIR)/persistor-server ./cmd/persistor-server
 
 ## Clean build artifacts.
 clean:
@@ -95,7 +101,7 @@ setup-hooks:
 	@echo "Pre-commit hook installed."
 
 ## Install all binaries.
-install: install-cli install-mcp
+install: install-cli install-mcp install-server
 
 ## Install the CLI binary (to ~/.local/bin by default; override with INSTALL_DIR=).
 install-cli: build-cli
@@ -108,6 +114,12 @@ install-mcp: build-mcp
 	@mkdir -p $(INSTALL_DIR)
 	cp bin/persistor-mcp $(INSTALL_DIR)/persistor-mcp
 	@echo "Installed persistor-mcp to $(INSTALL_DIR)/persistor-mcp"
+
+## Install the remote MCP HTTP daemon binary (to ~/.local/bin by default; override with INSTALL_DIR=).
+install-server: build-server
+	@mkdir -p $(INSTALL_DIR)
+	cp bin/persistor-server $(INSTALL_DIR)/persistor-server
+	@echo "Installed persistor-server to $(INSTALL_DIR)/persistor-server"
 
 ## Download dependencies.
 deps:
