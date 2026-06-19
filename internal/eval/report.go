@@ -30,7 +30,6 @@ type CategoryReport struct {
 type QuestionEval struct {
 	Prompt                    string           `json:"prompt"`
 	Category                  string           `json:"category,omitempty"`
-	SearchMode                string           `json:"search_mode"`
 	Limit                     int              `json:"limit"`
 	Passed                    bool             `json:"passed"`
 	LatencyMs                 float64          `json:"latency_ms"`
@@ -48,8 +47,8 @@ type QuestionEval struct {
 // ReturnedResult is a compact representation of a returned search hit.
 type ReturnedResult struct {
 	ID    string `json:"id"`
-	Label string `json:"label"`
-	Type  string `json:"type"`
+	Title string `json:"title"`
+	Kind  string `json:"kind"`
 }
 
 // summarizeCategories aggregates per-category recall/precision/latency from the

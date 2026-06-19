@@ -1,14 +1,14 @@
 package eval
 
-// The eval harness scores retrieval by matching returned result ids/labels
+// The eval harness scores retrieval by matching returned result ids/titles
 // against a fixture's expectations. These local types are the minimal result
 // shape it needs, so the package stands alone.
 
-// Node is a minimal retrieved result: the fields the evaluator matches on.
-type Node struct {
+// NoteResult is a minimal retrieved note: the fields the evaluator matches on.
+type NoteResult struct {
 	ID    string
-	Type  string
-	Label string
+	Kind  string
+	Title string
 }
 
 // SearchOptions tunes a retrieval call. Retrieval is full-text only, so Limit is

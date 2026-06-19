@@ -28,21 +28,21 @@ func scoreReturned(q *Question, returned []ReturnedResult) (matched, missed []st
 	return matched, missed
 }
 
-func mapNodes(nodes []Node) []ReturnedResult {
-	results := make([]ReturnedResult, 0, len(nodes))
-	for i := range nodes {
+func mapResults(notes []NoteResult) []ReturnedResult {
+	results := make([]ReturnedResult, 0, len(notes))
+	for i := range notes {
 		results = append(results, ReturnedResult{
-			ID:    nodes[i].ID,
-			Label: nodes[i].Label,
-			Type:  nodes[i].Type,
+			ID:    notes[i].ID,
+			Title: notes[i].Title,
+			Kind:  notes[i].Kind,
 		})
 	}
 	return results
 }
 
 func buildExpectedSet(q *Question) map[string]struct{} {
-	expected := make(map[string]struct{}, len(q.ExpectedNodeIDs)+len(q.ExpectedLabels))
-	for _, id := range q.ExpectedNodeIDs {
+	expected := make(map[string]struct{}, len(q.ExpectedNoteIDs)+len(q.ExpectedLabels))
+	for _, id := range q.ExpectedNoteIDs {
 		expected[normalizeExpected("id", id)] = struct{}{}
 	}
 	for _, label := range q.ExpectedLabels {
@@ -53,8 +53,8 @@ func buildExpectedSet(q *Question) map[string]struct{} {
 
 func expectedKeysForResult(result ReturnedResult) []string {
 	keys := []string{normalizeExpected("id", result.ID)}
-	if result.Label != "" {
-		keys = append(keys, normalizeExpected("label", result.Label))
+	if result.Title != "" {
+		keys = append(keys, normalizeExpected("label", result.Title))
 	}
 	return keys
 }
@@ -68,8 +68,8 @@ func expectedCount(q *Question) int {
 }
 
 func preferredFirstExpectation(q *Question) string {
-	if q.PreferredFirstNodeID != "" {
-		return normalizeExpected("id", q.PreferredFirstNodeID)
+	if q.PreferredFirstNoteID != "" {
+		return normalizeExpected("id", q.PreferredFirstNoteID)
 	}
 	if q.PreferredFirstLabel != "" {
 		return normalizeExpected("label", q.PreferredFirstLabel)

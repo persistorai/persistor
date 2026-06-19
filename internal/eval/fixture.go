@@ -16,11 +16,10 @@ type Fixture struct {
 type Question struct {
 	Prompt               string   `json:"prompt"`
 	Category             string   `json:"category,omitempty"`
-	SearchMode           string   `json:"search_mode,omitempty"`
 	Limit                int      `json:"limit,omitempty"`
-	ExpectedNodeIDs      []string `json:"expected_node_ids,omitempty"`
+	ExpectedNoteIDs      []string `json:"expected_note_ids,omitempty"`
 	ExpectedLabels       []string `json:"expected_labels,omitempty"`
-	PreferredFirstNodeID string   `json:"preferred_first_node_id,omitempty"`
+	PreferredFirstNoteID string   `json:"preferred_first_note_id,omitempty"`
 	PreferredFirstLabel  string   `json:"preferred_first_label,omitempty"`
 	Notes                string   `json:"notes,omitempty"`
 }
@@ -63,11 +62,11 @@ func validateQuestion(i int, q *Question) error {
 	}
 	expected := buildExpectedSet(q)
 	if len(expected) == 0 {
-		return fmt.Errorf("question %d: at least one expected node id or label is required", i)
+		return fmt.Errorf("question %d: at least one expected note id or label is required", i)
 	}
-	if q.PreferredFirstNodeID != "" {
-		if _, ok := expected[normalizeExpected("id", q.PreferredFirstNodeID)]; !ok {
-			return fmt.Errorf("question %d: preferred first node id must also be listed in expected_node_ids", i)
+	if q.PreferredFirstNoteID != "" {
+		if _, ok := expected[normalizeExpected("id", q.PreferredFirstNoteID)]; !ok {
+			return fmt.Errorf("question %d: preferred first note id must also be listed in expected_note_ids", i)
 		}
 	}
 	if q.PreferredFirstLabel != "" {

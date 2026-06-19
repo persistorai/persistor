@@ -9,7 +9,7 @@ import (
 // SearchClient is the retrieval behavior the evaluator needs. Retrieval is
 // full-text only, so full-text search is the whole interface.
 type SearchClient interface {
-	FullText(ctx context.Context, query string, opts *SearchOptions) ([]Node, error)
+	FullText(ctx context.Context, query string, opts *SearchOptions) ([]NoteResult, error)
 }
 
 // Runner executes memory evaluation fixtures against a search client.
@@ -22,10 +22,7 @@ func NewRunner(search SearchClient) *Runner {
 	return &Runner{search: search}
 }
 
-const (
-	defaultSearchMode = "text"
-	defaultLimit      = 5
-)
+const defaultLimit = 5
 
 // Run executes the given fixture and returns a report.
 func (r *Runner) Run(ctx context.Context, fixture *Fixture) (*Report, error) {
@@ -74,30 +71,25 @@ func (r *Runner) Run(ctx context.Context, fixture *Fixture) (*Report, error) {
 }
 
 func (r *Runner) runQuestion(ctx context.Context, q *Question) QuestionEval {
-	mode := q.SearchMode
-	if mode == "" {
-		mode = defaultSearchMode
-	}
-
 	limit := q.Limit
 	if limit <= 0 {
 		limit = defaultLimit
 	}
 
 	started := time.Now()
-	returned, err := r.searchOnce(ctx, mode, q.Prompt, limit)
+	notes, err := r.search.FullText(ctx, q.Prompt, &SearchOptions{Limit: limit})
 	latencyMs := float64(time.Since(started).Milliseconds())
 	if err != nil {
 		return QuestionEval{
 			Prompt:        q.Prompt,
 			Category:      normalizeCategory(q.Category),
-			SearchMode:    mode,
 			Limit:         limit,
 			LatencyMs:     latencyMs,
 			ExpectedCount: expectedCount(q),
 			Error:         err.Error(),
 		}
 	}
+	returned := mapResults(notes)
 
 	matched, missed := scoreReturned(q, returned)
 	foundCount := len(matched)
@@ -109,7 +101,6 @@ func (r *Runner) runQuestion(ctx context.Context, q *Question) QuestionEval {
 	return QuestionEval{
 		Prompt:                    q.Prompt,
 		Category:                  normalizeCategory(q.Category),
-		SearchMode:                mode,
 		Limit:                     limit,
 		Passed:                    passed,
 		LatencyMs:                 latencyMs,
@@ -121,18 +112,5 @@ func (r *Runner) runQuestion(ctx context.Context, q *Question) QuestionEval {
 		PreferredFirstExpectation: preferredFirst,
 		PreferredFirstMatched:     preferredFirst != "" && preferredFirstMatched,
 		Returned:                  returned,
-	}
-}
-
-func (r *Runner) searchOnce(ctx context.Context, mode, prompt string, limit int) ([]ReturnedResult, error) {
-	switch mode {
-	case "text":
-		nodes, err := r.search.FullText(ctx, prompt, &SearchOptions{Limit: limit})
-		if err != nil {
-			return nil, err
-		}
-		return mapNodes(nodes), nil
-	default:
-		return nil, fmt.Errorf("unsupported search mode %q (this evaluator is text-only)", mode)
 	}
 }
