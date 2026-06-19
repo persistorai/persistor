@@ -147,9 +147,12 @@ func (e *Engine) Write(ctx context.Context, in *WriteInput) (WriteOutput, error)
 	if err != nil {
 		return WriteOutput{}, fmt.Errorf("write: %w", err)
 	}
-	rep, err := e.indexer.Reindex(ctx, e.tenantID, e.roots)
+	// Index just the file we wrote rather than walking and hashing every watched
+	// file; supersession is still reconciled corpus-wide inside IndexPath.
+	abs := filepath.Join(e.writeDir, filepath.FromSlash(written[0]))
+	rep, err := e.indexer.IndexPath(ctx, e.tenantID, e.roots, abs)
 	if err != nil {
-		return WriteOutput{}, fmt.Errorf("reindex after write: %w", err)
+		return WriteOutput{}, fmt.Errorf("indexing after write: %w", err)
 	}
 	return WriteOutput{Written: written[0], Notes: rep.Notes, Superseded: rep.Superseded}, nil
 }

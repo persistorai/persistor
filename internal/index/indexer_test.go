@@ -121,6 +121,43 @@ func TestIndexer_FileSyncSemantics(t *testing.T) {
 	}
 }
 
+func TestIndexer_IndexPath(t *testing.T) {
+	ix, _, tenantID := newTestIndexer(t)
+	ctx := context.Background()
+
+	demoDir := t.TempDir()
+	writeFile(t, demoDir, "memory/atomic/a.md", "---\nid: note-a\n---\n\nAlpha fact.\n")
+	roots := []index.Root{{Name: "demo", Dir: demoDir, Includes: []string{"memory"}}}
+
+	// Targeted index of a single written file, no full walk of the root.
+	abs := filepath.Join(demoDir, "memory", "atomic", "a.md")
+	rep, err := ix.IndexPath(ctx, tenantID, roots, abs)
+	if err != nil {
+		t.Fatalf("IndexPath: %v", err)
+	}
+	if rep.Discovered != 1 || rep.Indexed != 1 || rep.Notes != 1 {
+		t.Fatalf("first IndexPath = %+v, want discovered/indexed/notes=1", rep)
+	}
+	assertPaths(t, rep.Paths, []string{"demo/memory/atomic/a.md"})
+
+	// A note that supersedes the first: IndexPath writes only b.md but still
+	// reconciles supersession corpus-wide, flipping note-a's flag.
+	writeFile(t, demoDir, "memory/atomic/b.md", "---\nid: note-b\nsupersedes: note-a\n---\n\nAlpha, corrected.\n")
+	abs = filepath.Join(demoDir, "memory", "atomic", "b.md")
+	rep, err = ix.IndexPath(ctx, tenantID, roots, abs)
+	if err != nil {
+		t.Fatalf("IndexPath supersede: %v", err)
+	}
+	if rep.Indexed != 1 || rep.Notes != 2 || rep.Superseded != 1 {
+		t.Fatalf("supersede IndexPath = %+v, want indexed=1 notes=2 superseded=1", rep)
+	}
+
+	// A path outside every root is rejected, not silently indexed.
+	if _, err := ix.IndexPath(ctx, tenantID, roots, filepath.Join(t.TempDir(), "x.md")); err == nil {
+		t.Fatal("IndexPath outside roots: want error, got nil")
+	}
+}
+
 func assertPaths(t *testing.T, got, want []string) {
 	t.Helper()
 	set := make(map[string]bool, len(got))

@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"path/filepath"
+	"strings"
 
 	"github.com/sirupsen/logrus"
 )
@@ -78,6 +80,85 @@ func (ix *Indexer) Reindex(ctx context.Context, tenantID string, roots []Root) (
 	}
 	rep.Notes = notes
 	return rep, nil
+}
+
+// IndexPath indexes a single file by absolute path: it locates the owning root,
+// (re)writes that one note, then reconciles supersession and recounts. It is the
+// targeted equivalent of Reindex for the common single-note memory_write, so a
+// write costs one file read+hash instead of walking and hashing every watched
+// file. The supersession reconcile still runs corpus-wide because a write can
+// flip another note's superseded flag.
+func (ix *Indexer) IndexPath(ctx context.Context, tenantID string, roots []Root, absPath string) (Report, error) {
+	rep := Report{}
+	root, rel, ok := ownerRoot(roots, absPath)
+	if !ok {
+		return rep, fmt.Errorf("indexing %q: not under any watched root", absPath)
+	}
+	rep.Roots = append(rep.Roots, root.Name)
+
+	storedPath := root.Name + "/" + rel
+	rep.Discovered = 1
+	rep.Paths = append(rep.Paths, storedPath)
+
+	f := DiscoveredFile{Root: root.Name, AbsPath: absPath, RelPath: rel, IsCore: isCorePath(root, rel)}
+	changed, err := ix.indexOne(ctx, tenantID, f, storedPath, "")
+	if err != nil {
+		return rep, err
+	}
+	if changed {
+		rep.Indexed = 1
+	} else {
+		rep.Skipped = 1
+	}
+
+	reconciled, err := ix.store.ReconcileSupersessions(ctx, tenantID)
+	if err != nil {
+		return rep, err
+	}
+	rep.Superseded = int(reconciled)
+
+	notes, err := ix.store.CountNotes(ctx, tenantID)
+	if err != nil {
+		return rep, err
+	}
+	rep.Notes = notes
+	return rep, nil
+}
+
+// ownerRoot returns the watched root that contains absPath and the file's
+// slash-separated path relative to that root. When roots nest, the most specific
+// (longest Dir) wins. ok is false when no root contains the path.
+func ownerRoot(roots []Root, absPath string) (root *Root, rel string, ok bool) {
+	best := -1
+	for i := range roots {
+		dir, err := filepath.Abs(roots[i].Dir)
+		if err != nil {
+			continue
+		}
+		r, err := filepath.Rel(dir, absPath)
+		if err != nil {
+			continue
+		}
+		r = filepath.ToSlash(r)
+		if r == ".." || strings.HasPrefix(r, "../") {
+			continue
+		}
+		if len(dir) > best {
+			best, root, rel, ok = len(dir), &roots[i], r, true
+		}
+	}
+	return root, rel, ok
+}
+
+// isCorePath reports whether rel (slash-separated, relative to the root) is one
+// of the root's always-loaded Core files.
+func isCorePath(root *Root, rel string) bool {
+	for _, p := range root.CorePaths {
+		if filepath.ToSlash(p) == rel {
+			return true
+		}
+	}
+	return false
 }
 
 // indexRoot discovers and (re)indexes every file under one root, updating the
