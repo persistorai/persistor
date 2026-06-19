@@ -56,7 +56,7 @@ func TestRunMigrationsFreshDatabase(t *testing.T) {
 		t.Fatalf("running migrations on fresh database: %v", err)
 	}
 
-	// Spot-check the end-state schema: the single migration stands up
+	// Spot-check the end-state schema: the migrations stand up
 	// the index tables, with NO embedding column
 	// and no leftover graph tables.
 	assertColumn(ctx, t, pool, "sources", "sha256", true)
