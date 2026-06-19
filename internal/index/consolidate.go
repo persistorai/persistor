@@ -4,10 +4,21 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 
 	"gopkg.in/yaml.v3"
 )
+
+// maxNoteIDLen mirrors the chk_note_id_len DB constraint so an over-long id
+// fails with a clear app-layer error instead of a constraint violation.
+const maxNoteIDLen = 512
+
+// noteIDPattern constrains an explicit note id to the shape slugFromPath
+// produces: lowercase alphanumerics plus ':' (namespace), '.', '_', and '-'. It
+// stops a model-supplied id from smuggling in path separators, whitespace, or
+// uppercase that would collide with or shadow a derived id on reindex.
+var noteIDPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9:._-]*$`)
 
 // Plan is the deterministic output of the consolidation step: the LLM
 // (the /consolidate harness skill) reads a transcript and emits this plan; Go
@@ -84,6 +95,14 @@ func renderPlanNote(n *PlanNote) (cleanRel string, content []byte, err error) {
 	}
 	if strings.TrimSpace(n.Body) == "" {
 		return "", nil, fmt.Errorf("empty body")
+	}
+	if n.ID != "" {
+		if len(n.ID) > maxNoteIDLen {
+			return "", nil, fmt.Errorf("id too long: %d > %d", len(n.ID), maxNoteIDLen)
+		}
+		if !noteIDPattern.MatchString(n.ID) {
+			return "", nil, fmt.Errorf("invalid id %q (want a lowercase slug of a-z, 0-9, and :._-)", n.ID)
+		}
 	}
 	if n.Kind != "" && !validKinds[n.Kind] {
 		return "", nil, fmt.Errorf("invalid kind %q", n.Kind)
