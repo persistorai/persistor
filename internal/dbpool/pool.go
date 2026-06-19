@@ -11,15 +11,15 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-// Pool wraps a pgxpool.Pool with health check capabilities.
-// The underlying pool is unexported to prevent callers from bypassing
-// the withTimeout pattern used by Repository methods.
+// Pool wraps a pgxpool.Pool. The underlying pool is unexported so callers go
+// through Begin/BeginReadOnly and the per-operation timeout pattern in
+// internal/index rather than issuing raw queries.
 type Pool struct {
 	pool *pgxpool.Pool
 }
 
 // NewPool creates a new PostgreSQL connection pool with sensible defaults.
-// maxConns sets the pool size; it must be at least 2 (1 for LISTEN/NOTIFY + 1 for queries).
+// maxConns sets the pool size; MinConns is held at 2 for warm connections.
 func NewPool(ctx context.Context, databaseURL string, maxConns int32) (*Pool, error) {
 	cfg, err := pgxpool.ParseConfig(databaseURL)
 	if err != nil {
@@ -76,11 +76,6 @@ func assertRLSEnforceable(ctx context.Context, pool *pgxpool.Pool) error {
 	return nil
 }
 
-// Acquire returns a connection from the pool.
-func (p *Pool) Acquire(ctx context.Context) (*pgxpool.Conn, error) {
-	return p.pool.Acquire(ctx)
-}
-
 // Exec executes a query that doesn't return rows.
 func (p *Pool) Exec(ctx context.Context, sql string, arguments ...any) (pgconn.CommandTag, error) {
 	return p.pool.Exec(ctx, sql, arguments...)
@@ -104,23 +99,6 @@ func (p *Pool) Begin(ctx context.Context) (pgx.Tx, error) {
 // BeginReadOnly starts a read-only transaction.
 func (p *Pool) BeginReadOnly(ctx context.Context) (pgx.Tx, error) {
 	return p.pool.BeginTx(ctx, pgx.TxOptions{AccessMode: pgx.ReadOnly})
-}
-
-// Ping verifies the pool can reach the database.
-func (p *Pool) Ping(ctx context.Context) error {
-	return p.pool.Ping(ctx)
-}
-
-// HealthCheck verifies database connectivity by executing a simple query.
-func (p *Pool) HealthCheck(ctx context.Context) error {
-	var result int
-
-	err := p.pool.QueryRow(ctx, "SELECT 1").Scan(&result)
-	if err != nil {
-		return fmt.Errorf("health check query: %w", err)
-	}
-
-	return nil
 }
 
 // ConnString returns the connection string used to create the pool.
