@@ -8,10 +8,10 @@ import (
 
 // fakeSearchClient is a test double for the FTS-only SearchClient.
 type fakeSearchClient struct {
-	fullText func(context.Context, string, *SearchOptions) ([]Node, error)
+	fullText func(context.Context, string, *SearchOptions) ([]NoteResult, error)
 }
 
-func (f fakeSearchClient) FullText(ctx context.Context, query string, opts *SearchOptions) ([]Node, error) {
+func (f fakeSearchClient) FullText(ctx context.Context, query string, opts *SearchOptions) ([]NoteResult, error) {
 	return f.fullText(ctx, query, opts)
 }
 
@@ -19,8 +19,8 @@ func TestRunnerRunPassesWhenExpectedResultIsReturned(t *testing.T) {
 	t.Parallel()
 
 	runner := NewRunner(fakeSearchClient{
-		fullText: func(_ context.Context, _ string, _ *SearchOptions) ([]Node, error) {
-			return []Node{{ID: "comet", Label: "Comet", Type: "animal"}}, nil
+		fullText: func(_ context.Context, _ string, _ *SearchOptions) ([]NoteResult, error) {
+			return []NoteResult{{ID: "comet", Title: "Comet", Kind: "animal"}}, nil
 		},
 	})
 
@@ -28,7 +28,7 @@ func TestRunnerRunPassesWhenExpectedResultIsReturned(t *testing.T) {
 		Name: "memory-fixture",
 		Questions: []Question{{
 			Prompt:          "Who is Comet?",
-			ExpectedNodeIDs: []string{"comet"},
+			ExpectedNoteIDs: []string{"comet"},
 		}},
 	})
 	if err != nil {
@@ -47,8 +47,8 @@ func TestRunnerRunFailsWhenExpectedResultMissing(t *testing.T) {
 	t.Parallel()
 
 	runner := NewRunner(fakeSearchClient{
-		fullText: func(_ context.Context, _ string, _ *SearchOptions) ([]Node, error) {
-			return []Node{{ID: "yard-rake", Label: "Yard Rake", Type: "animal"}}, nil
+		fullText: func(_ context.Context, _ string, _ *SearchOptions) ([]NoteResult, error) {
+			return []NoteResult{{ID: "yard-rake", Title: "Yard Rake", Kind: "animal"}}, nil
 		},
 	})
 
@@ -56,7 +56,7 @@ func TestRunnerRunFailsWhenExpectedResultMissing(t *testing.T) {
 		Name: "memory-fixture",
 		Questions: []Question{{
 			Prompt:          "Who is Comet?",
-			ExpectedNodeIDs: []string{"comet"},
+			ExpectedNoteIDs: []string{"comet"},
 		}},
 	})
 	if err != nil {
@@ -75,8 +75,8 @@ func TestRunnerRunMatchesExpectedLabels(t *testing.T) {
 	t.Parallel()
 
 	runner := NewRunner(fakeSearchClient{
-		fullText: func(_ context.Context, _ string, _ *SearchOptions) ([]Node, error) {
-			return []Node{{ID: "aurora", Label: "Aurora", Type: "project"}}, nil
+		fullText: func(_ context.Context, _ string, _ *SearchOptions) ([]NoteResult, error) {
+			return []NoteResult{{ID: "aurora", Title: "Aurora", Kind: "project"}}, nil
 		},
 	})
 
@@ -100,14 +100,14 @@ func TestRunnerRunTracksCategoryBreakdownAndTopHitPreference(t *testing.T) {
 	t.Parallel()
 
 	runner := NewRunner(fakeSearchClient{
-		fullText: func(_ context.Context, query string, _ *SearchOptions) ([]Node, error) {
+		fullText: func(_ context.Context, query string, _ *SearchOptions) ([]NoteResult, error) {
 			switch query {
 			case "What happened on Christmas Eve 2025?":
-				return []Node{{ID: "christmas-eve-breakthrough", Label: "Christmas Eve Breakthrough", Type: "event"}}, nil
+				return []NoteResult{{ID: "christmas-eve-breakthrough", Title: "Christmas Eve Breakthrough", Kind: "event"}}, nil
 			case "Which project belongs to Avery personally instead of Acme Systems?":
-				return []Node{
-					{ID: "acme-systems", Label: "Acme Systems", Type: "company"},
-					{ID: "persistor", Label: "Persistor", Type: "project"},
+				return []NoteResult{
+					{ID: "acme-systems", Title: "Acme Systems", Kind: "company"},
+					{ID: "persistor", Title: "Persistor", Kind: "project"},
 				}, nil
 			default:
 				return nil, nil
@@ -157,7 +157,7 @@ func TestRunnerRunCapturesSearchErrors(t *testing.T) {
 	t.Parallel()
 
 	runner := NewRunner(fakeSearchClient{
-		fullText: func(_ context.Context, _ string, _ *SearchOptions) ([]Node, error) {
+		fullText: func(_ context.Context, _ string, _ *SearchOptions) ([]NoteResult, error) {
 			return nil, errors.New("search unavailable")
 		},
 	})
@@ -166,7 +166,7 @@ func TestRunnerRunCapturesSearchErrors(t *testing.T) {
 		Name: "memory-fixture",
 		Questions: []Question{{
 			Prompt:          "Who is Comet?",
-			ExpectedNodeIDs: []string{"comet"},
+			ExpectedNoteIDs: []string{"comet"},
 		}},
 	})
 	if err != nil {

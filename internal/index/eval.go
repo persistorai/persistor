@@ -36,10 +36,9 @@ func NoMemorySearcher() *NoteSearcher {
 	return &NoteSearcher{disabled: true}
 }
 
-// FullText runs the full-text retrieval and maps notes to eval.Node
-// (ID = note id, Label = title, Type = kind) so the eval harness can match
-// expected note ids.
-func (ns *NoteSearcher) FullText(ctx context.Context, query string, opts *eval.SearchOptions) ([]eval.Node, error) {
+// FullText runs the full-text retrieval and maps hits to eval.NoteResult so the
+// eval harness can match expected note ids and titles.
+func (ns *NoteSearcher) FullText(ctx context.Context, query string, opts *eval.SearchOptions) ([]eval.NoteResult, error) {
 	if ns.disabled {
 		return nil, nil
 	}
@@ -52,9 +51,9 @@ func (ns *NoteSearcher) FullText(ctx context.Context, query string, opts *eval.S
 	if err != nil {
 		return nil, err
 	}
-	nodes := make([]eval.Node, len(hits))
+	notes := make([]eval.NoteResult, len(hits))
 	for i := range hits {
-		nodes[i] = eval.Node{ID: hits[i].ID, Label: hits[i].Title, Type: hits[i].Kind}
+		notes[i] = eval.NoteResult{ID: hits[i].ID, Title: hits[i].Title, Kind: hits[i].Kind}
 	}
-	return nodes, nil
+	return notes, nil
 }

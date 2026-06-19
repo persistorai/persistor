@@ -16,9 +16,8 @@ func TestLoadFixture(t *testing.T) {
   "questions": [
     {
       "prompt": "Who is Comet?",
-      "search_mode": "text",
       "limit": 5,
-      "expected_node_ids": ["comet"]
+      "expected_note_ids": ["comet"]
     }
   ]
 }`
