@@ -99,12 +99,16 @@ func (s *Store) IndexFile(ctx context.Context, tenantID string, f *IndexedFile) 
 			return fmt.Errorf("upserting note: %w", err)
 		}
 
-		for ord, text := range f.Chunks {
-			if _, err := tx.Exec(ctx,
-				`INSERT INTO chunks (note_id, tenant_id, ord, text)
-				 VALUES ($1, current_setting('app.tenant_id')::uuid, $2, $3)`,
-				n.ID, ord, text); err != nil {
-				return fmt.Errorf("inserting chunk %d: %w", ord, err)
+		if len(f.Chunks) > 0 {
+			batch := &pgx.Batch{}
+			for ord, text := range f.Chunks {
+				batch.Queue(
+					`INSERT INTO chunks (note_id, tenant_id, ord, text)
+					 VALUES ($1, current_setting('app.tenant_id')::uuid, $2, $3)`,
+					n.ID, ord, text)
+			}
+			if err := tx.SendBatch(ctx, batch).Close(); err != nil {
+				return fmt.Errorf("inserting chunks: %w", err)
 			}
 		}
 		return nil
