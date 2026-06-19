@@ -45,7 +45,35 @@ func NewPool(ctx context.Context, databaseURL string, maxConns int32) (*Pool, er
 		return nil, fmt.Errorf("pinging database: %w", err)
 	}
 
+	if err := assertRLSEnforceable(ctx, pool); err != nil {
+		pool.Close()
+
+		return nil, err
+	}
+
 	return &Pool{pool: pool}, nil
+}
+
+// assertRLSEnforceable fails closed when the connection's role would bypass
+// row-level security. RLS is the only thing isolating tenants, and a SUPERUSER
+// or BYPASSRLS role silently ignores it (USING/WITH CHECK policies are never
+// applied), so refuse to start rather than serve tenant data unprotected.
+func assertRLSEnforceable(ctx context.Context, pool *pgxpool.Pool) error {
+	var role string
+	var bypasses bool
+	err := pool.QueryRow(ctx,
+		`SELECT current_user,
+		        current_setting('is_superuser')::boolean
+		          OR EXISTS (SELECT 1 FROM pg_roles
+		                      WHERE rolname = current_user AND rolbypassrls)`).Scan(&role, &bypasses)
+	if err != nil {
+		return fmt.Errorf("checking RLS enforceability: %w", err)
+	}
+	if bypasses {
+		return fmt.Errorf("database role %q bypasses row-level security (SUPERUSER or BYPASSRLS); "+
+			"connect as a NOSUPERUSER NOBYPASSRLS role so tenant isolation is enforced", role)
+	}
+	return nil
 }
 
 // Acquire returns a connection from the pool.

@@ -104,6 +104,9 @@ Follow standard Go best practices (Effective Go, Google Go style guide).
 ## Security
 
 - Multi-tenant isolation via PostgreSQL RLS — every query scoped to `app.tenant_id`
+- **Connect as a `NOSUPERUSER NOBYPASSRLS` role.** RLS (even `FORCE`d) is silently
+  ignored by a SUPERUSER or BYPASSRLS role, which would void all tenant isolation.
+  `dbpool.NewPool` asserts this at startup and refuses to run otherwise.
 - The local index is plaintext (FTS needs it); at-rest encryption returns with the
   hosted/public-MCP endpoint, not before
 - No raw SQL from user input — always parameterized
