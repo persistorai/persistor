@@ -113,6 +113,20 @@ Follow standard Go best practices (Effective Go, Google Go style guide).
 - Personal data lives only in a local disposable DB and the private notes repo;
   this product repo's test fixtures stay synthetic
 
+### Hosted-phase checklist (deferred by design — do NOT implement for local use)
+
+These are intentional deferrals for the current local, single-user product. They
+become hard requirements before any multi-tenant / public-MCP deployment:
+
+- **At-rest encryption of note bodies (AES-256-GCM).** The index is plaintext
+  because FTS needs it; encrypting bodies must be reconciled with full-text
+  search before hosting.
+- **Append-only audit log for `memory_write`/supersede.** `memory_write` can
+  write any note and mark any note superseded with no audit trail; a
+  prompt-injected model could poison memory. Add a durable write/supersede/delete
+  log (note id + source) at the MCP handler boundary, and reject a supersede of a
+  non-existent id (currently a silent no-op that still writes the new note).
+
 ## Commits
 
 - Conventional: `feat:`, `fix:`, `test:`, `chore:`, `docs:`
