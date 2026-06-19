@@ -1,4 +1,8 @@
-package main
+// Package mcpengine is the transport-agnostic MCP layer for Persistor: the
+// memory Engine the tools call, the tool schemas/handlers, and a NewServer
+// constructor. The stdio binary (cmd/persistor-mcp) and the remote HTTP daemon
+// (cmd/persistor-server) are thin transports over this one source of truth.
+package mcpengine
 
 import (
 	"context"

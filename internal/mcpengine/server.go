@@ -1,10 +1,22 @@
-package main
+package mcpengine
 
 import (
 	"context"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
+
+// NewServer builds the Persistor MCP server over the engine and registers the
+// memory tools. Both transports (stdio and Streamable HTTP) wrap the same
+// server, so the tool surface stays identical across them.
+func NewServer(e *Engine, version string) *mcp.Server {
+	server := mcp.NewServer(
+		&mcp.Implementation{Name: "persistor", Title: "Persistor Memory", Version: version},
+		&mcp.ServerOptions{Instructions: serverInstructions},
+	)
+	registerTools(server, e)
+	return server
+}
 
 // serverInstructions is the orientation paragraph MCP clients show the model
 // alongside the tool list.

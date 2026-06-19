@@ -29,6 +29,7 @@ import (
 	"github.com/briancolinger/persistor/internal/db/migrations"
 	"github.com/briancolinger/persistor/internal/dbpool"
 	"github.com/briancolinger/persistor/internal/index"
+	"github.com/briancolinger/persistor/internal/mcpengine"
 )
 
 func main() {
@@ -47,7 +48,7 @@ func run(ctx context.Context) error {
 	}
 	writeDir := os.Getenv("PERSISTOR_WRITE_DIR")
 	if writeDir == "" {
-		writeDir = DefaultWriteDir(notesDir)
+		writeDir = mcpengine.DefaultWriteDir(notesDir)
 	}
 
 	log := logrus.New()
@@ -71,13 +72,9 @@ func run(ctx context.Context) error {
 
 	store := index.NewStore(pool, log)
 	indexer := index.NewIndexer(store, log, 0)
-	engine := NewEngine(store, indexer, tenantID, roots, writeDir)
+	engine := mcpengine.NewEngine(store, indexer, tenantID, roots, writeDir)
 
-	server := mcp.NewServer(
-		&mcp.Implementation{Name: "persistor", Title: "Persistor Memory", Version: config.Version},
-		&mcp.ServerOptions{Instructions: serverInstructions},
-	)
-	registerTools(server, engine)
+	server := mcpengine.NewServer(engine, config.Version)
 
 	if err := server.Run(ctx, &mcp.StdioTransport{}); err != nil {
 		return fmt.Errorf("serving: %w", err)
