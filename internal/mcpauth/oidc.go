@@ -16,6 +16,25 @@ import (
 // existing user to a new tenant and orphan their memory.
 var tenantNamespace = uuid.MustParse("9e6f1b2c-3d4a-5b6c-7d8e-9f0a1b2c3d4e")
 
+// Identity roles (mirrors the identities.role CHECK) and the auth.TokenInfo.Extra
+// key they travel under. Only readonly is write-restricted; owner/member may
+// write. Static API keys carry no role and are treated as full-access.
+const (
+	roleKey      = "role"
+	roleOwner    = "owner"
+	roleReadOnly = "readonly"
+)
+
+// IsReadOnly reports whether a verified token's identity is write-restricted.
+// Used at the tool boundary (tenantServer) to gate mutating tools.
+func IsReadOnly(ti *auth.TokenInfo) bool {
+	if ti == nil {
+		return false
+	}
+	r, ok := ti.Extra[roleKey].(string)
+	return ok && r == roleReadOnly
+}
+
 // allowedSigningMethods restricts JWT verification to asymmetric algorithms.
 // Pinning these defeats "alg=none" and HS/RS confusion attacks, where an
 // attacker re-signs a token with the public key as an HMAC secret.
@@ -83,16 +102,20 @@ func (a *OIDCAuth) Verify(ctx context.Context, token string, _ *http.Request) (*
 	// The claim-derived tenant is the default; the resolver may return a
 	// different one for an admin-mapped identity, and provisions on first login.
 	tenant := TenantForSubject(a.issuer, claims.Subject)
+	role := roleOwner
 	if a.resolver != nil {
-		resolved, _, rerr := a.resolver.ResolveOrProvision(ctx, a.issuer, claims.Subject, tenant)
+		resolved, resolvedRole, rerr := a.resolver.ResolveOrProvision(ctx, a.issuer, claims.Subject, tenant)
 		if rerr != nil {
 			// A storage failure is a server error, not a bad token — do NOT wrap
 			// auth.ErrInvalidToken (which would mislead the client into a 401).
 			return nil, fmt.Errorf("resolving tenant: %w", rerr)
 		}
 		tenant = resolved
+		role = resolvedRole
 	}
-	return &auth.TokenInfo{UserID: tenant, Expiration: exp.Time}, nil
+	// Carry the resolved role to the tool boundary (read in tenantServer) so a
+	// readonly identity is actually denied writes, not just labeled one.
+	return &auth.TokenInfo{UserID: tenant, Expiration: exp.Time, Extra: map[string]any{roleKey: role}}, nil
 }
 
 // TenantForSubject derives the stable tenant UUID for an IdP subject. It is a

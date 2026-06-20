@@ -109,6 +109,7 @@ func TestOIDCAuth_Verify(t *testing.T) {
 // fakeTenantResolver stands in for the identities-backed tenant resolver.
 type fakeTenantResolver struct {
 	tenant     string
+	role       string // defaults to "owner" when empty
 	err        error
 	gotDefault string
 }
@@ -118,7 +119,33 @@ func (f *fakeTenantResolver) ResolveOrProvision(_ context.Context, _, _, default
 	if f.err != nil {
 		return "", "", f.err
 	}
-	return f.tenant, "owner", nil
+	role = f.role
+	if role == "" {
+		role = "owner"
+	}
+	return f.tenant, role, nil
+}
+
+// TestIsReadOnly covers the role gate read at the tool boundary.
+func TestIsReadOnly(t *testing.T) {
+	tests := []struct {
+		name string
+		ti   *auth.TokenInfo
+		want bool
+	}{
+		{name: "nil token", ti: nil, want: false},
+		{name: "no role (static key / owner)", ti: &auth.TokenInfo{}, want: false},
+		{name: "owner", ti: &auth.TokenInfo{Extra: map[string]any{"role": "owner"}}, want: false},
+		{name: "member", ti: &auth.TokenInfo{Extra: map[string]any{"role": "member"}}, want: false},
+		{name: "readonly", ti: &auth.TokenInfo{Extra: map[string]any{"role": "readonly"}}, want: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := mcpauth.IsReadOnly(tt.ti); got != tt.want {
+				t.Fatalf("IsReadOnly = %v, want %v", got, tt.want)
+			}
+		})
+	}
 }
 
 func TestOIDCAuth_TenantResolver(t *testing.T) {
@@ -143,6 +170,20 @@ func TestOIDCAuth_TenantResolver(t *testing.T) {
 	}
 	if want := mcpauth.TenantForSubject(testIssuer, "user-abc"); fr.gotDefault != want {
 		t.Fatalf("resolver default = %q, want uuidv5 %q", fr.gotDefault, want)
+	}
+	if mcpauth.IsReadOnly(ti) {
+		t.Fatal("owner identity should not be read-only")
+	}
+
+	// A readonly identity's role must travel to the tool boundary via Extra.
+	ro := &fakeTenantResolver{tenant: uuid.NewString(), role: "readonly"}
+	aRO := mcpauth.NewOIDCAuth(staticKeyFunc(&key.PublicKey), testIssuer, testAudience).WithTenantResolver(ro)
+	tiRO, err := aRO.Verify(ctx, signRS256(t, key, &valid), nil)
+	if err != nil {
+		t.Fatalf("verify readonly: %v", err)
+	}
+	if !mcpauth.IsReadOnly(tiRO) {
+		t.Fatal("readonly identity not flagged read-only at the boundary")
 	}
 
 	// A resolver (storage) error is a server error, NOT a bad token: it must not

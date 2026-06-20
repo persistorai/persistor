@@ -3,6 +3,7 @@ package mcpengine_test
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -214,6 +215,16 @@ func TestEngine_WriteRejectsMissingSupersedeTarget(t *testing.T) {
 	})
 	if err == nil {
 		t.Fatal("supersede of a non-existent note should error, got nil")
+	}
+}
+
+// TestEngine_ReadOnlyRejectsWrite verifies a read-only engine denies memory_write
+// before touching the store (so it needs no DB).
+func TestEngine_ReadOnlyRejectsWrite(t *testing.T) {
+	e := mcpengine.NewEngine(nil, nil, "tenant", nil, t.TempDir(), mcpengine.WithReadOnly(true))
+	_, err := e.Write(context.Background(), &mcpengine.WriteInput{Path: "x.md", Body: "# X\n\nbody"})
+	if !errors.Is(err, mcpengine.ErrReadOnly) {
+		t.Fatalf("read-only write: got %v, want ErrReadOnly", err)
 	}
 }
 
