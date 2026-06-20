@@ -18,45 +18,48 @@ What was set up (idempotent — these are the live values):
 | Piece            | Value                                            |
 | ---------------- | ------------------------------------------------ |
 | LUKS container   | `/var/lib/persistor-enc/volume.img` (luks2, 4G)  |
-| Key file         | `/root/.persistor-luks.key` (root, 0600)         |
+| LUKS key         | **1Password → Personal → "Persistor LUKS key (warp-core)"** (document). NO on-disk copy. |
 | Mapper / mount   | `/dev/mapper/persistor-enc` → `/mnt/persistor-enc` |
+| Notes dir        | `/mnt/persistor-enc/notes` (on the encrypted volume — note files never hit unencrypted disk) |
 | PG cluster       | `18/persistorenc` on **:5434**, data dir `/mnt/persistor-enc/pgdata` |
 | Cluster start    | **manual** (`/etc/postgresql/18/persistorenc/start.conf`) so a reboot never fail-starts on the absent mount |
 | DB role          | `persistor` — `NOSUPERUSER NOBYPASSRLS` (RLS is the tenant boundary) |
+| Daemon           | systemd `persistor-server.service` (User=brian, RW only to the notes dir); NOT boot-enabled |
 | Daemon DSN       | `~/.persistor/server.env` → `DATABASE_URL=…@127.0.0.1:5434/persistor` |
 
 ### Operate it
 
 ```bash
-deploy/persistor-enc-unlock.sh   # after a reboot: open + mount + start :5434
-deploy/persistor-enc-lock.sh     # stop + unmount + lock (raw img becomes ciphertext)
+deploy/persistor-enc-unlock.sh   # open (key from 1Password) + mount + start :5434 + start daemon
+deploy/persistor-enc-lock.sh     # stop daemon + cluster + unmount + lock (raw img becomes ciphertext)
 ```
 
-The cluster is manual-start, so after a reboot run the unlock script, then
-(re)start the daemon (`~/.persistor/server.env` + `bin/persistor-server`, or the
-systemd unit in `deploy/persistor-server.service`).
+`unlock` streams the key from 1Password straight into `cryptsetup` over stdin (it
+never lands on disk), waits for Postgres to accept connections, then starts the
+daemon. It needs your interactive `op` session (unlocked 1Password app or
+`op signin`). Break-glass: set `PERSISTOR_LUKS_KEYFILE=/path/to/key` to bypass
+1Password if you have a copy of the raw key.
 
 ### At-rest proof (verified 2026-06-20)
 
 Write a note via the remote MCP, `CHECKPOINT`, then lock the volume and grep the
 raw container: the plaintext is absent from the ciphertext, and reappears after
-unlock. (See the P4 gate notes — a unique marker written through the OIDC MCP
-path was not found in `volume.img` while locked, and survived the lock/unlock.)
+unlock. (A unique marker written through the OIDC MCP path was not found in
+`volume.img` while locked, and survived the lock/unlock.) Note **files** also
+live on the encrypted volume (`/mnt/persistor-enc/notes`), so no note plaintext
+exists outside it.
 
-### ⚠️ Key-management caveat (hardening for P5 / production)
+### Key management — disk-theft protection (done)
 
-The LUKS key currently sits at `/root/.persistor-luks.key` — on the **same disk**
-as the encrypted data. That protects against *nothing* if the whole disk is
-stolen, because the thief gets the key too. It only meaningfully protects a
-detached/again-mounted volume and keeps plaintext out of backups of the image.
+The LUKS key lives **only in 1Password** (Personal vault), not on this disk, so a
+stolen powered-off disk cannot be unlocked — opening the volume requires Brian's
+interactive 1Password session. This is the deliberate trade: unlock-after-reboot
+is a manual step, which is correct for a key like this.
 
-For real disk-theft protection, pick one before production:
-
-- **Manual passphrase** — add a passphrase keyslot (`cryptsetup luksAddKey`) and
-  unlock interactively; store nothing on disk. Most secure, least convenient.
-- **Removable key** — keep the key file on a USB key inserted only at unlock.
-- **KMS/Vault** — fetch the key at unlock from a secret manager whose root of
-  trust is not this disk. (On AWS this is just RDS encryption + KMS.)
+- **Recovery:** the key is in 1Password (cloud-synced, recoverable). The encrypted
+  data is also rebuildable (notes are the source of truth; the index reindexes).
+- **Optional break-glass:** add a second keyslot with a passphrase
+  (`cryptsetup luksAddKey`) so losing 1Password access can't brick the volume.
 
 Auto-unlock at boot via `/etc/crypttab` is deliberately NOT configured: it would
 re-introduce the on-disk-key weakness and add a boot-critical dependency.
