@@ -71,6 +71,9 @@ func TestRunMigrationsFreshDatabase(t *testing.T) {
 	assertColumn(ctx, t, pool, "notes", "version", true)
 	assertColumn(ctx, t, pool, "notes", "deleted", true)
 	assertColumn(ctx, t, pool, "note_versions", "op", true)
+
+	// 004: the RLS-exempt API-key auth table.
+	assertColumn(ctx, t, pool, "api_keys", "key_hash", true)
 }
 
 func assertTableAbsent(ctx context.Context, t *testing.T, pool *dbpool.Pool, table string) {
