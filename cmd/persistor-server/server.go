@@ -44,7 +44,23 @@ func (m *protectedResourceMetadata) serveHTTP(w http.ResponseWriter, _ *http.Req
 // ready probes a dependency (the DB pool) for the /readyz handler; nil means the
 // daemon reports ready unconditionally (used in tests with no pool).
 func newMux(getServer func(*http.Request) *mcp.Server, verifier auth.TokenVerifier, authOpts *auth.RequireBearerTokenOptions, metadata *protectedResourceMetadata, ready func(context.Context) error) *http.ServeMux {
-	mcpHandler := mcp.NewStreamableHTTPHandler(getServer, nil)
+	// Persistor is a pure request/response tool server: no server-initiated
+	// requests (sampling/elicitation/roots), no streaming results. Stateless +
+	// JSONResponse is the right transport posture for that, and crucially for a
+	// proxied/remote deployment:
+	//   - JSONResponse returns a single application/json body per POST instead of
+	//     a text/event-stream. SSE responses streamed through a reverse proxy
+	//     (Tailscale Funnel today, an ALB on AWS later) are a known source of
+	//     intermittent client failures; a single JSON body is proxy-friendly.
+	//   - Stateless drops Mcp-Session-Id affinity, so a distributed client backend
+	//     (claude.ai web) and future horizontal scaling don't depend on every
+	//     request landing on the session's origin instance.
+	// The tenant still comes only from the per-request bearer token (getServer
+	// reads it from the request context), so isolation is unchanged.
+	mcpHandler := mcp.NewStreamableHTTPHandler(getServer, &mcp.StreamableHTTPOptions{
+		Stateless:    true,
+		JSONResponse: true,
+	})
 	authed := auth.RequireBearerToken(verifier, authOpts)(mcpHandler)
 	// Cross-origin protection (CSRF / DNS-rebinding): the SDK applies none with
 	// nil options, and its localhost rebind guard doesn't cover the tailnet bind.
