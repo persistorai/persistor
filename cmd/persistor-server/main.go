@@ -22,10 +22,10 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
-	"github.com/modelcontextprotocol/go-sdk/auth"
 	"github.com/sirupsen/logrus"
 
 	"github.com/persistorai/persistor/internal/config"
@@ -33,7 +33,6 @@ import (
 	"github.com/persistorai/persistor/internal/db/migrations"
 	"github.com/persistorai/persistor/internal/dbpool"
 	"github.com/persistorai/persistor/internal/index"
-	"github.com/persistorai/persistor/internal/mcpauth"
 	"github.com/persistorai/persistor/internal/mcpengine"
 )
 
@@ -76,21 +75,20 @@ func run(ctx context.Context) error {
 
 	store := index.NewStore(pool, log)
 	indexer := index.NewIndexer(store, log, 0)
-	verifier := mcpauth.NewStaticTokenAuth(mcpauth.NewPGKeyStore(pool))
+
+	authn, err := buildAuth(ctx, &cfg, pool)
+	if err != nil {
+		return fmt.Errorf("building authenticator: %w", err)
+	}
 
 	getServer := tenantServer(store, indexer, roots, cfg.writeDir, config.Version)
-	authOpts := &auth.RequireBearerTokenOptions{
-		// Advertised in WWW-Authenticate on a 401. The metadata endpoint itself
-		// is served in P3 (OIDC); static-token clients ignore it.
-		ResourceMetadataURL: "http://" + cfg.listenAddr + "/.well-known/oauth-protected-resource",
-	}
-
 	httpServer := &http.Server{
 		Addr:              cfg.listenAddr,
-		Handler:           newMux(getServer, verifier.Verify, authOpts),
+		Handler:           newMux(getServer, authn.verify, authn.opts, authn.metadata),
 		ReadHeaderTimeout: 10 * time.Second,
 	}
-	log.WithField("addr", cfg.listenAddr).Warn("persistor-server listening (tailnet-bound, static-token auth)")
+	log.WithFields(logrus.Fields{"addr": cfg.listenAddr, "auth_mode": cfg.authMode}).
+		Warn("persistor-server listening (tailnet-bound)")
 	return serve(ctx, httpServer, log)
 }
 
@@ -128,6 +126,11 @@ type serverConfig struct {
 	claudeMemoryDir string
 	writeDir        string
 	listenAddr      string
+	authMode        string // static | oidc
+	publicURL       string // externally-visible base URL (resource + metadata)
+	oidcIssuer      string
+	oidcAudience    string
+	oidcJWKSURL     string
 }
 
 func loadConfig() (serverConfig, error) {
@@ -137,6 +140,11 @@ func loadConfig() (serverConfig, error) {
 		claudeMemoryDir: os.Getenv("CLAUDE_MEMORY_DIR"),
 		writeDir:        os.Getenv("PERSISTOR_WRITE_DIR"),
 		listenAddr:      os.Getenv("PERSISTOR_LISTEN_ADDR"),
+		authMode:        os.Getenv("PERSISTOR_AUTH_MODE"),
+		publicURL:       os.Getenv("PERSISTOR_PUBLIC_URL"),
+		oidcIssuer:      os.Getenv("PERSISTOR_OIDC_ISSUER"),
+		oidcAudience:    os.Getenv("PERSISTOR_OIDC_AUDIENCE"),
+		oidcJWKSURL:     os.Getenv("PERSISTOR_OIDC_JWKS_URL"),
 	}
 	if cfg.databaseURL == "" || cfg.notesDir == "" {
 		return serverConfig{}, fmt.Errorf("DATABASE_URL and PERSISTOR_NOTES_DIR are required")
@@ -147,5 +155,30 @@ func loadConfig() (serverConfig, error) {
 	if cfg.listenAddr == "" {
 		cfg.listenAddr = defaultListenAddr
 	}
+	if cfg.authMode == "" {
+		cfg.authMode = authModeStatic
+	}
+	if cfg.publicURL == "" {
+		cfg.publicURL = "http://" + cfg.listenAddr
+	}
+	cfg.publicURL = strings.TrimRight(cfg.publicURL, "/")
+	if err := validateAuthConfig(&cfg); err != nil {
+		return serverConfig{}, err
+	}
 	return cfg, nil
+}
+
+// validateAuthConfig enforces the requirements of the selected auth mode.
+func validateAuthConfig(cfg *serverConfig) error {
+	switch cfg.authMode {
+	case authModeStatic:
+		return nil
+	case authModeOIDC:
+		if cfg.oidcIssuer == "" || cfg.oidcAudience == "" || cfg.oidcJWKSURL == "" {
+			return fmt.Errorf("oidc auth requires PERSISTOR_OIDC_ISSUER, PERSISTOR_OIDC_AUDIENCE, and PERSISTOR_OIDC_JWKS_URL")
+		}
+		return nil
+	default:
+		return fmt.Errorf("unknown PERSISTOR_AUTH_MODE %q (want %q or %q)", cfg.authMode, authModeStatic, authModeOIDC)
+	}
 }

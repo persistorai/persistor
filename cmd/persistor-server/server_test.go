@@ -54,7 +54,7 @@ func newTestStack(t *testing.T) *testStack {
 	verifier := mcpauth.NewStaticTokenAuth(keyStore)
 	getServer := tenantServer(store, indexer, nil, t.TempDir(), "test")
 	authOpts := &auth.RequireBearerTokenOptions{ResourceMetadataURL: "http://example/.well-known/oauth-protected-resource"}
-	ts := httptest.NewServer(newMux(getServer, verifier.Verify, authOpts))
+	ts := httptest.NewServer(newMux(getServer, verifier.Verify, authOpts, nil))
 	t.Cleanup(ts.Close)
 
 	return &testStack{ts: ts, indexer: indexer, keyStore: keyStore, pool: pool}
@@ -183,6 +183,43 @@ func TestHTTP_TenantIsolation(t *testing.T) {
 	}
 	if hasSeededNote(searchOverHTTP(t, st.ts.URL, tokenB, "alpha")) {
 		t.Fatal("tenant B leaked tenant A's note")
+	}
+}
+
+// TestProtectedResourceMetadata: in OIDC mode the daemon serves the RFC 9728
+// document (open, no auth) advertising the Authorization Server.
+func TestProtectedResourceMetadata(t *testing.T) {
+	meta := &protectedResourceMetadata{
+		Resource:             "https://persistor.example",
+		AuthorizationServers: []string{"https://issuer.example"},
+	}
+	verifier := func(context.Context, string, *http.Request) (*auth.TokenInfo, error) {
+		return nil, auth.ErrInvalidToken
+	}
+	getServer := func(*http.Request) *mcp.Server { return nil }
+	ts := httptest.NewServer(newMux(getServer, verifier, &auth.RequireBearerTokenOptions{}, meta))
+	defer ts.Close()
+
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet,
+		ts.URL+"/.well-known/oauth-protected-resource", http.NoBody)
+	if err != nil {
+		t.Fatalf("request: %v", err)
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("get metadata: %v", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("metadata status = %d, want 200", resp.StatusCode)
+	}
+	var got protectedResourceMetadata
+	if err := json.NewDecoder(resp.Body).Decode(&got); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if got.Resource != meta.Resource || len(got.AuthorizationServers) != 1 ||
+		got.AuthorizationServers[0] != meta.AuthorizationServers[0] {
+		t.Fatalf("metadata = %+v, want %+v", got, meta)
 	}
 }
 
