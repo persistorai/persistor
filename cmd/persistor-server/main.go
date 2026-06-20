@@ -82,9 +82,17 @@ func run(ctx context.Context) error {
 	}
 
 	getServer := tenantServer(store, indexer, roots, cfg.writeDir, config.Version)
+	mux := newMux(getServer, authn.verify, authn.opts, authn.metadata)
+	if cfg.authMode == authModeOIDC && cfg.stytchPublicToken != "" {
+		consent, err := newConsentHandler(cfg.stytchPublicToken)
+		if err != nil {
+			return fmt.Errorf("building consent page: %w", err)
+		}
+		mux.HandleFunc("/authorize", consent)
+	}
 	httpServer := &http.Server{
 		Addr:              cfg.listenAddr,
-		Handler:           newMux(getServer, authn.verify, authn.opts, authn.metadata),
+		Handler:           mux,
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 	log.WithFields(logrus.Fields{"addr": cfg.listenAddr, "auth_mode": cfg.authMode}).
@@ -131,20 +139,24 @@ type serverConfig struct {
 	oidcIssuer      string
 	oidcAudience    string
 	oidcJWKSURL     string
+	// stytchPublicToken, when set in oidc mode, serves the Stytch consent page
+	// at /authorize (the OAuth Authorization URL). Publishable, not a secret.
+	stytchPublicToken string
 }
 
 func loadConfig() (serverConfig, error) {
 	cfg := serverConfig{
-		databaseURL:     os.Getenv("DATABASE_URL"),
-		notesDir:        os.Getenv("PERSISTOR_NOTES_DIR"),
-		claudeMemoryDir: os.Getenv("CLAUDE_MEMORY_DIR"),
-		writeDir:        os.Getenv("PERSISTOR_WRITE_DIR"),
-		listenAddr:      os.Getenv("PERSISTOR_LISTEN_ADDR"),
-		authMode:        os.Getenv("PERSISTOR_AUTH_MODE"),
-		publicURL:       os.Getenv("PERSISTOR_PUBLIC_URL"),
-		oidcIssuer:      os.Getenv("PERSISTOR_OIDC_ISSUER"),
-		oidcAudience:    os.Getenv("PERSISTOR_OIDC_AUDIENCE"),
-		oidcJWKSURL:     os.Getenv("PERSISTOR_OIDC_JWKS_URL"),
+		databaseURL:       os.Getenv("DATABASE_URL"),
+		notesDir:          os.Getenv("PERSISTOR_NOTES_DIR"),
+		claudeMemoryDir:   os.Getenv("CLAUDE_MEMORY_DIR"),
+		writeDir:          os.Getenv("PERSISTOR_WRITE_DIR"),
+		listenAddr:        os.Getenv("PERSISTOR_LISTEN_ADDR"),
+		authMode:          os.Getenv("PERSISTOR_AUTH_MODE"),
+		publicURL:         os.Getenv("PERSISTOR_PUBLIC_URL"),
+		oidcIssuer:        os.Getenv("PERSISTOR_OIDC_ISSUER"),
+		oidcAudience:      os.Getenv("PERSISTOR_OIDC_AUDIENCE"),
+		oidcJWKSURL:       os.Getenv("PERSISTOR_OIDC_JWKS_URL"),
+		stytchPublicToken: os.Getenv("PERSISTOR_STYTCH_PUBLIC_TOKEN"),
 	}
 	if cfg.databaseURL == "" || cfg.notesDir == "" {
 		return serverConfig{}, fmt.Errorf("DATABASE_URL and PERSISTOR_NOTES_DIR are required")
