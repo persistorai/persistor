@@ -33,12 +33,19 @@ func TestConsentHandler(t *testing.T) {
 	if ct := resp.Header.Get("Content-Type"); !strings.HasPrefix(ct, "text/html") {
 		t.Fatalf("content-type = %q, want text/html", ct)
 	}
+	// The consent page carries OAuth query params and is iterated during setup —
+	// it must never be served from cache.
+	if cc := resp.Header.Get("Cache-Control"); cc != "no-store" {
+		t.Fatalf("cache-control = %q, want no-store", cc)
+	}
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		t.Fatalf("read body: %v", err)
 	}
 	html := string(body)
-	for _, want := range []string{token, "mountIdentityProvider", "StytchUIClient"} {
+	// The publishable token is injected, and the page renders Stytch's supported
+	// React components (not the deprecated vanilla-js mount* helpers).
+	for _, want := range []string{token, "StytchProvider", "StytchLogin", "IdentityProvider"} {
 		if !strings.Contains(html, want) {
 			t.Fatalf("consent page missing %q", want)
 		}

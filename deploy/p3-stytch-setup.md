@@ -47,16 +47,25 @@ PERSISTOR_LISTEN_ADDR="$(tailscale ip -4 | head -1):8088" \
 PERSISTOR_PUBLIC_URL="http://$(tailscale ip -4 | head -1):8088" \
 PERSISTOR_AUTH_MODE=oidc \
 PERSISTOR_OIDC_ISSUER="$ISSUER" \
-PERSISTOR_OIDC_AUDIENCE="http://$(tailscale ip -4 | head -1):8088" \
+PERSISTOR_OIDC_AUDIENCE="project-test-XXXXXXXX-..." \
 PERSISTOR_OIDC_JWKS_URL="<jwks_uri from discovery>" \
 PERSISTOR_STYTCH_PUBLIC_TOKEN="public-token-test-c4002df6-6768-4b5b-9db2-478009c984d0" \
 /home/brian/code/persistor/bin/persistor-server
 ```
 
-The **audience** is the resource identifier the client requests (RFC 8707) — it
-should match `PERSISTOR_PUBLIC_URL`. Confirm it against a real token at
-pre-flight (decode the JWT's `aud`) and adjust `PERSISTOR_OIDC_AUDIENCE` if Stytch
-uses a different value.
+The **audience** is NOT the resource URL. Despite the client sending
+`resource=<PUBLIC_URL>` (RFC 8707), Stytch stamps the access token's `aud` with
+the **Stytch project ID** (`project-test-...` / `project-live-...`), so
+`PERSISTOR_OIDC_AUDIENCE` must be set to that project ID — not `PUBLIC_URL`.
+Confirm against a real token (decode the JWT's `aud`); e.g. the test project
+issues `aud: ["project-test-6d376bed-3e28-4959-85f1-395206636333"]`.
+
+> **Security note (hardening, P5):** validating `aud` = project ID means the
+> resource server trusts ANY token this Stytch project issues, for any Connected
+> App under it. That is acceptable while this project is dedicated to Persistor
+> and tailnet-only. Before broader exposure, give Persistor its own Stytch project
+> (or otherwise bind tokens to this resource) so a second app's tokens can't reach
+> this memory. DCR makes a fixed `client_id` allowlist impractical.
 
 ## DCR pre-flight (the one live check that gates the rest)
 
