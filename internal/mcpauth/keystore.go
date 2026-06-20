@@ -24,6 +24,9 @@ const (
 	tokenPrefix = "psk_"
 	// tokenBytes is the entropy of a raw token before encoding.
 	tokenBytes = 32
+	// lastUsedThrottle is the minimum age before ResolveAPIKey rewrites
+	// last_used_at, bounding write amplification on the auth hot path.
+	lastUsedThrottle = "5 minutes"
 )
 
 // ErrKeyNotFound is returned when a token hash matches no active (non-revoked)
@@ -78,12 +81,24 @@ func (s *PGKeyStore) CreateAPIKey(ctx context.Context, tenantID, label string) (
 
 // ResolveAPIKey returns the tenant a raw token authenticates, recording the use
 // in last_used_at. A missing or revoked key returns ErrKeyNotFound.
+//
+// last_used_at is bumped at most once per lastUsedThrottle window: the auth hot
+// path would otherwise write a dead tuple on every request (bloat + autovacuum
+// churn + per-key row-lock contention). A data-modifying CTE keeps this one
+// round-trip — the bump runs to completion even though the outer query reads
+// only the resolve CTE, and it no-ops when last_used_at is already fresh.
 func (s *PGKeyStore) ResolveAPIKey(ctx context.Context, raw string) (string, error) {
 	var tenantID string
 	err := s.pool.QueryRow(ctx,
-		`UPDATE api_keys SET last_used_at = NOW()
-		   WHERE key_hash = $1 AND revoked = FALSE
-		 RETURNING tenant_id::text`, HashToken(raw)).Scan(&tenantID)
+		`WITH resolved AS (
+		     SELECT tenant_id FROM api_keys WHERE key_hash = $1 AND revoked = FALSE
+		 ), bump AS (
+		     UPDATE api_keys SET last_used_at = NOW()
+		      WHERE key_hash = $1 AND revoked = FALSE
+		        AND (last_used_at IS NULL OR last_used_at < NOW() - $2::interval)
+		 )
+		 SELECT tenant_id::text FROM resolved`,
+		HashToken(raw), lastUsedThrottle).Scan(&tenantID)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return "", ErrKeyNotFound
 	}
