@@ -33,9 +33,19 @@ import (
 	"github.com/briancolinger/persistor/internal/db/migrations"
 	"github.com/briancolinger/persistor/internal/dbpool"
 	"github.com/briancolinger/persistor/internal/index"
+	"github.com/briancolinger/persistor/internal/mcpengine"
 )
 
 const defaultListenAddr = "127.0.0.1:8088"
+
+// Per-tenant write rate limit at the MCP boundary: a sustained writesPerSecond
+// with a burst, applied to memory_write/delete/restore. Generous enough for any
+// real interactive or import-via-MCP workload, low enough to blunt a runaway or
+// prompt-injected agent.
+const (
+	writeRatePerSecond = 5
+	writeRateBurst     = 20
+)
 
 func main() {
 	if err := run(context.Background()); err != nil {
@@ -88,7 +98,8 @@ func run(ctx context.Context) error {
 // with timeouts suited to a long-running network service. ready is the /readyz
 // DB probe.
 func buildHTTPServer(cfg *serverConfig, store *index.Store, authn authBundle, log *logrus.Logger, ready func(context.Context) error) (*http.Server, error) {
-	getServer := tenantServer(store, config.Version)
+	limiter := mcpengine.NewWriteLimiter(writeRatePerSecond, writeRateBurst)
+	getServer := tenantServer(store, limiter, config.Version)
 	mux := newMux(getServer, authn.verify, authn.opts, authn.metadata, ready)
 	if cfg.authMode == authModeOIDC && cfg.stytchPublicToken != "" {
 		consent, err := newConsentHandler(cfg.stytchPublicToken)

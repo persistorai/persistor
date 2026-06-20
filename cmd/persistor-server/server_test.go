@@ -50,7 +50,7 @@ func newTestStack(t *testing.T) *testStack {
 	keyStore := mcpauth.NewPGKeyStore(pool)
 
 	verifier := mcpauth.NewStaticTokenAuth(keyStore)
-	getServer := tenantServer(store, "test")
+	getServer := tenantServer(store, nil, "test")
 	authOpts := &auth.RequireBearerTokenOptions{ResourceMetadataURL: "http://example/.well-known/oauth-protected-resource"}
 	ts := httptest.NewServer(newMux(getServer, verifier.Verify, authOpts, nil, pool.Ping))
 	t.Cleanup(ts.Close)

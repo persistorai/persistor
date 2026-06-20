@@ -418,6 +418,20 @@ func TestEngine_ReadOnlyRejectsWrite(t *testing.T) {
 	}
 }
 
+// TestEngine_RateLimited: a tenant over its write budget is rejected before the
+// store is touched (so it needs no DB).
+func TestEngine_RateLimited(t *testing.T) {
+	// Burst 0 → the very first write is denied.
+	e := mcpengine.NewEngine(nil, "tenant", mcpengine.WithWriteLimiter(mcpengine.NewWriteLimiter(5, 0)))
+	ctx := context.Background()
+	if _, err := e.Write(ctx, &mcpengine.WriteInput{ID: "x", Body: "body"}); !errors.Is(err, mcpengine.ErrRateLimited) {
+		t.Fatalf("write: got %v, want ErrRateLimited", err)
+	}
+	if _, err := e.Delete(ctx, mcpengine.DeleteInput{ID: "x"}); !errors.Is(err, mcpengine.ErrRateLimited) {
+		t.Fatalf("delete: got %v, want ErrRateLimited", err)
+	}
+}
+
 func hasResult(rs []mcpengine.SearchHit, id string) bool {
 	for i := range rs {
 		if rs[i].ID == id {

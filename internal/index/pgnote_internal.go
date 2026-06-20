@@ -67,11 +67,17 @@ func upsertPGNote(ctx context.Context, tx pgx.Tx, in *PGNoteInput, namespace, ki
 }
 
 // appendVersion writes one immutable row to a note's history. The note_versions
-// table is append-only (a database trigger blocks UPDATE/DELETE).
+// table is append-only (a database trigger blocks UPDATE/DELETE). surface is the
+// audit trail — which client/identity made the write — and is always recorded;
+// an empty one falls back to "unknown" rather than NULL so the log never has a
+// gap.
 func appendVersion(ctx context.Context, tx pgx.Tx, id string, version int, title, body, kind, tier, op, surface string) error {
+	if surface == "" {
+		surface = "unknown"
+	}
 	_, err := tx.Exec(ctx,
 		`INSERT INTO note_versions (tenant_id, note_id, version, title, body, kind, tier, op, surface)
-		 VALUES (current_setting('app.tenant_id')::uuid, $1, $2, $3, $4, $5, $6, $7, NULLIF($8, ''))`,
+		 VALUES (current_setting('app.tenant_id')::uuid, $1, $2, $3, $4, $5, $6, $7, $8)`,
 		id, version, title, body, kind, tier, op, surface)
 	if err != nil {
 		return fmt.Errorf("appending note version: %w", err)
