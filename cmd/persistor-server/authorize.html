@@ -118,17 +118,32 @@
 
       function App() {
         const { user } = useStytchUser();
+        const urlHasClientId = !!oauthParamsFromURL().get('client_id');
+        const stash = localStorage.getItem(OAUTH_KEY);
+
         React.useEffect(() => {
-          show(user ? '' : 'Sign in to approve access to your Persistor memory.');
-          // Session established and authorize params are back in the URL — the
-          // round-trip succeeded, so the stash has served its purpose.
-          if (user && oauthParamsFromURL().get('client_id')) localStorage.removeItem(OAUTH_KEY);
-        }, [user]);
-        if (user) {
-          return h(IdentityProvider);
+          if (user && urlHasClientId) { localStorage.removeItem(OAUTH_KEY); show(''); }
+          else if (user) show('');
+          else show('Sign in to approve access to your Persistor memory.');
+        }, [user, urlHasClientId]);
+
+        // Logged in WITH an authorize request -> show the consent dialog.
+        if (user && urlHasClientId) return h(IdentityProvider);
+
+        // Logged in, no client_id in the URL, but a request is stashed -> Stytch
+        // dropped the params on the round-trip; restore them and reload.
+        if (user && stash) { window.location.replace(authorizeReturnURL()); return null; }
+
+        // No authorize request anywhere -> friendly notice instead of the raw
+        // Stytch "missing client_id" error (this is a direct visit, not a flow).
+        if (!urlHasClientId && !stash) {
+          return h('p', { className: 'muted' },
+            'No authorization request in progress. This page is opened automatically ' +
+            'by the app you are connecting (e.g. Claude Code) — start the connection there.');
         }
-        // Bare authorize URL — matches the Stytch redirect-URL allowlist exactly.
-        // The OAuth params ride through the round-trip via localStorage instead.
+
+        // Have a request but not yet authenticated -> login. Bare redirect URL
+        // matches the Stytch allowlist; OAuth params ride through via localStorage.
         const here = window.location.origin + window.location.pathname;
         const config = {
           products: [Products.emailMagicLinks],
