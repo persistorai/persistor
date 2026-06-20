@@ -64,10 +64,10 @@ func (s *Store) NoteState(ctx context.Context, tenantID, id string) (NoteState, 
 	err := s.inReadTx(ctx, tenantID, func(tx pgx.Tx) error {
 		var supersedes *string
 		err := tx.QueryRow(ctx,
-			`SELECT id, kind, tier, title, body, supersedes, version, deleted
+			`SELECT id, namespace, kind, tier, title, body, supersedes, version, deleted
 			   FROM notes
 			  WHERE tenant_id = current_setting('app.tenant_id')::uuid AND id = $1`, id).
-			Scan(&st.ID, &st.Kind, &st.Tier, &st.Title, &st.Body, &supersedes, &st.Version, &st.Deleted)
+			Scan(&st.ID, &st.Namespace, &st.Kind, &st.Tier, &st.Title, &st.Body, &supersedes, &st.Version, &st.Deleted)
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil
 		}
