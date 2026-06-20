@@ -57,14 +57,39 @@
     window.addEventListener('error', (e) => show('Error: ' + (e.message || e), true));
     window.addEventListener('unhandledrejection', (e) => show('Error: ' + (e.reason?.message || e.reason), true));
 
-    // The same URL we are on, minus the magic-link token params — preserves the
-    // OAuth authorize params (client_id, redirect_uri, scope, state, code_challenge)
-    // across the magic-link round-trip so IdentityProvider can read them on return.
+    // --- Preserve the OAuth authorize params across the magic-link round-trip ---
+    // Stytch's magic link redirects back to the configured redirect URL and does
+    // NOT reliably carry the original query string, so IdentityProvider would lose
+    // client_id/redirect_uri/scope/state/code_challenge. We stash them in
+    // localStorage the moment a real authorize request arrives, then restore them
+    // after authentication. (Click the magic link in the SAME browser — that's
+    // where the stash and the new session cookie live.)
+    const OAUTH_KEY = 'persistor_oauth_authorize_params';
+
+    // Current query string minus Stytch's magic-link params.
+    const oauthParamsFromURL = () => {
+      const sp = new URLSearchParams(window.location.search);
+      sp.delete('token');
+      sp.delete('stytch_token_type');
+      return sp;
+    };
+
+    // On a fresh authorize request (client_id present), remember the params.
+    (() => {
+      const sp = oauthParamsFromURL();
+      if (sp.get('client_id')) localStorage.setItem(OAUTH_KEY, sp.toString());
+    })();
+
+    // Where to send the browser once a session exists: the authorize URL with the
+    // OAuth params intact — from the URL if Stytch preserved them, else the stash.
     const authorizeReturnURL = () => {
-      const u = new URL(window.location.href);
-      u.searchParams.delete('token');
-      u.searchParams.delete('stytch_token_type');
-      return u.toString();
+      let sp = oauthParamsFromURL();
+      if (!sp.get('client_id')) {
+        const saved = localStorage.getItem(OAUTH_KEY);
+        if (saved) sp = new URLSearchParams(saved);
+      }
+      const qs = sp.toString();
+      return window.location.origin + window.location.pathname + (qs ? '?' + qs : '');
     };
 
     try {
@@ -93,11 +118,18 @@
 
       function App() {
         const { user } = useStytchUser();
-        React.useEffect(() => { show(user ? '' : 'Sign in to approve access to your Persistor memory.'); }, [user]);
+        React.useEffect(() => {
+          show(user ? '' : 'Sign in to approve access to your Persistor memory.');
+          // Session established and authorize params are back in the URL — the
+          // round-trip succeeded, so the stash has served its purpose.
+          if (user && oauthParamsFromURL().get('client_id')) localStorage.removeItem(OAUTH_KEY);
+        }, [user]);
         if (user) {
           return h(IdentityProvider);
         }
-        const here = authorizeReturnURL();
+        // Bare authorize URL — matches the Stytch redirect-URL allowlist exactly.
+        // The OAuth params ride through the round-trip via localStorage instead.
+        const here = window.location.origin + window.location.pathname;
         const config = {
           products: [Products.emailMagicLinks],
           emailMagicLinksOptions: {
