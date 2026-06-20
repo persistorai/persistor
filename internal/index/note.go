@@ -26,7 +26,10 @@ type Note struct {
 	Body       string // prose with frontmatter stripped
 	SourcePath string
 	Supersedes string
-	Links      []string
+	// Links is reserved: it is parsed from frontmatter and threaded through the
+	// write path, but RenderNote omits it and IndexFile never persists it (the
+	// links table is an intentional placeholder). Not yet a queryable edge.
+	Links []string
 }
 
 // frontmatter mirrors the YAML block at the top of a note. All fields are
