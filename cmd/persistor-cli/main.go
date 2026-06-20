@@ -42,6 +42,7 @@ func main() {
 	rootCmd.AddCommand(newKeyCmd())
 	rootCmd.AddCommand(newAdminCmd())
 	rootCmd.AddCommand(newExportCmd())
+	rootCmd.AddCommand(newImportCmd())
 
 	if err := rootCmd.Execute(); err != nil {
 		os.Exit(1)
