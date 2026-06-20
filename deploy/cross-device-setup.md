@@ -24,20 +24,29 @@ ask Brian to run this (or run it yourself if you have a warp-core shell):
 ```bash
 # On warp-core. Builds the daemon, then runs it bound to the Tailscale IP,
 # serving a THROWAWAY tenant on the TEST database (never the live memory).
-make -C /home/brian/code/persistor build-server
+make -C /home/brian/code/persistor build
 
 mkdir -p /tmp/persistor-remote-test/memory/daily
 
 DATABASE_URL="postgres://persistor:$(cat /tmp/.pgpw_persistor)@localhost:5432/persistor_test?sslmode=disable" \
-PERSISTOR_TENANT_ID="11111111-1111-1111-1111-111111111111" \
 PERSISTOR_NOTES_DIR=/tmp/persistor-remote-test \
 PERSISTOR_LISTEN_ADDR="$(tailscale ip -4 | head -1):8088" \
 /home/brian/code/persistor/bin/persistor-server
 ```
 
-The daemon logs the address it is listening on. Leave it running in that
-terminal for the duration of the test. A fixed tenant UUID is used so notes you
-write below persist and are searchable.
+The daemon logs the address it is listening on. Leave it running. It needs no
+tenant — it resolves the tenant from the bearer token. In a SECOND warp-core
+terminal, mint a key for a throwaway tenant (the token is printed once — copy
+it):
+
+```bash
+DATABASE_URL="postgres://persistor:$(cat /tmp/.pgpw_persistor)@localhost:5432/persistor_test?sslmode=disable" \
+  /home/brian/code/persistor/bin/persistor key create \
+  --tenant 11111111-1111-1111-1111-111111111111 --label laptop
+```
+
+Give that token to the remote machine; the steps below send it as
+`Authorization: Bearer <token>`.
 
 ## Step 1 - Find warp-core on the tailnet
 
@@ -52,6 +61,7 @@ Take the `100.x.y.z` address from that line (or use the MagicDNS name
 
 ```bash
 WARPCORE=100.x.y.z   # replace with the address from the line above
+TOKEN=psk_...        # the token printed by `persistor key create` on warp-core
 ```
 
 ## Step 2 - Confirm reachability
@@ -67,6 +77,7 @@ localhost instead of the tailnet IP — see Troubleshooting.
 
 ```bash
 curl -sS -X POST "http://${WARPCORE}:8088/mcp" \
+  -H "Authorization: Bearer ${TOKEN}" \
   -H 'Content-Type: application/json' \
   -H 'Accept: application/json, text/event-stream' \
   -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}'
@@ -74,12 +85,15 @@ curl -sS -X POST "http://${WARPCORE}:8088/mcp" \
 
 The response is a server-sent-events frame (`event: message` then `data: {...}`).
 The `data` JSON should contain `"serverInfo":{"name":"persistor",...}`. That
-confirms the MCP endpoint is reachable and is Persistor.
+confirms the MCP endpoint is reachable and is Persistor. Drop the Authorization
+header and you should get a `401` instead — that confirms auth is on.
 
 ## Step 4 - Add the MCP server to this machine
 
 ```bash
-claude mcp add --transport http persistor-remote "http://${WARPCORE}:8088/mcp"
+claude mcp add --transport http \
+  --header "Authorization: Bearer ${TOKEN}" \
+  persistor-remote "http://${WARPCORE}:8088/mcp"
 ```
 
 ## Step 5 - Verify the tools are listed
@@ -137,12 +151,13 @@ tenant data lives only in the test database and can be ignored.
 | `403 Forbidden` | DNS-rebind protection | use the Tailscale IP or MagicDNS name in the URL, never `localhost` |
 | refused only from the laptop | Tailscale down or ACLs block the port | `tailscale status` on both machines; allow TCP 8088 in tailnet ACLs |
 | `404` on `/mcp` | wrong path | the URL must end in `/mcp` |
+| `401 Unauthorized` | missing/invalid token | pass `--header "Authorization: Bearer <token>"`; mint with `persistor key create` |
 | empty search results | nothing written yet | run `memory_write` first — there is no startup reindex |
 
 ## Security note
 
-In this phase the daemon has **no authentication**: anyone on the tailnet can
-read and write the served tenant's memory. That is why it serves a throwaway
-test tenant and must never bind a public interface or serve warp-core's live
-`scout:`/`claude:` memory. Per-tenant bearer tokens arrive in P2; real OAuth
-(for claude.ai and mobile) in P3.
+The daemon requires a per-tenant **bearer token** (a static API key): no token
+or a bad one gets a `401`. Each token maps to one tenant, and tenants are
+isolated by Postgres row-level security, so a token only ever reaches its own
+tenant's memory. Keep the daemon tailnet-bound and off any public interface
+until the hardening phase; real OAuth (for claude.ai and mobile) arrives in P3.
