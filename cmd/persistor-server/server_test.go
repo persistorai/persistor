@@ -6,7 +6,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 
@@ -24,7 +23,7 @@ import (
 // testStack is an in-process daemon: the real auth-gated mux over a test DB.
 type testStack struct {
 	ts       *httptest.Server
-	indexer  *index.Indexer
+	store    *index.Store
 	keyStore *mcpauth.PGKeyStore
 	pool     *dbpool.Pool
 }
@@ -48,16 +47,15 @@ func newTestStack(t *testing.T) *testStack {
 	log := logrus.New()
 	log.SetLevel(logrus.ErrorLevel)
 	store := index.NewStore(pool, log)
-	indexer := index.NewIndexer(store, log, 0)
 	keyStore := mcpauth.NewPGKeyStore(pool)
 
 	verifier := mcpauth.NewStaticTokenAuth(keyStore)
-	getServer := tenantServer(store, indexer, nil, t.TempDir(), "test")
+	getServer := tenantServer(store, "test")
 	authOpts := &auth.RequireBearerTokenOptions{ResourceMetadataURL: "http://example/.well-known/oauth-protected-resource"}
 	ts := httptest.NewServer(newMux(getServer, verifier.Verify, authOpts, nil, pool.Ping))
 	t.Cleanup(ts.Close)
 
-	return &testStack{ts: ts, indexer: indexer, keyStore: keyStore, pool: pool}
+	return &testStack{ts: ts, store: store, keyStore: keyStore, pool: pool}
 }
 
 // seededNoteID is the id every seeded note lands at; isolation comes from the
@@ -71,10 +69,10 @@ func (s *testStack) tenant(t *testing.T, noteBody string) string {
 	ctx := context.Background()
 	tenantID := uuid.New().String()
 
-	dir := t.TempDir()
-	mustWrite(t, dir, "memory/daily/note.md", noteBody)
-	if _, err := s.indexer.Reindex(ctx, tenantID, []index.Root{{Name: "demo", Dir: dir}}); err != nil {
-		t.Fatalf("seed reindex: %v", err)
+	if _, err := s.store.WriteNote(ctx, tenantID, &index.PGNoteInput{
+		ID: seededNoteID, Title: "Note", Body: noteBody, Surface: "test",
+	}, 0); err != nil {
+		t.Fatalf("seed write: %v", err)
 	}
 	token, err := s.keyStore.CreateAPIKey(ctx, tenantID, "test")
 	if err != nil {
@@ -92,22 +90,11 @@ func (s *testStack) tenant(t *testing.T, noteBody string) string {
 			return
 		}
 		_, _ = tx.Exec(clean, "DELETE FROM chunks WHERE tenant_id = current_setting('app.tenant_id')::uuid")
+		_, _ = tx.Exec(clean, "DELETE FROM note_versions WHERE tenant_id = current_setting('app.tenant_id')::uuid")
 		_, _ = tx.Exec(clean, "DELETE FROM notes WHERE tenant_id = current_setting('app.tenant_id')::uuid")
-		_, _ = tx.Exec(clean, "DELETE FROM sources WHERE tenant_id = current_setting('app.tenant_id')::uuid")
 		_ = tx.Commit(clean)
 	})
 	return token
-}
-
-func mustWrite(t *testing.T, dir, rel, content string) {
-	t.Helper()
-	p := filepath.Join(dir, filepath.FromSlash(rel))
-	if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
-		t.Fatalf("mkdir: %v", err)
-	}
-	if err := os.WriteFile(p, []byte(content), 0o600); err != nil {
-		t.Fatalf("write: %v", err)
-	}
 }
 
 // TestHTTP_AuthRequired: the /mcp endpoint rejects missing/invalid tokens with a
@@ -167,8 +154,8 @@ func TestHTTP_TenantIsolation(t *testing.T) {
 	tokenB := st.tenant(t, "# Note\n\nbravo secret protocol\n")
 
 	// Tenant A's token: lists tools, sees alpha, never bravo.
-	if n := listToolCount(t, st.ts.URL, tokenA); n != 4 {
-		t.Fatalf("tenant A listed %d tools, want 4", n)
+	if n := listToolCount(t, st.ts.URL, tokenA); n != 6 {
+		t.Fatalf("tenant A listed %d tools, want 6", n)
 	}
 	if !hasSeededNote(searchOverHTTP(t, st.ts.URL, tokenA, "alpha")) {
 		t.Fatal("tenant A could not find its own note")

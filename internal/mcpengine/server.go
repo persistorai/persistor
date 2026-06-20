@@ -31,10 +31,17 @@ const (
 		"Use this FIRST whenever the user references people, projects, decisions, or past events you lack " +
 		"context for. Returns ranked note summaries; superseded notes are excluded unless you ask for them. " +
 		"Do NOT use it for information already in this conversation or for general world knowledge."
-	getDescription   = "Fetch one note's full prose body by id (as returned by memory_search)."
-	writeDescription = "Save a durable note in prose. Provide a relative .md path and the note body; set " +
-		"`supersedes` to the id of a note this CORRECTS (the old note is kept as history but hidden from " +
-		"default retrieval). Use a new note without `supersedes` for a new point in a timeline."
+	getDescription = "Fetch one note's full prose body by id (as returned by memory_search). Returns the " +
+		"note's current `version` — pass it back as `expected_version` to safely update or delete the note."
+	writeDescription = "Save a durable note in prose. Provide the note body and an id (or a .md path it is " +
+		"derived from). Omit `expected_version` to CREATE; to UPDATE an existing note pass its current " +
+		"`version` (from memory_get) as `expected_version`. Set `supersedes` to the id of a note this " +
+		"CORRECTS (kept as history but hidden from default retrieval); use a new note without `supersedes` " +
+		"for a new point in a timeline."
+	deleteDescription = "Tombstone a note by id so it leaves retrieval. History is preserved — memory_restore " +
+		"can undo it. Pass the note's current `version` (from memory_get) as `expected_version`."
+	restoreDescription = "Undo a delete or a bad overwrite by copying a prior version's content forward. Omit " +
+		"`target_version` for the most recent non-delete version. Pass the current `version` as `expected_version`."
 	briefDescription = "Assemble the bounded memory working-set: every always-loaded Core note plus the Tail " +
 		"notes most relevant to the given seed/topic, under a token budget. Returns a markdown block."
 )
@@ -54,6 +61,16 @@ func registerTools(server *mcp.Server, e *Engine) {
 	mcp.AddTool(server, &mcp.Tool{Name: "memory_write", Description: writeDescription},
 		func(ctx context.Context, _ *mcp.CallToolRequest, in WriteInput) (*mcp.CallToolResult, WriteOutput, error) {
 			out, err := e.Write(ctx, &in)
+			return nil, out, err
+		})
+	mcp.AddTool(server, &mcp.Tool{Name: "memory_delete", Description: deleteDescription},
+		func(ctx context.Context, _ *mcp.CallToolRequest, in DeleteInput) (*mcp.CallToolResult, MutationOutput, error) {
+			out, err := e.Delete(ctx, in)
+			return nil, out, err
+		})
+	mcp.AddTool(server, &mcp.Tool{Name: "memory_restore", Description: restoreDescription},
+		func(ctx context.Context, _ *mcp.CallToolRequest, in RestoreInput) (*mcp.CallToolResult, MutationOutput, error) {
+			out, err := e.Restore(ctx, in)
 			return nil, out, err
 		})
 	mcp.AddTool(server, &mcp.Tool{Name: "brief", Description: briefDescription},

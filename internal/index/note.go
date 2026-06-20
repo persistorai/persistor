@@ -54,6 +54,28 @@ var validKinds = map[string]bool{
 	"fact": true, "decision": true, "episode": true, "reference": true, "preference": true,
 }
 
+// ValidKind reports whether kind is an accepted note kind. An empty kind is
+// accepted (the store defaults it to "fact").
+func ValidKind(kind string) bool { return kind == "" || validKinds[kind] }
+
+// ValidTier reports whether tier is core or tail. An empty tier is accepted (the
+// store defaults it to "tail").
+func ValidTier(tier string) bool { return tier == "" || tier == tierCore || tier == tierTail }
+
+// DeriveTitle returns the trimmed title when set, else the note body's first
+// markdown heading, else fallback. The PG-native write path uses it so a note
+// without an explicit title still gets a sensible one (the old file path derived
+// this in ParseNote).
+func DeriveTitle(title, body, fallback string) string {
+	if t := strings.TrimSpace(title); t != "" {
+		return t
+	}
+	if t := titleFromBody(body, ""); t != "" {
+		return t
+	}
+	return fallback
+}
+
 // ParseNote parses one markdown file's content into a normalized Note. namespace
 // (the root name, e.g. "demo") prefixes derived ids so the same relative path
 // under different roots can't collide. relPath is the file path relative to its

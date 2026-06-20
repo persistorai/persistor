@@ -84,18 +84,20 @@ func newMux(getServer func(*http.Request) *mcp.Server, verifier auth.TokenVerifi
 // the tenant, so tool calls set app.tenant_id from the token rather than daemon
 // config. The SDK also pins the session to that UserID (anti-hijack).
 //
-// All tenants share the configured file-backed roots/writeDir, so memory_write
-// is effectively single-tenant for now; true multi-tenant writes move to the
-// PG-native path in a later phase. Read tools are fully tenant-isolated via RLS.
-func tenantServer(store *index.Store, indexer *index.Indexer, roots []index.Root, writeDir, version string) func(*http.Request) *mcp.Server {
+// Writes are PG-native: Engine.Write goes straight to Postgres scoped to the
+// token's tenant, so memory_write is fully tenant-isolated by construction — no
+// shared write directory. Reads are tenant-isolated via RLS.
+func tenantServer(store *index.Store, version string) func(*http.Request) *mcp.Server {
 	return func(r *http.Request) *mcp.Server {
 		tenantID := ""
 		readOnly := false
+		surface := "remote-mcp"
 		if ti := auth.TokenInfoFromContext(r.Context()); ti != nil {
 			tenantID = ti.UserID
 			readOnly = mcpauth.IsReadOnly(ti)
 		}
-		engine := mcpengine.NewEngine(store, indexer, tenantID, roots, writeDir, mcpengine.WithReadOnly(readOnly))
+		engine := mcpengine.NewEngine(store, tenantID,
+			mcpengine.WithReadOnly(readOnly), mcpengine.WithSurface(surface))
 		return mcpengine.NewServer(engine, version)
 	}
 }

@@ -42,13 +42,8 @@ func main() {
 func run(ctx context.Context) error {
 	databaseURL := os.Getenv("DATABASE_URL")
 	tenantID := os.Getenv("PERSISTOR_TENANT_ID")
-	notesDir := os.Getenv("PERSISTOR_NOTES_DIR")
-	if databaseURL == "" || tenantID == "" || notesDir == "" {
-		return fmt.Errorf("DATABASE_URL, PERSISTOR_TENANT_ID, and PERSISTOR_NOTES_DIR are required")
-	}
-	writeDir := os.Getenv("PERSISTOR_WRITE_DIR")
-	if writeDir == "" {
-		writeDir = mcpengine.DefaultWriteDir(notesDir)
+	if databaseURL == "" || tenantID == "" {
+		return fmt.Errorf("DATABASE_URL and PERSISTOR_TENANT_ID are required")
 	}
 
 	log := logrus.New()
@@ -65,14 +60,8 @@ func run(ctx context.Context) error {
 		return fmt.Errorf("applying migrations: %w", err)
 	}
 
-	roots, err := index.BuildRoots(notesDir, os.Getenv("CLAUDE_MEMORY_DIR"), "")
-	if err != nil {
-		return fmt.Errorf("building roots: %w", err)
-	}
-
 	store := index.NewStore(pool, log)
-	indexer := index.NewIndexer(store, log, 0)
-	engine := mcpengine.NewEngine(store, indexer, tenantID, roots, writeDir)
+	engine := mcpengine.NewEngine(store, tenantID, mcpengine.WithSurface("local-stdio"))
 
 	server := mcpengine.NewServer(engine, config.Version)
 
