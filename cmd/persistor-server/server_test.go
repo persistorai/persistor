@@ -185,8 +185,8 @@ func TestHTTP_TenantIsolation(t *testing.T) {
 	tokenB := st.tenant(t, "# Note\n\nbravo secret protocol\n")
 
 	// Tenant A's token: lists tools, sees alpha, never bravo.
-	if n := listToolCount(t, st.ts.URL, tokenA); n != 6 {
-		t.Fatalf("tenant A listed %d tools, want 6", n)
+	if n := listToolCount(t, st.ts.URL, tokenA); n != 8 {
+		t.Fatalf("tenant A listed %d tools, want 8", n)
 	}
 	if !hasSeededNote(searchOverHTTP(t, st.ts.URL, tokenA, "alpha")) {
 		t.Fatal("tenant A could not find its own note")

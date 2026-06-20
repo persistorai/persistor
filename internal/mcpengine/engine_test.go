@@ -315,6 +315,65 @@ func poolFromStore(t *testing.T) *dbpool.Pool {
 	return pool
 }
 
+// TestEngine_ListAndNamespaces: list enumerates summaries (no bodies) filtered
+// by namespace and paginated, and namespaces reports the per-namespace counts.
+func TestEngine_ListAndNamespaces(t *testing.T) {
+	e, _ := newTestEngine(t)
+	ctx := context.Background()
+
+	// Seed three notes in a fresh "work" namespace on top of the two demo seeds.
+	for _, id := range []string{"work:a", "work:b", "work:c"} {
+		if _, err := e.Write(ctx, &mcpengine.WriteInput{ID: id, Namespace: "work", Body: "body of " + id}); err != nil {
+			t.Fatalf("seed %s: %v", id, err)
+		}
+	}
+
+	// List the work namespace: three summaries, no bodies, ordered by id.
+	lr, err := e.List(ctx, mcpengine.ListInput{Namespace: "work"})
+	if err != nil {
+		t.Fatalf("list work: %v", err)
+	}
+	if lr.Count != 3 || len(lr.Notes) != 3 {
+		t.Fatalf("list work count = %d, want 3", lr.Count)
+	}
+	if lr.Notes[0].ID != "work:a" || lr.Notes[2].ID != "work:c" {
+		t.Fatalf("list order = %s..%s, want work:a..work:c", lr.Notes[0].ID, lr.Notes[2].ID)
+	}
+	if lr.Notes[0].Namespace != "work" || lr.Notes[0].Version != 1 {
+		t.Fatalf("summary meta = %+v", lr.Notes[0])
+	}
+
+	// Pagination: limit 2 then offset 2.
+	p1, err := e.List(ctx, mcpengine.ListInput{Namespace: "work", Limit: 2})
+	if err != nil {
+		t.Fatalf("page 1: %v", err)
+	}
+	p2, err := e.List(ctx, mcpengine.ListInput{Namespace: "work", Limit: 2, Offset: 2})
+	if err != nil {
+		t.Fatalf("page 2: %v", err)
+	}
+	if p1.Count != 2 || p2.Count != 1 {
+		t.Fatalf("pagination counts = %d, %d; want 2, 1", p1.Count, p2.Count)
+	}
+	if p1.Limit != 2 || p2.Offset != 2 {
+		t.Fatalf("echoed page = limit %d / offset %d, want 2 / 2", p1.Limit, p2.Offset)
+	}
+
+	// Namespaces: the two seeds land in "default" (their ids are namespace-less)
+	// and the three writes above are in "work", each with its count.
+	nr, err := e.Namespaces(ctx)
+	if err != nil {
+		t.Fatalf("namespaces: %v", err)
+	}
+	got := map[string]int{}
+	for _, ns := range nr.Namespaces {
+		got[ns.Namespace] = ns.Count
+	}
+	if got["default"] != 2 || got["work"] != 3 {
+		t.Fatalf("namespace counts = %+v, want default:2 work:3", got)
+	}
+}
+
 // TestMCPRoundTrip drives the server over an in-memory transport with a real MCP
 // client, proving the wire protocol + schema inference work end to end through
 // the shared NewServer constructor, including the new tool surface.
@@ -339,8 +398,8 @@ func TestMCPRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("list tools: %v", err)
 	}
-	if len(tools.Tools) != 6 {
-		t.Fatalf("listed %d tools, want 6 (search/get/write/delete/restore/brief)", len(tools.Tools))
+	if len(tools.Tools) != 8 {
+		t.Fatalf("listed %d tools, want 8 (search/get/list/namespaces/write/delete/restore/brief)", len(tools.Tools))
 	}
 
 	res, err := cs.CallTool(ctx, &mcp.CallToolParams{

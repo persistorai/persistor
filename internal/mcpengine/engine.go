@@ -165,6 +165,100 @@ func (e *Engine) Get(ctx context.Context, in GetInput) (GetOutput, error) {
 	}, nil
 }
 
+// ListInput is the memory_list argument shape.
+type ListInput struct {
+	Namespace         string `json:"namespace,omitempty" jsonschema:"Restrict to one namespace (e.g. demo, claude, work). Omit to list across all namespaces."`
+	Limit             int    `json:"limit,omitempty" jsonschema:"Max notes to return (page size). Default 50, capped at 500."`
+	Offset            int    `json:"offset,omitempty" jsonschema:"Number of notes to skip, for paging through large namespaces. Default 0."`
+	IncludeSuperseded bool   `json:"include_superseded,omitempty" jsonschema:"Include superseded (corrected/stale) notes. Default false."`
+}
+
+// ListEntry is one note summary in a memory_list result: metadata only, no body
+// (fetch the body with memory_get once you've chosen a note).
+type ListEntry struct {
+	ID         string `json:"id"`
+	Namespace  string `json:"namespace"`
+	Kind       string `json:"kind"`
+	Tier       string `json:"tier"`
+	Title      string `json:"title"`
+	Version    int    `json:"version"`
+	Superseded bool   `json:"superseded"`
+}
+
+// ListOutput is the memory_list result shape. Limit/Offset echo the effective
+// page applied (after defaulting/capping), so the caller can page correctly.
+type ListOutput struct {
+	Notes  []ListEntry `json:"notes"`
+	Count  int         `json:"count"`
+	Limit  int         `json:"limit"`
+	Offset int         `json:"offset"`
+}
+
+const (
+	defaultListPageLimit = 50
+	maxListPageLimit     = 500
+)
+
+// List enumerates the tenant's notes as summaries (no bodies), paginated and
+// optionally filtered to one namespace — the browse/page path memory_search
+// cannot serve, because search needs a query term. Bodies come from memory_get.
+func (e *Engine) List(ctx context.Context, in ListInput) (ListOutput, error) {
+	limit := in.Limit
+	if limit <= 0 {
+		limit = defaultListPageLimit
+	}
+	limit = min(limit, maxListPageLimit)
+	offset := max(in.Offset, 0)
+	summaries, err := e.store.ListNotes(ctx, e.tenantID, index.ListOpts{
+		Namespace:         in.Namespace,
+		Limit:             limit,
+		Offset:            offset,
+		IncludeSuperseded: in.IncludeSuperseded,
+	})
+	if err != nil {
+		return ListOutput{}, fmt.Errorf("list: %w", err)
+	}
+	out := ListOutput{Notes: make([]ListEntry, len(summaries)), Count: len(summaries), Limit: limit, Offset: offset}
+	for i := range summaries {
+		out.Notes[i] = ListEntry{
+			ID: summaries[i].ID, Namespace: summaries[i].Namespace, Kind: summaries[i].Kind,
+			Tier: summaries[i].Tier, Title: summaries[i].Title, Version: summaries[i].Version,
+			Superseded: summaries[i].Superseded,
+		}
+	}
+	return out, nil
+}
+
+// NamespacesInput is the (empty) memory_namespaces argument shape — the tool
+// takes no parameters; the tenant comes from the verified token.
+type NamespacesInput struct{}
+
+// NamespaceEntry is one namespace and its live-note count.
+type NamespaceEntry struct {
+	Namespace string `json:"namespace"`
+	Count     int    `json:"count"`
+}
+
+// NamespacesOutput is the memory_namespaces result shape.
+type NamespacesOutput struct {
+	Namespaces []NamespaceEntry `json:"namespaces"`
+}
+
+// Namespaces returns the tenant's namespaces, each with its live-note count —
+// the top-level map of where this tenant's memory lives. Useful to discover
+// namespaces before listing or searching within one.
+func (e *Engine) Namespaces(ctx context.Context) (NamespacesOutput, error) {
+	counts, err := e.store.Namespaces(ctx, e.tenantID)
+	if err != nil {
+		return NamespacesOutput{}, fmt.Errorf("namespaces: %w", err)
+	}
+	out := NamespacesOutput{Namespaces: make([]NamespaceEntry, len(counts))}
+	for i := range counts {
+		out.Namespaces[i] = NamespaceEntry{Namespace: counts[i].Namespace, Count: counts[i].Count}
+	}
+	return out, nil
+}
+
 // WriteInput is the memory_write argument shape — one durable note.
 type WriteInput struct {
 	Path            string   `json:"path,omitempty" jsonschema:"Optional .md path used to derive the note id when id is omitted (no absolute paths or ..). The note is stored in Postgres, not as a file."`
