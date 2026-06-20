@@ -2,9 +2,11 @@ package index
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 )
 
 // PGNoteInput is a PG-native note write: the note row itself is the source of
@@ -102,9 +104,24 @@ func (s *Store) WriteNote(ctx context.Context, tenantID string, in *PGNoteInput,
 		return nil
 	})
 	if err != nil {
+		// A create (expectedVersion 0) can't see a concurrent creator: both lock
+		// nothing, both resolve to version 1, and the loser only trips the
+		// note_versions PK (tenant_id, note_id, version) as a unique violation.
+		// The row now exists at version 1, so report it as the conflict it is —
+		// a clean *VersionConflictError (409), not the raw unique-violation (500).
+		if expectedVersion == 0 && isUniqueViolation(err) {
+			return WriteResult{}, &VersionConflictError{NoteID: in.ID, Expected: 0, Actual: 1}
+		}
 		return WriteResult{}, err
 	}
 	return res, nil
+}
+
+// isUniqueViolation reports whether err is (or wraps) a PostgreSQL
+// unique_violation (SQLSTATE 23505).
+func isUniqueViolation(err error) bool {
+	var pgErr *pgconn.PgError
+	return errors.As(err, &pgErr) && pgErr.Code == "23505"
 }
 
 // ReindexPGNative rebuilds the chunk projection for every live PG-native note
