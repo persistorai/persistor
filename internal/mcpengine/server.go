@@ -33,6 +33,13 @@ const (
 		"Do NOT use it for information already in this conversation or for general world knowledge."
 	getDescription = "Fetch one note's full prose body by id (as returned by memory_search). Returns the " +
 		"note's current `version` — pass it back as `expected_version` to safely update or delete the note."
+	listDescription = "List the user's stored notes as summaries (id, namespace, title, kind, tier, version) " +
+		"WITHOUT bodies — the way to BROWSE or page memory when you don't have a search term. Optionally filter " +
+		"to one `namespace` and page with `limit`/`offset`. Fetch a full body with memory_get. Superseded notes " +
+		"are excluded unless you ask for them."
+	namespacesDescription = "List the namespaces the user's memory is organized into, each with its note count " +
+		"— the top-level map of where memory lives (e.g. scout, claude, work). Use it to discover namespaces " +
+		"before listing or searching within one."
 	writeDescription = "Save a durable note in prose. Provide the note body and an id (or a .md path it is " +
 		"derived from). Omit `expected_version` to CREATE; to UPDATE an existing note pass its current " +
 		"`version` (from memory_get) as `expected_version`. Set `supersedes` to the id of a note this " +
@@ -56,6 +63,16 @@ func registerTools(server *mcp.Server, e *Engine) {
 	mcp.AddTool(server, &mcp.Tool{Name: "memory_get", Description: getDescription},
 		func(ctx context.Context, _ *mcp.CallToolRequest, in GetInput) (*mcp.CallToolResult, GetOutput, error) {
 			out, err := e.Get(ctx, in)
+			return nil, out, err
+		})
+	mcp.AddTool(server, &mcp.Tool{Name: "memory_list", Description: listDescription},
+		func(ctx context.Context, _ *mcp.CallToolRequest, in ListInput) (*mcp.CallToolResult, ListOutput, error) {
+			out, err := e.List(ctx, in)
+			return nil, out, err
+		})
+	mcp.AddTool(server, &mcp.Tool{Name: "memory_namespaces", Description: namespacesDescription},
+		func(ctx context.Context, _ *mcp.CallToolRequest, _ NamespacesInput) (*mcp.CallToolResult, NamespacesOutput, error) {
+			out, err := e.Namespaces(ctx)
 			return nil, out, err
 		})
 	mcp.AddTool(server, &mcp.Tool{Name: "memory_write", Description: writeDescription},
