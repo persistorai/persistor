@@ -18,6 +18,10 @@ import (
 // status; the message is user-facing.
 var ErrReadOnly = errors.New("identity is read-only: memory_write is not permitted")
 
+// ErrRateLimited is returned by mutating tools when the tenant has exceeded its
+// per-tenant write rate. The caller should back off and retry.
+var ErrRateLimited = errors.New("write rate limit exceeded for this tenant: slow down and retry")
+
 // defaultSurface labels a write whose transport did not set one (the audit
 // surface in note_versions). The remote daemon overrides it per session.
 const defaultSurface = "mcp"
@@ -30,6 +34,7 @@ type Engine struct {
 	tenantID string
 	surface  string
 	readOnly bool
+	limiter  *WriteLimiter
 }
 
 // EngineOption configures optional Engine behavior.
@@ -49,6 +54,13 @@ func WithSurface(surface string) EngineOption {
 			e.surface = surface
 		}
 	}
+}
+
+// WithWriteLimiter attaches a shared per-tenant write rate limiter. The mutating
+// tools consult it before touching the store. A nil limiter (the default) means
+// no limiting.
+func WithWriteLimiter(l *WriteLimiter) EngineOption {
+	return func(e *Engine) { e.limiter = l }
 }
 
 // NewEngine builds an Engine over the given store for one tenant. Writes go
@@ -182,6 +194,9 @@ func (e *Engine) Write(ctx context.Context, in *WriteInput) (WriteOutput, error)
 	if e.readOnly {
 		return WriteOutput{}, ErrReadOnly
 	}
+	if !e.limiter.Allow(e.tenantID) {
+		return WriteOutput{}, ErrRateLimited
+	}
 	if strings.TrimSpace(in.Body) == "" {
 		return WriteOutput{}, fmt.Errorf("body is required")
 	}
@@ -252,6 +267,9 @@ func (e *Engine) Delete(ctx context.Context, in DeleteInput) (MutationOutput, er
 	if e.readOnly {
 		return MutationOutput{}, ErrReadOnly
 	}
+	if !e.limiter.Allow(e.tenantID) {
+		return MutationOutput{}, ErrRateLimited
+	}
 	if in.ID == "" {
 		return MutationOutput{}, fmt.Errorf("id is required")
 	}
@@ -277,6 +295,9 @@ type RestoreInput struct {
 func (e *Engine) Restore(ctx context.Context, in RestoreInput) (MutationOutput, error) {
 	if e.readOnly {
 		return MutationOutput{}, ErrReadOnly
+	}
+	if !e.limiter.Allow(e.tenantID) {
+		return MutationOutput{}, ErrRateLimited
 	}
 	if in.ID == "" {
 		return MutationOutput{}, fmt.Errorf("id is required")

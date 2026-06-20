@@ -43,6 +43,7 @@ func main() {
 	rootCmd.AddCommand(newAdminCmd())
 	rootCmd.AddCommand(newExportCmd())
 	rootCmd.AddCommand(newImportCmd())
+	rootCmd.AddCommand(newDeleteTenantCmd())
 
 	if err := rootCmd.Execute(); err != nil {
 		os.Exit(1)

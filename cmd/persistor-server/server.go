@@ -87,7 +87,7 @@ func newMux(getServer func(*http.Request) *mcp.Server, verifier auth.TokenVerifi
 // Writes are PG-native: Engine.Write goes straight to Postgres scoped to the
 // token's tenant, so memory_write is fully tenant-isolated by construction — no
 // shared write directory. Reads are tenant-isolated via RLS.
-func tenantServer(store *index.Store, version string) func(*http.Request) *mcp.Server {
+func tenantServer(store *index.Store, limiter *mcpengine.WriteLimiter, version string) func(*http.Request) *mcp.Server {
 	return func(r *http.Request) *mcp.Server {
 		tenantID := ""
 		readOnly := false
@@ -97,7 +97,8 @@ func tenantServer(store *index.Store, version string) func(*http.Request) *mcp.S
 			readOnly = mcpauth.IsReadOnly(ti)
 		}
 		engine := mcpengine.NewEngine(store, tenantID,
-			mcpengine.WithReadOnly(readOnly), mcpengine.WithSurface(surface))
+			mcpengine.WithReadOnly(readOnly), mcpengine.WithSurface(surface),
+			mcpengine.WithWriteLimiter(limiter))
 		return mcpengine.NewServer(engine, version)
 	}
 }
