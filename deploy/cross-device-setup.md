@@ -91,10 +91,15 @@ header and you should get a `401` instead — that confirms auth is on.
 ## Step 4 - Add the MCP server to this machine
 
 ```bash
-claude mcp add --transport http \
-  --header "Authorization: Bearer ${TOKEN}" \
-  persistor-remote "http://${WARPCORE}:8088/mcp"
+# The name and URL must come BEFORE the flags, or the CLI errors
+# "missing required argument 'name'".
+claude mcp add persistor-remote "http://${WARPCORE}:8088/mcp" \
+  --transport http \
+  --header "Authorization: Bearer ${TOKEN}"
 ```
+
+After adding (or re-adding) the server, restart Claude Code so it loads the new
+tools — MCP tools are read only at startup.
 
 ## Step 5 - Verify the tools are listed
 
@@ -125,7 +130,7 @@ If all three succeed, the tools are callable end to end from this device.
 Reply to the operator with:
 
 ```text
-Cross-device P1 check:
+Cross-device check:
 - Reachability (healthz 200): PASS / FAIL
 - initialize returns serverInfo name=persistor: PASS / FAIL
 - claude mcp list shows persistor-remote connected: PASS / FAIL
