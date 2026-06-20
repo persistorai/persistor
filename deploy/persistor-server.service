@@ -13,10 +13,11 @@ RestartSec=5
 # Configuration lives outside the unit so no secrets are baked in. Copy
 # deploy/persistor-server.env.example to ~/.persistor/server.env and fill it in.
 #
-# Phase P1 is tailnet-only and UNAUTHENTICATED: set PERSISTOR_LISTEN_ADDR to the
-# Tailscale IP (e.g. 100.x.y.z:8088), never a public interface. For verification
-# point PERSISTOR_TENANT_ID at a THROWAWAY tenant and PERSISTOR_NOTES_DIR at a
-# throwaway dir — never devbox's live demo:/claude: memory.
+# Set PERSISTOR_LISTEN_ADDR to the Tailscale IP (e.g. 100.x.y.z:8088), never a
+# public interface. The daemon authenticates per-tenant bearer tokens (mint with
+# `persistor key create`); there is no PERSISTOR_TENANT_ID. Point
+# PERSISTOR_NOTES_DIR at a throwaway dir — never devbox's live demo:/claude:
+# memory.
 EnvironmentFile=%h/.persistor/server.env
 
 # Hardening: the daemon needs Postgres and its own notes dir, nothing more.
