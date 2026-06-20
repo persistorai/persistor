@@ -1,8 +1,10 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
+	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/auth"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -38,13 +40,29 @@ func (m *protectedResourceMetadata) serveHTTP(w http.ResponseWriter, _ *http.Req
 // only from the verified bearer token (Non-corner-painting rule 1: never from
 // the network path); the bearer middleware sits in front of the MCP handler and
 // 401s missing/invalid tokens with a WWW-Authenticate header.
-func newMux(getServer func(*http.Request) *mcp.Server, verifier auth.TokenVerifier, authOpts *auth.RequireBearerTokenOptions, metadata *protectedResourceMetadata) *http.ServeMux {
+// ready probes a dependency (the DB pool) for the /readyz handler; nil means the
+// daemon reports ready unconditionally (used in tests with no pool).
+func newMux(getServer func(*http.Request) *mcp.Server, verifier auth.TokenVerifier, authOpts *auth.RequireBearerTokenOptions, metadata *protectedResourceMetadata, ready func(context.Context) error) *http.ServeMux {
 	mcpHandler := mcp.NewStreamableHTTPHandler(getServer, nil)
 	authed := auth.RequireBearerToken(verifier, authOpts)(mcpHandler)
 
 	mux := http.NewServeMux()
 	mux.Handle("/mcp", authed)
+	// /healthz is pure liveness (the process is up); /readyz also checks the DB,
+	// the daemon's only hard dependency, so an orchestrator won't route to an
+	// instance whose Postgres is unreachable.
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+	mux.HandleFunc("/readyz", func(w http.ResponseWriter, r *http.Request) {
+		if ready != nil {
+			ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
+			defer cancel()
+			if err := ready(ctx); err != nil {
+				http.Error(w, "not ready", http.StatusServiceUnavailable)
+				return
+			}
+		}
 		w.WriteHeader(http.StatusOK)
 	})
 	if metadata != nil {

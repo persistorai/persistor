@@ -101,6 +101,11 @@ func (p *Pool) BeginReadOnly(ctx context.Context) (pgx.Tx, error) {
 	return p.pool.BeginTx(ctx, pgx.TxOptions{AccessMode: pgx.ReadOnly})
 }
 
+// Ping verifies a usable connection to the database, for readiness probes.
+func (p *Pool) Ping(ctx context.Context) error {
+	return p.pool.Ping(ctx)
+}
+
 // ConnString returns the connection string used to create the pool.
 func (p *Pool) ConnString() string {
 	return p.pool.Config().ConnString()

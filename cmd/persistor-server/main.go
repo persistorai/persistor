@@ -81,23 +81,39 @@ func run(ctx context.Context) error {
 		return fmt.Errorf("building authenticator: %w", err)
 	}
 
-	getServer := tenantServer(store, indexer, roots, cfg.writeDir, config.Version)
-	mux := newMux(getServer, authn.verify, authn.opts, authn.metadata)
-	if cfg.authMode == authModeOIDC && cfg.stytchPublicToken != "" {
-		consent, err := newConsentHandler(cfg.stytchPublicToken)
-		if err != nil {
-			return fmt.Errorf("building consent page: %w", err)
-		}
-		mux.HandleFunc("/authorize", consent)
-	}
-	httpServer := &http.Server{
-		Addr:              cfg.listenAddr,
-		Handler:           mux,
-		ReadHeaderTimeout: 10 * time.Second,
+	httpServer, err := buildHTTPServer(&cfg, store, indexer, roots, authn, log, pool.Ping)
+	if err != nil {
+		return err
 	}
 	log.WithFields(logrus.Fields{"addr": cfg.listenAddr, "auth_mode": cfg.authMode}).
 		Warn("persistor-server listening (tailnet-bound)")
 	return serve(ctx, httpServer, log)
+}
+
+// buildHTTPServer assembles the daemon's HTTP server: the auth-gated MCP mux
+// (plus the OIDC consent page), wrapped in access logging and security headers,
+// with timeouts suited to a long-running network service. ready is the /readyz
+// DB probe.
+func buildHTTPServer(cfg *serverConfig, store *index.Store, indexer *index.Indexer, roots []index.Root, authn authBundle, log *logrus.Logger, ready func(context.Context) error) (*http.Server, error) {
+	getServer := tenantServer(store, indexer, roots, cfg.writeDir, config.Version)
+	mux := newMux(getServer, authn.verify, authn.opts, authn.metadata, ready)
+	if cfg.authMode == authModeOIDC && cfg.stytchPublicToken != "" {
+		consent, err := newConsentHandler(cfg.stytchPublicToken)
+		if err != nil {
+			return nil, fmt.Errorf("building consent page: %w", err)
+		}
+		mux.HandleFunc("/authorize", consent)
+	}
+	handler := requestLogger(log, securityHeaders(mux))
+	return &http.Server{
+		Addr:              cfg.listenAddr,
+		Handler:           handler,
+		ReadHeaderTimeout: 10 * time.Second,
+		ReadTimeout:       30 * time.Second,
+		IdleTimeout:       120 * time.Second,
+		// No WriteTimeout: MCP Streamable HTTP responses can be long-lived
+		// (SSE-style streaming); a write deadline would truncate them.
+	}, nil
 }
 
 // serve runs the HTTP server until ctx is cancelled (SIGINT/SIGTERM), then
@@ -189,8 +205,27 @@ func validateAuthConfig(cfg *serverConfig) error {
 		if cfg.oidcIssuer == "" || cfg.oidcAudience == "" || cfg.oidcJWKSURL == "" {
 			return fmt.Errorf("oidc auth requires PERSISTOR_OIDC_ISSUER, PERSISTOR_OIDC_AUDIENCE, and PERSISTOR_OIDC_JWKS_URL")
 		}
+		if err := requireHTTPS("PERSISTOR_OIDC_ISSUER", cfg.oidcIssuer); err != nil {
+			return err
+		}
+		if err := requireHTTPS("PERSISTOR_OIDC_JWKS_URL", cfg.oidcJWKSURL); err != nil {
+			return err
+		}
 		return nil
 	default:
 		return fmt.Errorf("unknown PERSISTOR_AUTH_MODE %q (want %q or %q)", cfg.authMode, authModeStatic, authModeOIDC)
 	}
+}
+
+// requireHTTPS rejects a non-HTTPS issuer/JWKS URL: over plain HTTP an on-path
+// attacker could serve forged signing keys and mint accepted tokens. Loopback
+// HTTP is allowed so tests can run a local JWKS server.
+func requireHTTPS(name, raw string) error {
+	if strings.HasPrefix(raw, "https://") ||
+		strings.HasPrefix(raw, "http://127.0.0.1") ||
+		strings.HasPrefix(raw, "http://localhost") ||
+		strings.HasPrefix(raw, "http://[::1]") {
+		return nil
+	}
+	return fmt.Errorf("%s must use https:// (got %q)", name, raw)
 }
