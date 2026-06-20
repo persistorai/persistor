@@ -1,36 +1,38 @@
 [Unit]
 Description=Persistor remote MCP memory daemon (tailnet-bound)
 Documentation=https://github.com/briancolinger/persistor
-After=network-online.target
+After=network-online.target postgresql@18-persistorenc.service
 Wants=network-online.target
+# The DB and notes live on a MANUALLY-unlocked LUKS volume, so this unit is
+# deliberately NOT enabled at boot. deploy/persistor-enc-unlock.sh unlocks the
+# volume, starts the encrypted cluster, then starts this service; the lock
+# script stops it. Restart=on-failure keeps it up while the volume is mounted.
 
 [Service]
 Type=simple
-ExecStart=%h/.local/bin/persistor-server
+User=user
+Group=user
+ExecStart=/home/user/.local/bin/persistor-server
 Restart=on-failure
 RestartSec=5
 
 # Configuration lives outside the unit so no secrets are baked in. Copy
-# deploy/persistor-server.env.example to ~/.persistor/server.env and fill it in.
-#
-# Set PERSISTOR_LISTEN_ADDR to the Tailscale IP (e.g. 100.x.y.z:8088), never a
-# public interface. The daemon authenticates per-tenant bearer tokens (mint with
-# `persistor key create`); there is no PERSISTOR_TENANT_ID. Point
-# PERSISTOR_NOTES_DIR at a throwaway dir — never devbox's live demo:/claude:
-# memory.
-EnvironmentFile=%h/.persistor/server.env
+# deploy/persistor-server.env.example to ~/.persistor/server.env and fill it in
+# (DATABASE_URL points at the encrypted instance on :5434; PERSISTOR_NOTES_DIR
+# is on the encrypted mount so note files never touch unencrypted disk).
+EnvironmentFile=/home/user/.persistor/server.env
 
-# Hardening: the daemon needs Postgres and its own notes dir, nothing more.
+# Hardening: the daemon needs Postgres (TCP) and its notes dir on the encrypted
+# mount, nothing else. ProtectSystem=strict makes the FS read-only; carve out
+# just the encrypted notes dir for memory_write.
 NoNewPrivileges=true
 ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/mnt/persistor-enc/notes
 ProtectKernelTunables=true
 ProtectControlGroups=true
 PrivateTmp=true
 RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
-# memory_write persists notes under PERSISTOR_NOTES_DIR / PERSISTOR_WRITE_DIR.
-# ProtectSystem=strict makes the filesystem read-only, so grant just those paths:
-#   ReadWritePaths=%h/persistor-remote-test
-# Add a matching ReadWritePaths line for whatever notes dir you configure.
 
 [Install]
-WantedBy=default.target
+WantedBy=multi-user.target
