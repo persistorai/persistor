@@ -41,6 +41,7 @@ func main() {
 	rootCmd.AddCommand(newBriefCmd())
 	rootCmd.AddCommand(newSearchCmd())
 	rootCmd.AddCommand(newConsolidateCmd())
+	rootCmd.AddCommand(newKeyCmd())
 
 	if err := rootCmd.Execute(); err != nil {
 		os.Exit(1)
