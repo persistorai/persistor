@@ -39,7 +39,6 @@ func main() {
 	rootCmd.AddCommand(newEvalCmd())
 	rootCmd.AddCommand(newBriefCmd())
 	rootCmd.AddCommand(newSearchCmd())
-	rootCmd.AddCommand(newKeyCmd())
 	rootCmd.AddCommand(newAdminCmd())
 	rootCmd.AddCommand(newExportCmd())
 	rootCmd.AddCommand(newImportCmd())

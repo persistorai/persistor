@@ -2,13 +2,17 @@ package main
 
 import (
 	"context"
+	"crypto/rand"
+	"crypto/rsa"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
 	"github.com/modelcontextprotocol/go-sdk/auth"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -17,20 +21,26 @@ import (
 	"github.com/persistorai/persistor/internal/dbpool"
 	"github.com/persistorai/persistor/internal/index"
 	"github.com/persistorai/persistor/internal/mcpauth"
-	"github.com/persistorai/persistor/internal/mcpengine"
 )
 
-// testStack is an in-process daemon: the real auth-gated mux over a test DB.
+const (
+	testIssuer   = "https://test.stytch.example"
+	testAudience = "persistor-test"
+)
+
+// testStack is an in-process daemon: the real OIDC-gated mux over a test DB. It
+// mints its own RS256 tokens against an in-memory key, so no IdP is needed.
 type testStack struct {
-	ts       *httptest.Server
-	store    *index.Store
-	keyStore *mcpauth.PGKeyStore
-	pool     *dbpool.Pool
+	ts      *httptest.Server
+	store   *index.Store
+	pool    *dbpool.Pool
+	signKey *rsa.PrivateKey
 }
 
 // newTestStack stands up the auth-gated HTTP handler against TEST_DATABASE_URL
 // (skipping when unset). The schema is assumed migrated (the loop gate runs
-// fresh-migrate first).
+// fresh-migrate first). The verifier derives the tenant straight from iss|sub
+// (no resolver), so a token's subject determines its tenant deterministically.
 func newTestStack(t *testing.T) *testStack {
 	t.Helper()
 	dbURL := os.Getenv("TEST_DATABASE_URL")
@@ -44,43 +54,46 @@ func newTestStack(t *testing.T) *testStack {
 	}
 	t.Cleanup(pool.Close)
 
+	signKey, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatalf("genkey: %v", err)
+	}
+	keyFunc := func(*jwt.Token) (any, error) { return &signKey.PublicKey, nil }
+
 	log := logrus.New()
 	log.SetLevel(logrus.ErrorLevel)
 	store := index.NewStore(pool, log)
-	keyStore := mcpauth.NewPGKeyStore(pool)
 
-	verifier := mcpauth.NewStaticTokenAuth(keyStore)
+	verifier := mcpauth.NewOIDCAuth(keyFunc, testIssuer, testAudience)
 	getServer := tenantServer(store, nil, "test")
 	authOpts := &auth.RequireBearerTokenOptions{ResourceMetadataURL: "http://example/.well-known/oauth-protected-resource"}
 	ts := httptest.NewServer(newMux(getServer, verifier.Verify, authOpts, nil, pool.Ping))
 	t.Cleanup(ts.Close)
 
-	return &testStack{ts: ts, store: store, keyStore: keyStore, pool: pool}
+	return &testStack{ts: ts, store: store, pool: pool, signKey: signKey}
 }
 
 // seededNoteID is the id every seeded note lands at; isolation comes from the
-// tenant, not the path.
+// tenant, not the id.
 const seededNoteID = "scout:memory-daily-note"
 
-// tenant seeds one tenant with a single note and mints an API key for it,
-// returning the raw token.
+// tenant seeds a fresh tenant with one note and returns a signed bearer token for
+// it. Each call uses a unique OIDC subject so the derived tenant (uuidv5(iss|sub))
+// is unique per run — repeatable regardless of prior runs. The verifier derives
+// the same tenant from the token, so the seeded note and the request land together.
 func (s *testStack) tenant(t *testing.T, noteBody string) string {
 	t.Helper()
 	ctx := context.Background()
-	tenantID := uuid.New().String()
+	subject := "test-subject-" + uuid.NewString()
+	tenantID := mcpauth.TenantForSubject(testIssuer, subject)
 
 	if _, err := s.store.WriteNote(ctx, tenantID, &index.PGNoteInput{
 		ID: seededNoteID, Title: "Note", Body: noteBody, Surface: "test",
 	}, 0); err != nil {
 		t.Fatalf("seed write: %v", err)
 	}
-	token, err := s.keyStore.CreateAPIKey(ctx, tenantID, "test")
-	if err != nil {
-		t.Fatalf("mint key: %v", err)
-	}
 	t.Cleanup(func() {
 		clean := context.Background()
-		_, _ = s.pool.Exec(clean, "DELETE FROM api_keys WHERE tenant_id = $1", tenantID)
 		tx, err := s.pool.Begin(clean)
 		if err != nil {
 			return
@@ -94,7 +107,25 @@ func (s *testStack) tenant(t *testing.T, noteBody string) string {
 		_, _ = tx.Exec(clean, "DELETE FROM notes WHERE tenant_id = current_setting('app.tenant_id')::uuid")
 		_ = tx.Commit(clean)
 	})
-	return token
+	return s.token(t, subject)
+}
+
+// token mints an RS256 bearer token for the subject, signed with the stack's
+// in-memory key.
+func (s *testStack) token(t *testing.T, subject string) string {
+	t.Helper()
+	claims := jwt.RegisteredClaims{
+		Issuer:    testIssuer,
+		Subject:   subject,
+		Audience:  jwt.ClaimStrings{testAudience},
+		ExpiresAt: jwt.NewNumericDate(time.Now().Add(time.Hour)),
+		IssuedAt:  jwt.NewNumericDate(time.Now()),
+	}
+	signed, err := jwt.NewWithClaims(jwt.SigningMethodRS256, claims).SignedString(s.signKey)
+	if err != nil {
+		t.Fatalf("sign token: %v", err)
+	}
+	return signed
 }
 
 // TestHTTP_AuthRequired: the /mcp endpoint rejects missing/invalid tokens with a
@@ -124,7 +155,7 @@ func TestHTTP_AuthRequired(t *testing.T) {
 	// Bogus token -> 401.
 	req2, _ := http.NewRequestWithContext(ctx, http.MethodPost, st.ts.URL+"/mcp", strings.NewReader("{}"))
 	req2.Header.Set("Content-Type", "application/json")
-	req2.Header.Set("Authorization", "Bearer psk_bogus")
+	req2.Header.Set("Authorization", "Bearer not.a.jwt")
 	resp2, err := http.DefaultClient.Do(req2)
 	if err != nil {
 		t.Fatalf("post bogus: %v", err)
@@ -146,8 +177,8 @@ func TestHTTP_AuthRequired(t *testing.T) {
 	}
 }
 
-// TestHTTP_TenantIsolation: two tenants, two tokens; each token's session sees
-// only its own tenant's notes through the full HTTP + auth + RLS path.
+// TestHTTP_TenantIsolation: two subjects (two tenants), two tokens; each token's
+// session sees only its own tenant's notes through the full HTTP + auth + RLS path.
 func TestHTTP_TenantIsolation(t *testing.T) {
 	st := newTestStack(t)
 	tokenA := st.tenant(t, "# Note\n\nalpha secret protocol\n")
@@ -262,7 +293,7 @@ func searchOverHTTP(t *testing.T, url, token, query string) []string {
 	if res.IsError {
 		t.Fatalf("search %q returned error: %+v", query, res.Content)
 	}
-	var out mcpengine.SearchOutput
+	var out mcpengineSearchOutput
 	b, err := json.Marshal(res.StructuredContent)
 	if err != nil {
 		t.Fatalf("marshal: %v", err)
@@ -275,6 +306,13 @@ func searchOverHTTP(t *testing.T, url, token, query string) []string {
 		ids[i] = r.ID
 	}
 	return ids
+}
+
+// mcpengineSearchOutput mirrors the memory_search result shape for decoding.
+type mcpengineSearchOutput struct {
+	Results []struct {
+		ID string `json:"id"`
+	} `json:"results"`
 }
 
 func hasSeededNote(ids []string) bool {

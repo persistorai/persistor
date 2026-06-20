@@ -2,10 +2,18 @@
 
 ## Project
 
-Persistor is a memory system for AI agents: the durable `.md` notes an agent
-writes are the source of truth, and a PostgreSQL full-text index over them is
-rebuildable. No entity graph, no vectors/embeddings — full-text retrieval over
-prose. Go 1.25+, goose migrations, multi-tenant with RLS.
+Persistor is a memory system for AI agents: durable prose notes plus a
+PostgreSQL full-text index over them. Notes live in Postgres — the note row is
+the source of truth (versioned, with append-only history); there is no
+filesystem note store. It is, at its core, a small CRUD + search + brief API over
+notes, multi-tenant, that agents speak to over MCP. No entity graph, no
+vectors/embeddings — full-text retrieval over prose. Go 1.25+, goose migrations,
+multi-tenant with RLS.
+
+Clients reach Persistor only through the MCP daemon (`persistor-server`) over
+Streamable HTTP, authenticated by OIDC — local and remote alike are normal MCP
+clients of a (local or remote) server. There is no stdio binary and no static
+API-key auth.
 
 Repo: `github.com/persistorai/persistor`
 
@@ -107,25 +115,29 @@ Follow standard Go best practices (Effective Go, Google Go style guide).
 - **Connect as a `NOSUPERUSER NOBYPASSRLS` role.** RLS (even `FORCE`d) is silently
   ignored by a SUPERUSER or BYPASSRLS role, which would void all tenant isolation.
   `dbpool.NewPool` asserts this at startup and refuses to run otherwise.
-- The local index is plaintext (FTS needs it); at-rest encryption returns with the
-  hosted/public-MCP endpoint, not before
+- The index is plaintext (FTS needs it); at-rest protection is **disk/cluster
+  encryption** (LUKS self-host on the :5434 cluster, RDS-at-rest hosted), not
+  application-level note encryption. Body access stays funneled through the
+  `index.Store` note methods so a future swap to app-level crypto is localized.
 - No raw SQL from user input — always parameterized
-- Personal data lives only in a local disposable DB and the private notes repo;
-  this product repo's test fixtures stay synthetic
+- Personal data lives only in a disposable DB and the private notes repo; this
+  product repo's test fixtures stay synthetic
 
-### Hosted-phase checklist (deferred by design — do NOT implement for local use)
+### Hosted-phase posture (implemented)
 
-These are intentional deferrals for the current local, single-user product. They
-become hard requirements before any multi-tenant / public-MCP deployment:
+The multi-tenant / public-MCP hardening is in place:
 
-- **At-rest encryption of note bodies (AES-256-GCM).** The index is plaintext
-  because FTS needs it; encrypting bodies must be reconciled with full-text
-  search before hosting.
-- **Append-only audit log for `memory_write`/supersede.** `memory_write` can
-  write any note and mark any note superseded with no audit trail; a
-  prompt-injected model could poison memory. Add a durable write/supersede/delete
-  log (note id + source) at the MCP handler boundary, and reject a supersede of a
-  non-existent id (currently a silent no-op that still writes the new note).
+- **At-rest encryption** is disk/cluster-level (above) — FTS untouched, zero app
+  crypto.
+- **Append-only audit log.** Every `memory_write`/delete/restore appends an
+  immutable `note_versions` row (note id, op, version, surface, timestamp); a DB
+  trigger blocks UPDATE/DELETE/TRUNCATE except an explicit operator purge
+  (`app.purge` GUC, used only by tenant hard-delete). A supersede of a
+  non-existent id is rejected at the engine boundary.
+- **Per-tenant write rate limit** at the MCP handler (token bucket) blunts a
+  runaway or prompt-injected writer.
+- **Tenant export + hard-delete** (`persistor export` / `persistor delete-tenant`)
+  cover data portability and account deletion.
 
 ## Commits
 
@@ -136,13 +148,12 @@ become hard requirements before any multi-tenant / public-MCP deployment:
 ## Architecture
 
 ```text
-cmd/persistor-cli/     # the `persistor` CLI: reindex, brief, search, consolidate, export, admin, key, eval
-cmd/persistor-mcp/     # stdio MCP transport (local): memory_search, memory_get, memory_write, brief
-cmd/persistor-server/  # remote MCP HTTP daemon (tailnet/OIDC): the same tools over Streamable HTTP + auth
+cmd/persistor-cli/     # the `persistor` operator CLI: brief, search, eval, admin, export, import, delete-tenant
+cmd/persistor-server/  # the MCP daemon (OIDC): memory_search/get/write/delete/restore + brief over Streamable HTTP
 internal/
-  index/               # memory engine: file-sync indexer, chunking, FTS search, PG-native versioned notes
-  mcpengine/           # transport-agnostic MCP engine + tool schemas shared by the stdio + HTTP transports
-  mcpauth/             # pluggable bearer auth: static API keys + OIDC/JWT (JWKS) verifier
+  index/               # memory engine: PG-native versioned notes, chunking, FTS search, brief, import/export
+  mcpengine/           # transport-agnostic MCP engine + tool schemas + per-tenant write rate limiter
+  mcpauth/             # OIDC/JWT (JWKS) bearer verifier; derives a stable tenant from iss|sub
   identity/            # RLS-exempt tenant + identity onboarding store (resolve/provision per login)
   eval/                # deterministic retrieval eval (recall@k) + baselines
   db/                  # goose migrations (one schema) + runner
