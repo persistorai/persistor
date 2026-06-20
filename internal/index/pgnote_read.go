@@ -86,6 +86,28 @@ func (s *Store) NoteState(ctx context.Context, tenantID, id string) (NoteState, 
 	return st, found, nil
 }
 
+// NoteExists reports whether a live (non-tombstoned) note with the given id
+// exists for the tenant. Used at the write boundary to reject a supersede that
+// points at a non-existent note (which would otherwise be a silent dangling
+// pointer), under RLS so it cannot probe another tenant's ids.
+func (s *Store) NoteExists(ctx context.Context, tenantID, id string) (bool, error) {
+	ctx, cancel := context.WithTimeout(ctx, storeQueryTimeout)
+	defer cancel()
+
+	var exists bool
+	err := s.inReadTx(ctx, tenantID, func(tx pgx.Tx) error {
+		return tx.QueryRow(ctx,
+			`SELECT EXISTS (
+			   SELECT 1 FROM notes
+			    WHERE tenant_id = current_setting('app.tenant_id')::uuid
+			      AND id = $1 AND deleted = FALSE)`, id).Scan(&exists)
+	})
+	if err != nil {
+		return false, fmt.Errorf("checking note existence: %w", err)
+	}
+	return exists, nil
+}
+
 // scanVersion reads one note_versions row, mapping a NULL surface to "". It
 // accepts a pgx.Row; pgx.Rows satisfies that interface, so both the single-row
 // and multi-row read paths share it.
