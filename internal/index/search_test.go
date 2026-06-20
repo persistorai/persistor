@@ -8,15 +8,11 @@ import (
 )
 
 func TestSearchNotes_FindsTailFactAndRanks(t *testing.T) {
-	ix, store, tenantID := newTestIndexer(t)
+	store, _, tenantID := newStoreTest(t)
 	ctx := context.Background()
 
-	dir := t.TempDir()
-	writeFile(t, dir, "aurora.md", "# Aurora Protocol\n\nSafety protocol for navigating polar storms.\n")
-	writeFile(t, dir, "helios.md", "# Helios Engine\n\nSolar propulsion for cargo airships.\n")
-	if _, err := ix.Reindex(ctx, tenantID, []index.Root{{Name: "syn", Dir: dir}}); err != nil {
-		t.Fatalf("reindex: %v", err)
-	}
+	seedMarkdown(t, store, tenantID, "aurora.md", "# Aurora Protocol\n\nSafety protocol for navigating polar storms.\n", false)
+	seedMarkdown(t, store, tenantID, "helios.md", "# Helios Engine\n\nSolar propulsion for cargo airships.\n", false)
 
 	hits, err := store.SearchNotes(ctx, tenantID, "polar storm navigation protocol", index.SearchOpts{Limit: 5})
 	if err != nil {
@@ -28,16 +24,11 @@ func TestSearchNotes_FindsTailFactAndRanks(t *testing.T) {
 }
 
 func TestSearchNotes_TierFilter(t *testing.T) {
-	ix, store, tenantID := newTestIndexer(t)
+	store, _, tenantID := newStoreTest(t)
 	ctx := context.Background()
 
-	dir := t.TempDir()
-	writeFile(t, dir, "core.md", "# Core\n\nThe mission is to chart trade routes.\n")
-	writeFile(t, dir, "tail.md", "# Tail\n\nThe mission detail lives here in a tail note.\n")
-	roots := []index.Root{{Name: "syn", Dir: dir, CorePaths: []string{"core.md"}}}
-	if _, err := ix.Reindex(ctx, tenantID, roots); err != nil {
-		t.Fatalf("reindex: %v", err)
-	}
+	seedMarkdown(t, store, tenantID, "core.md", "# Core\n\nThe mission is to chart trade routes.\n", true)
+	seedMarkdown(t, store, tenantID, "tail.md", "# Tail\n\nThe mission detail lives here in a tail note.\n", false)
 
 	all, err := store.SearchNotes(ctx, tenantID, "mission", index.SearchOpts{Limit: 5})
 	if err != nil {
@@ -57,13 +48,9 @@ func TestSearchNotes_TierFilter(t *testing.T) {
 }
 
 func TestSearchNotes_EmptyQueryMatchesNothing(t *testing.T) {
-	ix, store, tenantID := newTestIndexer(t)
+	store, _, tenantID := newStoreTest(t)
 	ctx := context.Background()
-	dir := t.TempDir()
-	writeFile(t, dir, "a.md", "# A\n\nContent.\n")
-	if _, err := ix.Reindex(ctx, tenantID, []index.Root{{Name: "syn", Dir: dir}}); err != nil {
-		t.Fatalf("reindex: %v", err)
-	}
+	seedMarkdown(t, store, tenantID, "a.md", "# A\n\nContent.\n", false)
 	hits, err := store.SearchNotes(ctx, tenantID, "  ... !! ", index.SearchOpts{Limit: 5})
 	if err != nil {
 		t.Fatalf("search: %v", err)

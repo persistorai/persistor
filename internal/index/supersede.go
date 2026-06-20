@@ -24,17 +24,20 @@ func (s *Store) ReconcileSupersessions(ctx context.Context, tenantID string) (in
 	// appears as another note's supersedes target (excluding a note pointing at
 	// itself, which is meaningless). The outer WHERE limits the UPDATE to rows
 	// whose stored flag disagrees with the derived value.
+	// A tombstoned (deleted) note's supersedes pointer is ignored, so deleting a
+	// correction resurrects the note it superseded — the PG-native equivalent of
+	// the file-world behavior where removing the superseding file did the same.
 	const q = `
 		UPDATE notes
 		   SET superseded = (id IN (
 		         SELECT supersedes FROM notes
 		          WHERE tenant_id = current_setting('app.tenant_id')::uuid
-		            AND supersedes IS NOT NULL AND supersedes <> id))
+		            AND supersedes IS NOT NULL AND supersedes <> id AND deleted = FALSE))
 		 WHERE tenant_id = current_setting('app.tenant_id')::uuid
 		   AND superseded IS DISTINCT FROM (id IN (
 		         SELECT supersedes FROM notes
 		          WHERE tenant_id = current_setting('app.tenant_id')::uuid
-		            AND supersedes IS NOT NULL AND supersedes <> id))`
+		            AND supersedes IS NOT NULL AND supersedes <> id AND deleted = FALSE))`
 
 	var affected int64
 	err := s.inTx(ctx, tenantID, func(tx pgx.Tx) error {

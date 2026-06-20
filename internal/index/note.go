@@ -1,10 +1,8 @@
-// Package index implements the memory indexer. The .md notes are the source of
-// truth; this package builds and maintains a rebuildable Postgres full-text
-// index over them.
-//
-// The indexer is file-sync based: it hashes every watched file and re-indexes
-// only files whose content changed, so runs are incremental and idempotent. No
-// entity extraction, no graph — just notes in, searchable chunks out.
+// Package index implements the memory engine. Notes live in Postgres (the source
+// of truth) as versioned rows; this package writes them, maintains the full-text
+// chunk projection over them, and serves search/brief. No entity extraction, no
+// graph — just notes in, searchable chunks out. ParseNote/RenderNote convert
+// between the prose-with-frontmatter form (import, export) and the stored note.
 package index
 
 import (

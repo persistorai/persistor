@@ -3,8 +3,6 @@ package index
 import (
 	"context"
 	"fmt"
-	"os"
-	"path/filepath"
 	"strings"
 )
 
@@ -128,47 +126,6 @@ func truncateToTokens(text string, maxTokens int) string {
 		cut = cut[:nl]
 	}
 	return strings.TrimRight(cut, " \n") + marker
-}
-
-// CoreFromDisk reads the Core notes straight from their source files — the
-// degrade path for when the index/DB is unreachable. The notes are
-// the source of truth, so Core is always recoverable without the database.
-func CoreFromDisk(roots []Root) ([]NoteRecord, error) {
-	var out []NoteRecord
-	for ri := range roots {
-		root := &roots[ri]
-		for _, rel := range root.CorePaths {
-			abs := filepath.Join(root.Dir, rel)
-			content, err := os.ReadFile(abs)
-			if err != nil {
-				if os.IsNotExist(err) {
-					continue
-				}
-				return nil, fmt.Errorf("reading core file %q: %w", abs, err)
-			}
-			n := ParseNote(root.Name, rel, string(content), true)
-			out = append(out, NoteRecord{
-				ID: n.ID, Kind: n.Kind, Tier: tierCore, Title: n.Title,
-				Body: n.Body, SourcePath: root.Name + "/" + rel,
-			})
-		}
-	}
-	return out, nil
-}
-
-// BuildDegradedWorkingSet packs disk-read Core notes into a Core-only working-set
-// (no Tail — the index is unreachable), marked Degraded. Used by the brief
-// degrade path.
-func BuildDegradedWorkingSet(core []NoteRecord, seed string, coreBudget int) WorkingSet {
-	packed, tokens, truncated := packNotes(core, coreBudget, true)
-	return WorkingSet{
-		Seed:        seed,
-		Core:        packed,
-		CoreTokens:  tokens,
-		TotalTokens: tokens,
-		Truncated:   truncated,
-		Degraded:    true,
-	}
 }
 
 // RenderMarkdown emits the working-set as a compact markdown block for injection
