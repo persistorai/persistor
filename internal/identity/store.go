@@ -10,11 +10,17 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 
 	"github.com/briancolinger/persistor/internal/dbpool"
 )
+
+// authQueryTimeout bounds the auth-path query on the request hot path, mirroring
+// the index store's per-op timeout (the pool's statement_timeout is a backstop,
+// but this also bounds connection acquisition).
+const authQueryTimeout = 5 * time.Second
 
 // Roles an identity can hold against its tenant.
 const (
@@ -56,6 +62,9 @@ func NewStore(pool *dbpool.Pool) *Store { return &Store{pool: pool} }
 // admin may have repointed to a different tenant. It runs in one transaction so a
 // race between two first-logins cannot double-provision.
 func (s *Store) ResolveOrProvision(ctx context.Context, issuer, subject, defaultTenant string) (tenantID, role string, err error) {
+	ctx, cancel := context.WithTimeout(ctx, authQueryTimeout)
+	defer cancel()
+
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
 		return "", "", fmt.Errorf("begin: %w", err)

@@ -13,6 +13,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 
@@ -27,6 +28,8 @@ const (
 	// lastUsedThrottle is the minimum age before ResolveAPIKey rewrites
 	// last_used_at, bounding write amplification on the auth hot path.
 	lastUsedThrottle = "5 minutes"
+	// authQueryTimeout bounds the token-resolution query on the request hot path.
+	authQueryTimeout = 5 * time.Second
 )
 
 // ErrKeyNotFound is returned when a token hash matches no active (non-revoked)
@@ -88,6 +91,9 @@ func (s *PGKeyStore) CreateAPIKey(ctx context.Context, tenantID, label string) (
 // round-trip — the bump runs to completion even though the outer query reads
 // only the resolve CTE, and it no-ops when last_used_at is already fresh.
 func (s *PGKeyStore) ResolveAPIKey(ctx context.Context, raw string) (string, error) {
+	ctx, cancel := context.WithTimeout(ctx, authQueryTimeout)
+	defer cancel()
+
 	var tenantID string
 	err := s.pool.QueryRow(ctx,
 		`WITH resolved AS (
