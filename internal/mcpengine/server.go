@@ -2,6 +2,8 @@ package mcpengine
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -53,46 +55,99 @@ const (
 		"notes most relevant to the given seed/topic, under a token budget. Returns a markdown block."
 )
 
-// registerTools adds the memory tools to the server.
+// textResult serializes a tool's output value into a single JSON text content
+// block and returns it as the tool result.
+//
+// Persistor deliberately does NOT declare output schemas or return
+// structuredContent. Structured tool output is a newer MCP feature (2025-06-18)
+// with uneven client support — the claude.ai web connector (BETA) errors on
+// tool results that carry structuredContent / a declared outputSchema, even
+// though the response is otherwise spec-correct. A prose/JSON memory tool loses
+// nothing by returning its payload as text: every MCP client since the original
+// spec understands a text content block, and broad client compatibility is the
+// whole point of Persistor ("one memory across many LLMs"). Input schemas are
+// still generated (from the typed In on each AddTool), which is what clients
+// need to CALL the tools correctly.
+//
+// The any return is required by the SDK: mcp.AddTool only suppresses
+// outputSchema generation when the output type parameter is exactly any.
+func textResult(v any) (*mcp.CallToolResult, any, error) {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return nil, nil, fmt.Errorf("marshaling tool output: %w", err)
+	}
+	return &mcp.CallToolResult{
+		Content: []mcp.Content{&mcp.TextContent{Text: string(b)}},
+	}, nil, nil
+}
+
+// registerTools adds the memory tools to the server. Each tool keeps its typed
+// input (so the SDK generates an input schema) but returns a text result via
+// textResult (no output schema, no structuredContent) for maximum client
+// compatibility — see textResult.
 func registerTools(server *mcp.Server, e *Engine) {
 	mcp.AddTool(server, &mcp.Tool{Name: "memory_search", Description: searchDescription},
-		func(ctx context.Context, _ *mcp.CallToolRequest, in SearchInput) (*mcp.CallToolResult, SearchOutput, error) {
+		func(ctx context.Context, _ *mcp.CallToolRequest, in SearchInput) (*mcp.CallToolResult, any, error) {
 			out, err := e.Search(ctx, in)
-			return nil, out, err
+			if err != nil {
+				return nil, nil, err
+			}
+			return textResult(out)
 		})
 	mcp.AddTool(server, &mcp.Tool{Name: "memory_get", Description: getDescription},
-		func(ctx context.Context, _ *mcp.CallToolRequest, in GetInput) (*mcp.CallToolResult, GetOutput, error) {
+		func(ctx context.Context, _ *mcp.CallToolRequest, in GetInput) (*mcp.CallToolResult, any, error) {
 			out, err := e.Get(ctx, in)
-			return nil, out, err
+			if err != nil {
+				return nil, nil, err
+			}
+			return textResult(out)
 		})
 	mcp.AddTool(server, &mcp.Tool{Name: "memory_list", Description: listDescription},
-		func(ctx context.Context, _ *mcp.CallToolRequest, in ListInput) (*mcp.CallToolResult, ListOutput, error) {
+		func(ctx context.Context, _ *mcp.CallToolRequest, in ListInput) (*mcp.CallToolResult, any, error) {
 			out, err := e.List(ctx, in)
-			return nil, out, err
+			if err != nil {
+				return nil, nil, err
+			}
+			return textResult(out)
 		})
 	mcp.AddTool(server, &mcp.Tool{Name: "memory_namespaces", Description: namespacesDescription},
-		func(ctx context.Context, _ *mcp.CallToolRequest, _ NamespacesInput) (*mcp.CallToolResult, NamespacesOutput, error) {
+		func(ctx context.Context, _ *mcp.CallToolRequest, _ NamespacesInput) (*mcp.CallToolResult, any, error) {
 			out, err := e.Namespaces(ctx)
-			return nil, out, err
+			if err != nil {
+				return nil, nil, err
+			}
+			return textResult(out)
 		})
 	mcp.AddTool(server, &mcp.Tool{Name: "memory_write", Description: writeDescription},
-		func(ctx context.Context, _ *mcp.CallToolRequest, in WriteInput) (*mcp.CallToolResult, WriteOutput, error) {
+		func(ctx context.Context, _ *mcp.CallToolRequest, in WriteInput) (*mcp.CallToolResult, any, error) {
 			out, err := e.Write(ctx, &in)
-			return nil, out, err
+			if err != nil {
+				return nil, nil, err
+			}
+			return textResult(out)
 		})
 	mcp.AddTool(server, &mcp.Tool{Name: "memory_delete", Description: deleteDescription},
-		func(ctx context.Context, _ *mcp.CallToolRequest, in DeleteInput) (*mcp.CallToolResult, MutationOutput, error) {
+		func(ctx context.Context, _ *mcp.CallToolRequest, in DeleteInput) (*mcp.CallToolResult, any, error) {
 			out, err := e.Delete(ctx, in)
-			return nil, out, err
+			if err != nil {
+				return nil, nil, err
+			}
+			return textResult(out)
 		})
 	mcp.AddTool(server, &mcp.Tool{Name: "memory_restore", Description: restoreDescription},
-		func(ctx context.Context, _ *mcp.CallToolRequest, in RestoreInput) (*mcp.CallToolResult, MutationOutput, error) {
+		func(ctx context.Context, _ *mcp.CallToolRequest, in RestoreInput) (*mcp.CallToolResult, any, error) {
 			out, err := e.Restore(ctx, in)
-			return nil, out, err
+			if err != nil {
+				return nil, nil, err
+			}
+			return textResult(out)
 		})
 	mcp.AddTool(server, &mcp.Tool{Name: "brief", Description: briefDescription},
-		func(ctx context.Context, _ *mcp.CallToolRequest, in BriefInput) (*mcp.CallToolResult, BriefOutput, error) {
+		func(ctx context.Context, _ *mcp.CallToolRequest, in BriefInput) (*mcp.CallToolResult, any, error) {
 			out, err := e.Brief(ctx, in)
-			return nil, out, err
+			if err != nil {
+				return nil, nil, err
+			}
+			return textResult(out)
 		})
 }
