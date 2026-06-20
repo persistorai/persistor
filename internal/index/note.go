@@ -8,6 +8,7 @@
 package index
 
 import (
+	"fmt"
 	"path/filepath"
 	"strings"
 
@@ -35,8 +36,8 @@ type frontmatter struct {
 	Kind       string   `yaml:"kind"`
 	Tier       string   `yaml:"tier"`
 	Title      string   `yaml:"title"`
-	Supersedes string   `yaml:"supersedes"`
-	Links      []string `yaml:"links"`
+	Supersedes string   `yaml:"supersedes,omitempty"`
+	Links      []string `yaml:"links,omitempty"`
 }
 
 const (
@@ -99,6 +100,28 @@ func normalize(n *Note, namespace, relPath, body string, isCore bool) {
 	if n.Title == "" {
 		n.Title = titleFromBody(body, relPath)
 	}
+}
+
+// RenderNote renders a note back to .md content (YAML frontmatter + body) — the
+// inverse of ParseNote for the persisted fields. Links are intentionally omitted:
+// they are derived from the body's [[id]] references on reindex, so a re-imported
+// export reconstructs them. ParseNote(RenderNote(n)) round-trips
+// id/kind/tier/title/supersedes and the body.
+func RenderNote(n *Note) (string, error) {
+	y, err := yaml.Marshal(frontmatter{
+		ID:         n.ID,
+		Kind:       n.Kind,
+		Tier:       n.Tier,
+		Title:      n.Title,
+		Supersedes: n.Supersedes,
+	})
+	if err != nil {
+		return "", fmt.Errorf("marshaling frontmatter: %w", err)
+	}
+	body := strings.TrimRight(n.Body, "\n") + "\n"
+	// Closing fence immediately before the body: splitFrontmatter does not trim a
+	// leading blank line, so an exact round-trip requires no extra newline here.
+	return "---\n" + string(y) + "---\n" + body, nil
 }
 
 // splitFrontmatter separates a leading `---`-fenced YAML block from the body.
