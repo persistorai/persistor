@@ -7,6 +7,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/auth"
 
 	"github.com/persistorai/persistor/internal/dbpool"
+	"github.com/persistorai/persistor/internal/identity"
 	"github.com/persistorai/persistor/internal/mcpauth"
 )
 
@@ -43,7 +44,9 @@ func buildAuth(ctx context.Context, cfg *serverConfig, pool *dbpool.Pool) (authB
 		if err != nil {
 			return authBundle{}, err
 		}
-		v := mcpauth.NewOIDCAuth(keyFunc, cfg.oidcIssuer, cfg.oidcAudience)
+		// The identities table resolves/provisions the tenant per login (P4).
+		v := mcpauth.NewOIDCAuth(keyFunc, cfg.oidcIssuer, cfg.oidcAudience).
+			WithTenantResolver(identity.NewStore(pool))
 		return authBundle{
 			verify: v.Verify,
 			opts:   opts,

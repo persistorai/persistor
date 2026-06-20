@@ -21,6 +21,15 @@ var tenantNamespace = uuid.MustParse("9e6f1b2c-3d4a-5b6c-7d8e-9f0a1b2c3d4e")
 // attacker re-signs a token with the public key as an HMAC secret.
 var allowedSigningMethods = []string{"RS256", "RS384", "RS512", "ES256", "ES384", "ES512"}
 
+// TenantResolver maps a validated IdP subject to the tenant it serves,
+// provisioning one on first login (Phase P4). OIDCAuth consults it after the JWT
+// checks pass; with no resolver it falls back to the stateless claim-derived
+// tenant. Defined here, where it is consumed (the concrete implementation is
+// internal/identity.Store), so the auth package stays storage-agnostic.
+type TenantResolver interface {
+	ResolveOrProvision(ctx context.Context, issuer, subject, defaultTenant string) (tenantID, role string, err error)
+}
+
 // OIDCAuth verifies OIDC access tokens (JWTs) issued by a delegated Authorization
 // Server (Stytch in P3). It is the Phase P3 Authenticator behind the same
 // auth.TokenVerifier seam as StaticTokenAuth: claude.ai/mobile obtain a token via
@@ -31,6 +40,7 @@ type OIDCAuth struct {
 	issuer   string
 	audience string
 	parser   *jwt.Parser
+	resolver TenantResolver
 }
 
 // NewOIDCAuth builds a verifier. keyFunc supplies the IdP's signing keys (a JWKS
@@ -46,11 +56,18 @@ func NewOIDCAuth(keyFunc jwt.Keyfunc, issuer, audience string) *OIDCAuth {
 	return &OIDCAuth{keyFunc: keyFunc, issuer: issuer, audience: audience, parser: parser}
 }
 
+// WithTenantResolver attaches the identities-backed tenant resolver (P4
+// onboarding). Without it, Verify uses the claim-derived tenant directly.
+func (a *OIDCAuth) WithTenantResolver(r TenantResolver) *OIDCAuth {
+	a.resolver = r
+	return a
+}
+
 // Verify matches auth.TokenVerifier. It validates the JWT's signature (via the
 // IdP's keys), issuer, audience, and expiry, then derives a stable tenant from
 // iss|sub. Any failure unwraps to auth.ErrInvalidToken, which the middleware
 // turns into a 401.
-func (a *OIDCAuth) Verify(_ context.Context, token string, _ *http.Request) (*auth.TokenInfo, error) {
+func (a *OIDCAuth) Verify(ctx context.Context, token string, _ *http.Request) (*auth.TokenInfo, error) {
 	var claims jwt.RegisteredClaims
 	if _, err := a.parser.ParseWithClaims(token, &claims, a.keyFunc); err != nil {
 		return nil, fmt.Errorf("%w: %w", auth.ErrInvalidToken, err)
@@ -62,10 +79,20 @@ func (a *OIDCAuth) Verify(_ context.Context, token string, _ *http.Request) (*au
 	if err != nil || exp == nil {
 		return nil, fmt.Errorf("%w: token has no expiration", auth.ErrInvalidToken)
 	}
-	return &auth.TokenInfo{
-		UserID:     TenantForSubject(a.issuer, claims.Subject),
-		Expiration: exp.Time,
-	}, nil
+
+	// The claim-derived tenant is the default; the resolver may return a
+	// different one for an admin-mapped identity, and provisions on first login.
+	tenant := TenantForSubject(a.issuer, claims.Subject)
+	if a.resolver != nil {
+		resolved, _, rerr := a.resolver.ResolveOrProvision(ctx, a.issuer, claims.Subject, tenant)
+		if rerr != nil {
+			// A storage failure is a server error, not a bad token — do NOT wrap
+			// auth.ErrInvalidToken (which would mislead the client into a 401).
+			return nil, fmt.Errorf("resolving tenant: %w", rerr)
+		}
+		tenant = resolved
+	}
+	return &auth.TokenInfo{UserID: tenant, Expiration: exp.Time}, nil
 }
 
 // TenantForSubject derives the stable tenant UUID for an IdP subject. It is a

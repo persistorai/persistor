@@ -106,6 +106,56 @@ func TestOIDCAuth_Verify(t *testing.T) {
 	}
 }
 
+// fakeTenantResolver stands in for the identities-backed tenant resolver.
+type fakeTenantResolver struct {
+	tenant     string
+	err        error
+	gotDefault string
+}
+
+func (f *fakeTenantResolver) ResolveOrProvision(_ context.Context, _, _, defaultTenant string) (tenantID, role string, err error) {
+	f.gotDefault = defaultTenant
+	if f.err != nil {
+		return "", "", f.err
+	}
+	return f.tenant, "owner", nil
+}
+
+func TestOIDCAuth_TenantResolver(t *testing.T) {
+	key, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatalf("genkey: %v", err)
+	}
+	ctx := context.Background()
+
+	// A resolver-supplied tenant overrides the claim-derived default, and the
+	// default handed to the resolver is exactly uuidv5(iss|sub).
+	assigned := uuid.NewString()
+	fr := &fakeTenantResolver{tenant: assigned}
+	a := mcpauth.NewOIDCAuth(staticKeyFunc(&key.PublicKey), testIssuer, testAudience).WithTenantResolver(fr)
+	valid := validClaims()
+	ti, err := a.Verify(ctx, signRS256(t, key, &valid), nil)
+	if err != nil {
+		t.Fatalf("verify: %v", err)
+	}
+	if ti.UserID != assigned {
+		t.Fatalf("UserID = %q, want resolver tenant %q", ti.UserID, assigned)
+	}
+	if want := mcpauth.TenantForSubject(testIssuer, "user-abc"); fr.gotDefault != want {
+		t.Fatalf("resolver default = %q, want uuidv5 %q", fr.gotDefault, want)
+	}
+
+	// A resolver (storage) error is a server error, NOT a bad token: it must not
+	// unwrap to auth.ErrInvalidToken (which would wrongly become a 401).
+	fe := &fakeTenantResolver{err: errors.New("db down")}
+	a2 := mcpauth.NewOIDCAuth(staticKeyFunc(&key.PublicKey), testIssuer, testAudience).WithTenantResolver(fe)
+	if _, err := a2.Verify(ctx, signRS256(t, key, &valid), nil); err == nil {
+		t.Fatal("want error on resolver failure")
+	} else if errors.Is(err, auth.ErrInvalidToken) {
+		t.Fatalf("resolver failure must not be ErrInvalidToken, got %v", err)
+	}
+}
+
 func TestTenantForSubject_Deterministic(t *testing.T) {
 	a := mcpauth.TenantForSubject(testIssuer, "user-1")
 	b := mcpauth.TenantForSubject(testIssuer, "user-1")
