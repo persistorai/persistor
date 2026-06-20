@@ -8,22 +8,17 @@ import (
 	"github.com/persistorai/persistor/internal/index"
 )
 
-// TestAssembleWorkingSet_CoreAndTail checks the working-set assembly: seed a synthetic corpus,
-// assemble the working-set, and assert Core is always present, the total stays
-// under budget, and a seed surfaces the matching Tail note.
+// TestAssembleWorkingSet_CoreAndTail checks the working-set assembly: seed a
+// synthetic corpus, assemble the working-set, and assert Core is always present,
+// the total stays under budget, and a seed surfaces the matching Tail note.
 func TestAssembleWorkingSet_CoreAndTail(t *testing.T) {
-	ix, store, tenantID := newTestIndexer(t)
+	store, _, tenantID := newStoreTest(t)
 	ctx := context.Background()
 
-	dir := t.TempDir()
-	writeFile(t, dir, "identity.md", "# Identity\n\nWe are the Northwind expedition crew.\n")
-	writeFile(t, dir, "rules.md", "# Standing Rules\n\nAlways file a flight plan before departure.\n")
-	writeFile(t, dir, "aurora.md", "# Aurora Protocol\n\nThe safety protocol for navigating polar storms.\n")
-	writeFile(t, dir, "vega.md", "# Captain Vega\n\nFounded the Northwind logistics company.\n")
-	roots := []index.Root{{Name: "syn", Dir: dir, CorePaths: []string{"identity.md", "rules.md"}}}
-	if _, err := ix.Reindex(ctx, tenantID, roots); err != nil {
-		t.Fatalf("reindex: %v", err)
-	}
+	seedMarkdown(t, store, tenantID, "identity.md", "# Identity\n\nWe are the Northwind expedition crew.\n", true)
+	seedMarkdown(t, store, tenantID, "rules.md", "# Standing Rules\n\nAlways file a flight plan before departure.\n", true)
+	seedMarkdown(t, store, tenantID, "aurora.md", "# Aurora Protocol\n\nThe safety protocol for navigating polar storms.\n", false)
+	seedMarkdown(t, store, tenantID, "vega.md", "# Captain Vega\n\nFounded the Northwind logistics company.\n", false)
 
 	opts := index.BriefOptions{Budget: 6000, CoreBudget: 2000, TailLimit: 12}
 	ws, err := index.AssembleWorkingSet(ctx, store, tenantID, "polar storm protocol", opts)
@@ -34,9 +29,6 @@ func TestAssembleWorkingSet_CoreAndTail(t *testing.T) {
 	// (a) every Core note present.
 	if !hasNote(ws.Core, "syn:identity") || !hasNote(ws.Core, "syn:rules") {
 		t.Errorf("Core missing notes: %+v", ws.Core)
-	}
-	if ws.Degraded {
-		t.Errorf("DB path should not be degraded")
 	}
 	// (b) total tokens under budget.
 	if ws.TotalTokens > opts.Budget {
@@ -55,18 +47,13 @@ func TestAssembleWorkingSet_CoreAndTail(t *testing.T) {
 // TestAssembleWorkingSet_RespectsBudget: a tiny budget drops Tail and never
 // exceeds the cap.
 func TestAssembleWorkingSet_RespectsBudget(t *testing.T) {
-	ix, store, tenantID := newTestIndexer(t)
+	store, _, tenantID := newStoreTest(t)
 	ctx := context.Background()
 
-	dir := t.TempDir()
-	writeFile(t, dir, "core.md", "# Core\n\nThe mission is to chart the trade routes.\n")
 	big := "# Big Tail\n\n" + strings.Repeat("storm navigation detail and more storm detail. ", 200)
-	writeFile(t, dir, "big1.md", big)
-	writeFile(t, dir, "big2.md", big)
-	roots := []index.Root{{Name: "syn", Dir: dir, CorePaths: []string{"core.md"}}}
-	if _, err := ix.Reindex(ctx, tenantID, roots); err != nil {
-		t.Fatalf("reindex: %v", err)
-	}
+	seedMarkdown(t, store, tenantID, "core.md", "# Core\n\nThe mission is to chart the trade routes.\n", true)
+	seedMarkdown(t, store, tenantID, "big1.md", big, false)
+	seedMarkdown(t, store, tenantID, "big2.md", big, false)
 
 	opts := index.BriefOptions{Budget: 120, CoreBudget: 60, TailLimit: 12}
 	ws, err := index.AssembleWorkingSet(ctx, store, tenantID, "storm navigation", opts)
@@ -78,36 +65,6 @@ func TestAssembleWorkingSet_RespectsBudget(t *testing.T) {
 	}
 	if !hasNote(ws.Core, "syn:core") {
 		t.Errorf("Core dropped under tight budget")
-	}
-}
-
-// TestBriefDegradesToDisk: (d) Core is recoverable from disk with no database.
-func TestBriefDegradesToDisk(t *testing.T) {
-	dir := t.TempDir()
-	writeFile(t, dir, "identity.md", "# Identity\n\nWho we are.\n")
-	writeFile(t, dir, "rules.md", "# Rules\n\nStanding rules.\n")
-	root := index.Root{Name: "syn", Dir: dir, CorePaths: []string{"identity.md", "rules.md"}}
-
-	core, err := index.CoreFromDisk([]index.Root{root})
-	if err != nil {
-		t.Fatalf("CoreFromDisk: %v", err)
-	}
-	if len(core) != 2 {
-		t.Fatalf("want 2 core notes from disk, got %d", len(core))
-	}
-	ws := index.BuildDegradedWorkingSet(core, "anything", 2000)
-	if !ws.Degraded {
-		t.Errorf("degraded working-set should be marked Degraded")
-	}
-	if !hasNote(ws.Core, "syn:identity") || !hasNote(ws.Core, "syn:rules") {
-		t.Errorf("degraded Core missing notes: %+v", ws.Core)
-	}
-	if len(ws.Tail) != 0 {
-		t.Errorf("degraded set should have no Tail")
-	}
-	md := index.RenderMarkdown(&ws)
-	if !strings.Contains(md, "degraded") || !strings.Contains(md, "## Core") {
-		t.Errorf("rendered markdown missing degrade marker / Core section:\n%s", md)
 	}
 }
 

@@ -14,6 +14,12 @@ import (
 	"github.com/persistorai/persistor/internal/index"
 )
 
+// evalOpts holds the DB/tenant inputs for `persistor eval`.
+type evalOpts struct {
+	databaseURL string
+	tenantID    string
+}
+
 // evalRow is one baseline's score line in the scoreboard.
 type evalRow struct {
 	System       string  `json:"system"`
@@ -29,7 +35,7 @@ type evalRow struct {
 // personal facts) is supplied by the caller and lives in the private notes repo,
 // never here.
 func newEvalCmd() *cobra.Command {
-	o := reindexOpts{}
+	o := evalOpts{}
 	var fixturePath string
 	cmd := &cobra.Command{
 		Use:   "eval --fixture <path>",
@@ -44,7 +50,7 @@ func newEvalCmd() *cobra.Command {
 	return cmd
 }
 
-func runEval(ctx context.Context, o *reindexOpts, fixturePath string) error {
+func runEval(ctx context.Context, o *evalOpts, fixturePath string) error {
 	if fixturePath == "" {
 		return fmt.Errorf("--fixture is required")
 	}

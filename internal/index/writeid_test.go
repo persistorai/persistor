@@ -1,65 +1,45 @@
 package index_test
 
 import (
-	"errors"
 	"testing"
 
 	"github.com/persistorai/persistor/internal/index"
 )
 
-func TestResolveWriteID(t *testing.T) {
-	roots := []index.Root{{Name: "scout", Dir: "/home/x/scout"}}
-	notesDir := "/home/x/scout/memory/atomic"
-
-	// Derived id: namespace + slug of the path relative to the ROOT.
-	got, ok := index.ResolveWriteID(roots, notesDir, "claude/foo.md", "")
-	if !ok {
-		t.Fatal("resolve: not ok")
+func TestDeriveNoteID(t *testing.T) {
+	// Explicit id wins and is returned as-is.
+	got, err := index.DeriveNoteID("scout", "ignored.md", "scout:custom")
+	if err != nil || got != "scout:custom" {
+		t.Fatalf("explicit id = %q (err %v), want scout:custom", got, err)
 	}
-	if want := "scout:memory-atomic-claude-foo"; got != want {
+
+	// Derived id: namespace + slug of the path.
+	got, err = index.DeriveNoteID("scout", "claude/foo.md", "")
+	if err != nil {
+		t.Fatalf("derive: %v", err)
+	}
+	if want := "scout:claude-foo"; got != want {
 		t.Errorf("derived id = %q, want %q", got, want)
 	}
 
-	// Explicit id wins.
-	got, ok = index.ResolveWriteID(roots, notesDir, "claude/foo.md", "scout:custom")
-	if !ok || got != "scout:custom" {
-		t.Errorf("explicit id = %q (ok %v), want scout:custom", got, ok)
-	}
-
-	// notesDir not under any root → not ok (callers skip the guard).
-	if _, ok := index.ResolveWriteID(roots, "/tmp/elsewhere", "foo.md", ""); ok {
-		t.Error("expected ok=false when notesDir is outside every root")
+	// No namespace → bare slug.
+	got, err = index.DeriveNoteID("", "memory/widget.md", "")
+	if err != nil || got != "memory-widget" {
+		t.Errorf("derived id = %q (err %v), want memory-widget", got, err)
 	}
 }
 
-func TestCheckSelfSupersede(t *testing.T) {
-	roots := []index.Root{{Name: "scout", Dir: "/home/x/scout"}}
-	notesDir := "/home/x/scout/memory/atomic"
-
-	// Self-supersede (derived): supersedes == the id the write resolves to.
-	err := index.CheckSelfSupersede(roots, notesDir, "claude/foo.md", "", "scout:memory-atomic-claude-foo")
-	var selfErr *index.SelfSupersedeError
-	if !errors.As(err, &selfErr) {
-		t.Fatalf("want SelfSupersedeError, got %v", err)
+func TestDeriveNoteID_Rejects(t *testing.T) {
+	// A path without a .md extension cannot derive an id.
+	if _, err := index.DeriveNoteID("scout", "notes/foo.txt", ""); err == nil {
+		t.Error("want error for non-.md path")
 	}
-
-	// Self-supersede (explicit id).
-	if err := index.CheckSelfSupersede(roots, notesDir, "foo.md", "scout:thing", "scout:thing"); err == nil {
-		t.Error("want error for explicit self-supersede")
+	// Path traversal is rejected.
+	if _, err := index.DeriveNoteID("scout", "../escape.md", ""); err == nil {
+		t.Error("want error for traversal path")
 	}
-
-	// Superseding a DIFFERENT note is fine (the legitimate fork path).
-	if err := index.CheckSelfSupersede(roots, notesDir, "claude/foo-v2.md", "", "scout:memory-atomic-claude-foo"); err != nil {
-		t.Errorf("superseding a different note should be allowed, got %v", err)
-	}
-
-	// No supersedes → no error.
-	if err := index.CheckSelfSupersede(roots, notesDir, "foo.md", "", ""); err != nil {
-		t.Errorf("empty supersedes should be a no-op, got %v", err)
-	}
-
-	// Unresolvable notesDir → guard skipped (nil), never blocks a write.
-	if err := index.CheckSelfSupersede(roots, "/tmp/elsewhere", "foo.md", "", "scout:x"); err != nil {
-		t.Errorf("unresolvable notesDir should skip the guard, got %v", err)
+	// An explicit id with illegal characters is rejected.
+	if _, err := index.DeriveNoteID("", "", "Bad ID!"); err == nil {
+		t.Error("want error for invalid explicit id")
 	}
 }

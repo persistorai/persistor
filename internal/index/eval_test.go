@@ -57,20 +57,14 @@ var categoryTargets = map[string]float64{
 // index (a) strictly beats the core-only static surface and (b) hits every
 // per-category target. No embedding backend required (text mode).
 func TestEvalBeatsStaticBaseline(t *testing.T) {
-	ix, store, tenantID := newTestIndexer(t)
+	store, _, tenantID := newStoreTest(t)
 	ctx := context.Background()
 
-	dir := t.TempDir()
-	var corePaths []string
 	for _, n := range syntheticCorpus {
-		writeFile(t, dir, n.rel, n.content)
-		if n.core {
-			corePaths = append(corePaths, n.rel)
-		}
+		seedMarkdown(t, store, tenantID, n.rel, n.content, n.core)
 	}
-	roots := []index.Root{{Name: "syn", Dir: dir, CorePaths: corePaths}}
-	if _, err := ix.Reindex(ctx, tenantID, roots); err != nil {
-		t.Fatalf("reindex: %v", err)
+	if _, err := store.ReconcileSupersessions(ctx, tenantID); err != nil {
+		t.Fatalf("reconcile: %v", err)
 	}
 
 	fixture, err := eval.LoadFixture("testdata/synthetic-eval.json")

@@ -36,11 +36,9 @@ func main() {
 	rootCmd.SetVersionTemplate("{{.Version}}\n")
 	rootCmd.PersistentFlags().StringVar(&flagFmt, "format", "json", "Output format: json|table")
 
-	rootCmd.AddCommand(newReindexCmd())
 	rootCmd.AddCommand(newEvalCmd())
 	rootCmd.AddCommand(newBriefCmd())
 	rootCmd.AddCommand(newSearchCmd())
-	rootCmd.AddCommand(newConsolidateCmd())
 	rootCmd.AddCommand(newKeyCmd())
 	rootCmd.AddCommand(newAdminCmd())
 	rootCmd.AddCommand(newExportCmd())

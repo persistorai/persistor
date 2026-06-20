@@ -7,35 +7,30 @@ import (
 	"github.com/persistorai/persistor/internal/index"
 )
 
-// TestReconcileSupersessions checks supersession: a superseding note
-// hides the stale note from default retrieval, the stale note is still
-// retrievable with IncludeSuperseded, and an unrelated time-bound note coexists
-// (is never superseded). It also checks self-healing: deleting the superseding
-// note's file resurrects the target.
+// TestReconcileSupersessions checks supersession: a superseding note hides the
+// stale note from default retrieval, the stale note is still retrievable with
+// IncludeSuperseded, and an unrelated time-bound note coexists (is never
+// superseded). It also checks self-healing: deleting the superseding note
+// resurrects the target.
 func TestReconcileSupersessions(t *testing.T) {
-	ix, store, tenantID := newTestIndexer(t)
+	store, _, tenantID := newStoreTest(t)
 	ctx := context.Background()
 
-	dir := t.TempDir()
 	// Old fact, the current correction that supersedes it, and an independent
 	// time-bound fact that must NOT be superseded (both true at their time).
-	writeFile(t, dir, "weight-old.md",
-		"---\nid: syn:weight\ntitle: Weight\n---\n# Weight\n\nWeighs 250 pounds at the desk.\n")
-	writeFile(t, dir, "weight-new.md",
-		"---\nid: syn:weight-2026\ntitle: Weight 2026\nsupersedes: syn:weight\n---\n# Weight 2026\n\nWeighs 230 pounds now.\n")
-	writeFile(t, dir, "weight-2022.md",
-		"---\nid: syn:weight-2022\ntitle: Weight 2022\n---\n# Weight 2022\n\nWeighed 190 pounds in 2022 in Oklahoma.\n")
-	roots := []index.Root{{Name: "syn", Dir: dir}}
+	seedMarkdown(t, store, tenantID, "weight-old.md",
+		"---\nid: syn:weight\ntitle: Weight\n---\n# Weight\n\nWeighs 250 pounds at the desk.\n", false)
+	seedMarkdown(t, store, tenantID, "weight-new.md",
+		"---\nid: syn:weight-2026\ntitle: Weight 2026\nsupersedes: syn:weight\n---\n# Weight 2026\n\nWeighs 230 pounds now.\n", false)
+	seedMarkdown(t, store, tenantID, "weight-2022.md",
+		"---\nid: syn:weight-2022\ntitle: Weight 2022\n---\n# Weight 2022\n\nWeighed 190 pounds in 2022 in Oklahoma.\n", false)
 
-	rep, err := ix.Reindex(ctx, tenantID, roots)
+	changed, err := store.ReconcileSupersessions(ctx, tenantID)
 	if err != nil {
-		t.Fatalf("reindex: %v", err)
+		t.Fatalf("reconcile: %v", err)
 	}
-	if rep.Notes != 3 {
-		t.Fatalf("want 3 notes, got %d", rep.Notes)
-	}
-	if rep.Superseded != 1 {
-		t.Errorf("want 1 supersession change, got %d", rep.Superseded)
+	if changed != 1 {
+		t.Errorf("want 1 supersession change, got %d", changed)
 	}
 
 	// Default search for "pounds weight" excludes the superseded old note but
@@ -64,14 +59,12 @@ func TestReconcileSupersessions(t *testing.T) {
 		t.Errorf("superseded note not reachable with IncludeSuperseded: %v", ids(histHits))
 	}
 
-	// Self-heal: drop the superseding file; the target becomes current again.
-	rmFile(t, dir, "weight-new.md")
-	rep, err = ix.Reindex(ctx, tenantID, roots)
-	if err != nil {
-		t.Fatalf("reindex after delete: %v", err)
+	// Self-heal: delete the superseding note; the target becomes current again.
+	if _, err := store.DeleteNote(ctx, tenantID, "syn:weight-2026", 1, "test"); err != nil {
+		t.Fatalf("delete superseding note: %v", err)
 	}
-	if rep.Deleted != 1 {
-		t.Errorf("want 1 deleted, got %d", rep.Deleted)
+	if _, err := store.ReconcileSupersessions(ctx, tenantID); err != nil {
+		t.Fatalf("reconcile after delete: %v", err)
 	}
 	hits, err = store.SearchNotes(ctx, tenantID, "weighs pounds weight", index.SearchOpts{Limit: 10})
 	if err != nil {
