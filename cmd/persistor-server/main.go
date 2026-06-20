@@ -1,18 +1,19 @@
-// persistor-server is the remote MCP daemon: it exposes the same memory tools as
-// persistor-mcp (memory_search, memory_get, memory_write, brief) over the MCP
-// Streamable HTTP transport, so Claude Code / claude.ai / the mobile app can
-// connect over the network rather than stdio.
+// persistor-server is the MCP daemon: it exposes the memory tools
+// (memory_search, memory_get, memory_write, memory_delete, memory_restore,
+// brief) over the MCP Streamable HTTP transport. It is the ONLY way a client
+// reaches Persistor's memory — there is no stdio binary. Local and remote clients
+// alike are normal MCP clients of a (local or remote) persistor-server.
 //
-// This is the deliberate shift from "Persistor is not a daemon": the remote
-// server IS long-running. The stdio server + CLI remain for local use.
+// Auth is OIDC, always: clients obtain a token through the browser OAuth flow and
+// the daemon validates it against the IdP's JWKS, deriving a stable tenant from
+// iss|sub so the same identity maps to the same tenant on every device.
 //
-// Phase P1 binds to the tailnet only and has NO auth — set PERSISTOR_LISTEN_ADDR
-// to the Tailscale IP, never a public interface. Auth (P2: static bearer tokens;
-// P3: OIDC) lands as middleware in front of newMux. Configuration is by
-// environment (shared with persistor-mcp), plus:
+// Configuration is by environment:
 //
+//	DATABASE_URL            Postgres URL (required)
 //	PERSISTOR_LISTEN_ADDR   host:port to bind (default 127.0.0.1:8088; set the
 //	                        Tailscale IP to reach it from another device)
+//	PERSISTOR_OIDC_ISSUER / _AUDIENCE / _JWKS_URL   OIDC validation (required)
 package main
 
 import (
@@ -88,7 +89,7 @@ func run(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	log.WithFields(logrus.Fields{"addr": cfg.listenAddr, "auth_mode": cfg.authMode}).
+	log.WithFields(logrus.Fields{"addr": cfg.listenAddr, "auth": "oidc"}).
 		Warn("persistor-server listening (tailnet-bound)")
 	return serve(ctx, httpServer, log)
 }
@@ -101,7 +102,7 @@ func buildHTTPServer(cfg *serverConfig, store *index.Store, authn authBundle, lo
 	limiter := mcpengine.NewWriteLimiter(writeRatePerSecond, writeRateBurst)
 	getServer := tenantServer(store, limiter, config.Version)
 	mux := newMux(getServer, authn.verify, authn.opts, authn.metadata, ready)
-	if cfg.authMode == authModeOIDC && cfg.stytchPublicToken != "" {
+	if cfg.stytchPublicToken != "" {
 		consent, err := newConsentHandler(cfg.stytchPublicToken)
 		if err != nil {
 			return nil, fmt.Errorf("building consent page: %w", err)
@@ -151,13 +152,12 @@ func serve(ctx context.Context, srv *http.Server, log *logrus.Logger) error {
 type serverConfig struct {
 	databaseURL  string
 	listenAddr   string
-	authMode     string // static | oidc
 	publicURL    string // externally-visible base URL (resource + metadata)
 	oidcIssuer   string
 	oidcAudience string
 	oidcJWKSURL  string
-	// stytchPublicToken, when set in oidc mode, serves the Stytch consent page
-	// at /authorize (the OAuth Authorization URL). Publishable, not a secret.
+	// stytchPublicToken, when set, serves the Stytch consent page at /authorize
+	// (the OAuth Authorization URL). Publishable, not a secret.
 	stytchPublicToken string
 }
 
@@ -165,7 +165,6 @@ func loadConfig() (serverConfig, error) {
 	cfg := serverConfig{
 		databaseURL:       os.Getenv("DATABASE_URL"),
 		listenAddr:        os.Getenv("PERSISTOR_LISTEN_ADDR"),
-		authMode:          os.Getenv("PERSISTOR_AUTH_MODE"),
 		publicURL:         os.Getenv("PERSISTOR_PUBLIC_URL"),
 		oidcIssuer:        os.Getenv("PERSISTOR_OIDC_ISSUER"),
 		oidcAudience:      os.Getenv("PERSISTOR_OIDC_AUDIENCE"),
@@ -178,38 +177,27 @@ func loadConfig() (serverConfig, error) {
 	if cfg.listenAddr == "" {
 		cfg.listenAddr = defaultListenAddr
 	}
-	if cfg.authMode == "" {
-		cfg.authMode = authModeStatic
-	}
 	if cfg.publicURL == "" {
 		cfg.publicURL = "http://" + cfg.listenAddr
 	}
 	cfg.publicURL = strings.TrimRight(cfg.publicURL, "/")
-	if err := validateAuthConfig(&cfg); err != nil {
+	if err := validateOIDCConfig(&cfg); err != nil {
 		return serverConfig{}, err
 	}
 	return cfg, nil
 }
 
-// validateAuthConfig enforces the requirements of the selected auth mode.
-func validateAuthConfig(cfg *serverConfig) error {
-	switch cfg.authMode {
-	case authModeStatic:
-		return nil
-	case authModeOIDC:
-		if cfg.oidcIssuer == "" || cfg.oidcAudience == "" || cfg.oidcJWKSURL == "" {
-			return fmt.Errorf("oidc auth requires PERSISTOR_OIDC_ISSUER, PERSISTOR_OIDC_AUDIENCE, and PERSISTOR_OIDC_JWKS_URL")
-		}
-		if err := requireHTTPS("PERSISTOR_OIDC_ISSUER", cfg.oidcIssuer); err != nil {
-			return err
-		}
-		if err := requireHTTPS("PERSISTOR_OIDC_JWKS_URL", cfg.oidcJWKSURL); err != nil {
-			return err
-		}
-		return nil
-	default:
-		return fmt.Errorf("unknown PERSISTOR_AUTH_MODE %q (want %q or %q)", cfg.authMode, authModeStatic, authModeOIDC)
+// validateOIDCConfig enforces that the OIDC requirements are met. OIDC is the
+// only auth path, so the issuer, audience, and JWKS URL are mandatory and the
+// issuer/JWKS must be HTTPS (or loopback for tests).
+func validateOIDCConfig(cfg *serverConfig) error {
+	if cfg.oidcIssuer == "" || cfg.oidcAudience == "" || cfg.oidcJWKSURL == "" {
+		return fmt.Errorf("oidc auth requires PERSISTOR_OIDC_ISSUER, PERSISTOR_OIDC_AUDIENCE, and PERSISTOR_OIDC_JWKS_URL")
 	}
+	if err := requireHTTPS("PERSISTOR_OIDC_ISSUER", cfg.oidcIssuer); err != nil {
+		return err
+	}
+	return requireHTTPS("PERSISTOR_OIDC_JWKS_URL", cfg.oidcJWKSURL)
 }
 
 // requireHTTPS rejects a non-HTTPS issuer/JWKS URL: over plain HTTP an on-path

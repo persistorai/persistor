@@ -18,7 +18,7 @@ var tenantNamespace = uuid.MustParse("9e6f1b2c-3d4a-5b6c-7d8e-9f0a1b2c3d4e")
 
 // Identity roles (mirrors the identities.role CHECK) and the auth.TokenInfo.Extra
 // key they travel under. Only readonly is write-restricted; owner/member may
-// write. Static API keys carry no role and are treated as full-access.
+// write.
 const (
 	roleKey      = "role"
 	roleOwner    = "owner"
@@ -50,8 +50,7 @@ type TenantResolver interface {
 }
 
 // OIDCAuth verifies OIDC access tokens (JWTs) issued by a delegated Authorization
-// Server (Stytch in P3). It is the Phase P3 Authenticator behind the same
-// auth.TokenVerifier seam as StaticTokenAuth: claude.ai/mobile obtain a token via
+// Server (Stytch). It is the only authenticator: every client obtains a token via
 // the browser OAuth flow, and Persistor validates it statelessly against the
 // IdP's JWKS — Persistor never handles credentials or talks to the IdP per call.
 type OIDCAuth struct {

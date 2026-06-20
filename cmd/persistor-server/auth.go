@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"fmt"
 
 	"github.com/modelcontextprotocol/go-sdk/auth"
 
@@ -11,51 +10,37 @@ import (
 	"github.com/briancolinger/persistor/internal/mcpauth"
 )
 
-const (
-	authModeStatic = "static"
-	authModeOIDC   = "oidc"
-)
-
-// authBundle is everything the mux needs to enforce authentication for the
-// configured mode: the token verifier, the bearer-middleware options, and (OIDC
-// only) the protected-resource metadata document to publish.
+// authBundle is everything the mux needs to enforce authentication: the token
+// verifier, the bearer-middleware options, and the protected-resource metadata
+// document to publish so MCP clients can discover the Authorization Server.
 type authBundle struct {
 	verify   auth.TokenVerifier
 	opts     *auth.RequireBearerTokenOptions
 	metadata *protectedResourceMetadata
 }
 
-// buildAuth assembles the authenticator for the configured mode. static mode
-// validates per-tenant API keys against Postgres; oidc mode validates
-// IdP-issued JWTs against the IdP's JWKS and advertises protected-resource
-// metadata so MCP clients can discover the Authorization Server. Both resolve a
-// request to a tenant the same way downstream — nothing IdP-specific leaks past
-// this point (Non-corner-painting rule 2).
+// buildAuth assembles the OIDC authenticator: it validates IdP-issued JWTs
+// against the IdP's JWKS, resolves/provisions the tenant per login via the
+// identities table, and advertises protected-resource metadata. OIDC is the only
+// auth path — local and remote clients both obtain a token through the browser
+// OAuth flow, so the same Stytch identity maps to the same tenant on every
+// device. Nothing IdP-specific leaks past this point.
 func buildAuth(ctx context.Context, cfg *serverConfig, pool *dbpool.Pool) (authBundle, error) {
 	metadataURL := cfg.publicURL + "/.well-known/oauth-protected-resource"
 	opts := &auth.RequireBearerTokenOptions{ResourceMetadataURL: metadataURL}
 
-	switch cfg.authMode {
-	case authModeStatic:
-		v := mcpauth.NewStaticTokenAuth(mcpauth.NewPGKeyStore(pool))
-		return authBundle{verify: v.Verify, opts: opts}, nil
-	case authModeOIDC:
-		keyFunc, err := mcpauth.NewJWKSKeyFunc(ctx, cfg.oidcJWKSURL)
-		if err != nil {
-			return authBundle{}, err
-		}
-		// The identities table resolves/provisions the tenant per login (P4).
-		v := mcpauth.NewOIDCAuth(keyFunc, cfg.oidcIssuer, cfg.oidcAudience).
-			WithTenantResolver(identity.NewStore(pool))
-		return authBundle{
-			verify: v.Verify,
-			opts:   opts,
-			metadata: &protectedResourceMetadata{
-				Resource:             cfg.publicURL,
-				AuthorizationServers: []string{cfg.oidcIssuer},
-			},
-		}, nil
-	default:
-		return authBundle{}, fmt.Errorf("unknown PERSISTOR_AUTH_MODE %q (want %q or %q)", cfg.authMode, authModeStatic, authModeOIDC)
+	keyFunc, err := mcpauth.NewJWKSKeyFunc(ctx, cfg.oidcJWKSURL)
+	if err != nil {
+		return authBundle{}, err
 	}
+	v := mcpauth.NewOIDCAuth(keyFunc, cfg.oidcIssuer, cfg.oidcAudience).
+		WithTenantResolver(identity.NewStore(pool))
+	return authBundle{
+		verify: v.Verify,
+		opts:   opts,
+		metadata: &protectedResourceMetadata{
+			Resource:             cfg.publicURL,
+			AuthorizationServers: []string{cfg.oidcIssuer},
+		},
+	}, nil
 }
