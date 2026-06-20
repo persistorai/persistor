@@ -1,0 +1,122 @@
+package mcpauth_test
+
+import (
+	"context"
+	"crypto/rand"
+	"crypto/rsa"
+	"errors"
+	"testing"
+	"time"
+
+	"github.com/golang-jwt/jwt/v5"
+	"github.com/google/uuid"
+	"github.com/modelcontextprotocol/go-sdk/auth"
+
+	"github.com/briancolinger/persistor/internal/mcpauth"
+)
+
+const (
+	testIssuer   = "https://test.stytch.example"
+	testAudience = "persistor-mcp"
+)
+
+func staticKeyFunc(pub *rsa.PublicKey) jwt.Keyfunc {
+	return func(*jwt.Token) (any, error) { return pub, nil }
+}
+
+func signRS256(t *testing.T, key *rsa.PrivateKey, claims *jwt.RegisteredClaims) string {
+	t.Helper()
+	s, err := jwt.NewWithClaims(jwt.SigningMethodRS256, claims).SignedString(key)
+	if err != nil {
+		t.Fatalf("sign: %v", err)
+	}
+	return s
+}
+
+func validClaims() jwt.RegisteredClaims {
+	return jwt.RegisteredClaims{
+		Issuer:    testIssuer,
+		Subject:   "user-abc",
+		Audience:  jwt.ClaimStrings{testAudience},
+		ExpiresAt: jwt.NewNumericDate(time.Now().Add(time.Hour)),
+		IssuedAt:  jwt.NewNumericDate(time.Now()),
+	}
+}
+
+func TestOIDCAuth_Verify(t *testing.T) {
+	key, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatalf("genkey: %v", err)
+	}
+	other, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatalf("genkey other: %v", err)
+	}
+	ctx := context.Background()
+	a := mcpauth.NewOIDCAuth(staticKeyFunc(&key.PublicKey), testIssuer, testAudience)
+
+	// Valid token -> tenant = uuidv5(iss|sub), expiry carried through.
+	valid := validClaims()
+	ti, err := a.Verify(ctx, signRS256(t, key, &valid), nil)
+	if err != nil {
+		t.Fatalf("valid: %v", err)
+	}
+	if want := mcpauth.TenantForSubject(testIssuer, "user-abc"); ti.UserID != want {
+		t.Fatalf("UserID = %q, want %q", ti.UserID, want)
+	}
+	if !ti.Expiration.After(time.Now()) {
+		t.Fatalf("expiration %v not in the future", ti.Expiration)
+	}
+
+	expired := validClaims()
+	expired.ExpiresAt = jwt.NewNumericDate(time.Now().Add(-time.Minute))
+	wrongIss := validClaims()
+	wrongIss.Issuer = "https://evil.example"
+	wrongAud := validClaims()
+	wrongAud.Audience = jwt.ClaimStrings{"someone-else"}
+	noSub := validClaims()
+	noSub.Subject = ""
+	badSig := validClaims()
+	// alg confusion: an HS256 token (signed with any secret) must be rejected by
+	// WithValidMethods before the key function is ever consulted.
+	hsClaims := validClaims()
+	hs256, err := jwt.NewWithClaims(jwt.SigningMethodHS256, &hsClaims).SignedString([]byte("pubkey-as-secret"))
+	if err != nil {
+		t.Fatalf("sign hs256: %v", err)
+	}
+
+	cases := []struct {
+		name  string
+		token string
+	}{
+		{"expired", signRS256(t, key, &expired)},
+		{"wrong issuer", signRS256(t, key, &wrongIss)},
+		{"wrong audience", signRS256(t, key, &wrongAud)},
+		{"bad signature", signRS256(t, other, &badSig)},
+		{"no subject", signRS256(t, key, &noSub)},
+		{"alg confusion", hs256},
+		{"garbage", "not.a.jwt"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if _, err := a.Verify(ctx, tc.token, nil); !errors.Is(err, auth.ErrInvalidToken) {
+				t.Fatalf("want auth.ErrInvalidToken, got %v", err)
+			}
+		})
+	}
+}
+
+func TestTenantForSubject_Deterministic(t *testing.T) {
+	a := mcpauth.TenantForSubject(testIssuer, "user-1")
+	b := mcpauth.TenantForSubject(testIssuer, "user-1")
+	c := mcpauth.TenantForSubject(testIssuer, "user-2")
+	if a != b {
+		t.Fatalf("not deterministic: %q vs %q", a, b)
+	}
+	if a == c {
+		t.Fatal("different subjects collided to the same tenant")
+	}
+	if _, err := uuid.Parse(a); err != nil {
+		t.Fatalf("tenant %q is not a UUID: %v", a, err)
+	}
+}
