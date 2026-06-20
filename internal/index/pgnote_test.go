@@ -282,6 +282,12 @@ func TestNoteVersions_AppendOnly(t *testing.T) {
 		"DELETE FROM note_versions WHERE note_id = 'test:immutable'"); err == nil {
 		t.Fatal("DELETE on note_versions succeeded; append-only trigger not enforced")
 	}
+	// TRUNCATE is statement-level — the row trigger never sees it — so the
+	// BEFORE TRUNCATE guard (migration 006) must reject it too. (The guard
+	// aborts the statement, so this never actually wipes the shared test table.)
+	if err := tryTenantExec(pool, tenant, "TRUNCATE note_versions"); err == nil {
+		t.Fatal("TRUNCATE on note_versions succeeded; append-only TRUNCATE guard not enforced")
+	}
 }
 
 func TestReindexPGNative_RebuildsChunks(t *testing.T) {
