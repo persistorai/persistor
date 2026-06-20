@@ -203,6 +203,20 @@ func TestEngine_WriteRejectsSelfSupersede(t *testing.T) {
 	}
 }
 
+func TestEngine_WriteRejectsMissingSupersedeTarget(t *testing.T) {
+	e := newTestEngine(t)
+	ctx := context.Background()
+
+	// Superseding an id that does not exist must be rejected, not a silent write
+	// with a dangling pointer (a prompt-injection memory-poisoning vector).
+	_, err := e.Write(ctx, &mcpengine.WriteInput{
+		Path: "ghost.md", Supersedes: "demo:does-not-exist", Body: "# Ghost\n\nbody",
+	})
+	if err == nil {
+		t.Fatal("supersede of a non-existent note should error, got nil")
+	}
+}
+
 func hasResult(rs []mcpengine.SearchHit, id string) bool {
 	for i := range rs {
 		if rs[i].ID == id {

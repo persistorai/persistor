@@ -143,6 +143,18 @@ func (e *Engine) Write(ctx context.Context, in *WriteInput) (WriteOutput, error)
 	if err := index.CheckSelfSupersede(e.roots, e.writeDir, in.Path, in.ID, in.Supersedes); err != nil {
 		return WriteOutput{}, err
 	}
+	// Reject a supersede of a non-existent note. Otherwise the reconcile marks
+	// nothing and the new note is still written with a dangling supersedes pointer
+	// — a silent no-op that a prompt-injected write could use to fake a correction.
+	if in.Supersedes != "" {
+		exists, err := e.store.NoteExists(ctx, e.tenantID, in.Supersedes)
+		if err != nil {
+			return WriteOutput{}, fmt.Errorf("checking supersedes target: %w", err)
+		}
+		if !exists {
+			return WriteOutput{}, fmt.Errorf("supersedes target %q does not exist", in.Supersedes)
+		}
+	}
 	plan := &index.Plan{Notes: []index.PlanNote{{
 		ID: in.ID, Path: in.Path, Kind: in.Kind, Tier: in.Tier,
 		Title: in.Title, Supersedes: in.Supersedes, Links: in.Links, Body: in.Body,
