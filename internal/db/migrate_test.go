@@ -65,7 +65,6 @@ func TestRunMigrationsFreshDatabase(t *testing.T) {
 	assertColumn(ctx, t, pool, "chunks", "embedding", false)
 	assertColumn(ctx, t, pool, "links", "target_note_id", true)
 	assertTableAbsent(ctx, t, pool, "kg_nodes")
-	assertTableAbsent(ctx, t, pool, "tenants")
 
 	// 003: notes-as-source-of-truth columns + the append-only version log.
 	assertColumn(ctx, t, pool, "notes", "version", true)
@@ -74,6 +73,10 @@ func TestRunMigrationsFreshDatabase(t *testing.T) {
 
 	// 004: the RLS-exempt API-key auth table.
 	assertColumn(ctx, t, pool, "api_keys", "key_hash", true)
+
+	// 005: the RLS-exempt onboarding tables that route an IdP identity to a tenant.
+	assertColumn(ctx, t, pool, "tenants", "label", true)
+	assertColumn(ctx, t, pool, "identities", "tenant_id", true)
 }
 
 func assertTableAbsent(ctx context.Context, t *testing.T, pool *dbpool.Pool, table string) {
