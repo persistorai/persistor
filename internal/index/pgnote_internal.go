@@ -48,17 +48,18 @@ func resolveWrite(id string, expected int, cur *NoteState, found bool) (op strin
 
 // upsertPGNote writes the live notes row for a create/update: it sets the new
 // version, clears any tombstone, and records the writing surface. PG-native
-// notes have an empty source_path. kind/tier are pre-normalized by the caller.
-func upsertPGNote(ctx context.Context, tx pgx.Tx, in *PGNoteInput, kind, tier string, version int) error {
+// notes have an empty source_path. namespace/kind/tier are pre-normalized by the
+// caller.
+func upsertPGNote(ctx context.Context, tx pgx.Tx, in *PGNoteInput, namespace, kind, tier string, version int) error {
 	_, err := tx.Exec(ctx,
-		`INSERT INTO notes (id, tenant_id, kind, tier, title, body, source_path, supersedes, version, deleted, updated_by)
-		 VALUES ($1, current_setting('app.tenant_id')::uuid, $2, $3, $4, $5, '', NULLIF($6, ''), $7, FALSE, $8)
+		`INSERT INTO notes (id, tenant_id, namespace, kind, tier, title, body, source_path, supersedes, version, deleted, updated_by)
+		 VALUES ($1, current_setting('app.tenant_id')::uuid, $2, $3, $4, $5, $6, '', NULLIF($7, ''), $8, FALSE, $9)
 		 ON CONFLICT (tenant_id, id)
-		 DO UPDATE SET kind = EXCLUDED.kind, tier = EXCLUDED.tier, title = EXCLUDED.title,
-		               body = EXCLUDED.body, supersedes = EXCLUDED.supersedes,
+		 DO UPDATE SET namespace = EXCLUDED.namespace, kind = EXCLUDED.kind, tier = EXCLUDED.tier,
+		               title = EXCLUDED.title, body = EXCLUDED.body, supersedes = EXCLUDED.supersedes,
 		               version = EXCLUDED.version, deleted = FALSE,
 		               updated_by = EXCLUDED.updated_by, superseded = FALSE`,
-		in.ID, kind, tier, in.Title, in.Body, in.Supersedes, version, in.Surface)
+		in.ID, namespace, kind, tier, in.Title, in.Body, in.Supersedes, version, in.Surface)
 	if err != nil {
 		return fmt.Errorf("upserting pg-native note: %w", err)
 	}

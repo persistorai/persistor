@@ -9,11 +9,17 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 )
 
+// defaultNamespace is the namespace a note lands in when the writer does not
+// specify one — the per-tenant catch-all bucket.
+const defaultNamespace = "default"
+
 // PGNoteInput is a PG-native note write: the note row itself is the source of
 // truth (no backing file), so the write goes straight to Postgres with an
-// append-only version history. Empty Kind/Tier default to "fact"/"tail".
+// append-only version history. Empty Kind/Tier default to "fact"/"tail"; empty
+// Namespace defaults to "default".
 type PGNoteInput struct {
 	ID         string
+	Namespace  string
 	Kind       string
 	Tier       string
 	Title      string
@@ -33,6 +39,7 @@ type WriteResult struct {
 // tombstone flag and version. A caller reads it before an optimistic write.
 type NoteState struct {
 	ID         string
+	Namespace  string
 	Kind       string
 	Tier       string
 	Title      string
@@ -73,12 +80,15 @@ func (s *Store) WriteNote(ctx context.Context, tenantID string, in *PGNoteInput,
 	ctx, cancel := context.WithTimeout(ctx, storeQueryTimeout)
 	defer cancel()
 
-	kind, tier := in.Kind, in.Tier
+	kind, tier, namespace := in.Kind, in.Tier, in.Namespace
 	if kind == "" {
 		kind = "fact"
 	}
 	if tier == "" {
 		tier = "tail"
+	}
+	if namespace == "" {
+		namespace = defaultNamespace
 	}
 
 	var res WriteResult
@@ -91,7 +101,7 @@ func (s *Store) WriteNote(ctx context.Context, tenantID string, in *PGNoteInput,
 		if err != nil {
 			return err
 		}
-		if err := upsertPGNote(ctx, tx, in, kind, tier, newVersion); err != nil {
+		if err := upsertPGNote(ctx, tx, in, namespace, kind, tier, newVersion); err != nil {
 			return err
 		}
 		if err := appendVersion(ctx, tx, in.ID, newVersion, in.Title, in.Body, kind, tier, op, in.Surface); err != nil {

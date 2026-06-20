@@ -158,6 +158,46 @@ func TestEngine_WriteDerivesIDFromPath(t *testing.T) {
 	}
 }
 
+// TestEngine_NamespaceFilter: writes land in a namespace, search can restrict to
+// one, get can guard on one, and an unspecified namespace defaults to "default".
+func TestEngine_NamespaceFilter(t *testing.T) {
+	e, _ := newTestEngine(t)
+	ctx := context.Background()
+
+	if _, err := e.Write(ctx, &mcpengine.WriteInput{ID: "demo:n", Namespace: "demo", Body: "shared keyword alpha demo"}); err != nil {
+		t.Fatalf("demo write: %v", err)
+	}
+	if _, err := e.Write(ctx, &mcpengine.WriteInput{ID: "work:n", Namespace: "work", Body: "shared keyword alpha work"}); err != nil {
+		t.Fatalf("work write: %v", err)
+	}
+
+	// Search restricted to the demo namespace returns only its note.
+	sr, err := e.Search(ctx, mcpengine.SearchInput{Query: "shared keyword alpha", Namespace: "demo"})
+	if err != nil {
+		t.Fatalf("search: %v", err)
+	}
+	if !hasResult(sr.Results, "demo:n") || hasResult(sr.Results, "work:n") {
+		t.Fatalf("namespace-filtered search = %+v, want only demo:n", sr.Results)
+	}
+
+	// Get with a mismatched namespace guard reads as not-found.
+	if gr, _ := e.Get(ctx, mcpengine.GetInput{ID: "demo:n", Namespace: "work"}); gr.Found {
+		t.Fatal("get with wrong namespace should be not-found")
+	}
+	gr, err := e.Get(ctx, mcpengine.GetInput{ID: "demo:n", Namespace: "demo"})
+	if err != nil || !gr.Found || gr.Namespace != "demo" {
+		t.Fatalf("get demo:n = %+v (err %v), want namespace demo", gr, err)
+	}
+
+	// No namespace specified → default bucket.
+	if _, err := e.Write(ctx, &mcpengine.WriteInput{ID: "plain", Body: "no namespace"}); err != nil {
+		t.Fatalf("default write: %v", err)
+	}
+	if gd, _ := e.Get(ctx, mcpengine.GetInput{ID: "plain"}); gd.Namespace != "default" {
+		t.Fatalf("default namespace = %q, want default", gd.Namespace)
+	}
+}
+
 // TestEngine_WriteOptimisticConcurrency: create needs version 0; updating an
 // existing note needs its current version, and a stale version is a conflict.
 func TestEngine_WriteOptimisticConcurrency(t *testing.T) {

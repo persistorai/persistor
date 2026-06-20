@@ -67,6 +67,7 @@ type SearchInput struct {
 	Query             string `json:"query" jsonschema:"Search query: natural-language or keywords, matched against the prose notes via full-text search."`
 	Limit             int    `json:"limit,omitempty" jsonschema:"Max notes to return. Default 8."`
 	IncludeSuperseded bool   `json:"include_superseded,omitempty" jsonschema:"Include superseded (corrected/stale) notes. Default false — retrieval returns current notes only."`
+	Namespace         string `json:"namespace,omitempty" jsonschema:"Restrict results to one namespace (e.g. demo, claude, work). Omit to search all namespaces."`
 }
 
 // SearchHit is one ranked note in a search result.
@@ -98,6 +99,7 @@ func (e *Engine) Search(ctx context.Context, in SearchInput) (SearchOutput, erro
 	hits, err := e.store.SearchNotes(ctx, e.tenantID, in.Query, index.SearchOpts{
 		Limit:             limit,
 		IncludeSuperseded: in.IncludeSuperseded,
+		Namespace:         in.Namespace,
 	})
 	if err != nil {
 		return SearchOutput{}, fmt.Errorf("search: %w", err)
@@ -114,24 +116,26 @@ func (e *Engine) Search(ctx context.Context, in SearchInput) (SearchOutput, erro
 
 // GetInput is the memory_get argument shape.
 type GetInput struct {
-	ID string `json:"id" jsonschema:"The note id to fetch (as returned by memory_search)."`
+	ID        string `json:"id" jsonschema:"The note id to fetch (as returned by memory_search)."`
+	Namespace string `json:"namespace,omitempty" jsonschema:"Optional namespace guard — if set, the note is returned only when it belongs to this namespace."`
 }
 
 // GetOutput is the memory_get result shape (the full note body). Version is the
 // note's current version — pass it back as expected_version on a memory_write
 // update or a memory_delete to get optimistic-concurrency safety.
 type GetOutput struct {
-	Found   bool   `json:"found"`
-	ID      string `json:"id"`
-	Kind    string `json:"kind"`
-	Tier    string `json:"tier"`
-	Title   string `json:"title"`
-	Body    string `json:"body"`
-	Version int    `json:"version"`
+	Found     bool   `json:"found"`
+	ID        string `json:"id"`
+	Namespace string `json:"namespace"`
+	Kind      string `json:"kind"`
+	Tier      string `json:"tier"`
+	Title     string `json:"title"`
+	Body      string `json:"body"`
+	Version   int    `json:"version"`
 }
 
 // Get fetches one note's full record by id, including its current version. A
-// tombstoned note reads as not-found.
+// tombstoned note, or a note outside the requested namespace, reads as not-found.
 func (e *Engine) Get(ctx context.Context, in GetInput) (GetOutput, error) {
 	if in.ID == "" {
 		return GetOutput{}, fmt.Errorf("id is required")
@@ -140,11 +144,11 @@ func (e *Engine) Get(ctx context.Context, in GetInput) (GetOutput, error) {
 	if err != nil {
 		return GetOutput{}, fmt.Errorf("get: %w", err)
 	}
-	if !found || st.Deleted {
+	if !found || st.Deleted || (in.Namespace != "" && st.Namespace != in.Namespace) {
 		return GetOutput{Found: false, ID: in.ID}, nil
 	}
 	return GetOutput{
-		Found: true, ID: st.ID, Kind: st.Kind, Tier: st.Tier,
+		Found: true, ID: st.ID, Namespace: st.Namespace, Kind: st.Kind, Tier: st.Tier,
 		Title: st.Title, Body: st.Body, Version: st.Version,
 	}, nil
 }
@@ -153,7 +157,8 @@ func (e *Engine) Get(ctx context.Context, in GetInput) (GetOutput, error) {
 type WriteInput struct {
 	Path            string   `json:"path,omitempty" jsonschema:"Optional .md path used to derive the note id when id is omitted (no absolute paths or ..). The note is stored in Postgres, not as a file."`
 	Body            string   `json:"body" jsonschema:"The note's markdown prose. Do not include a frontmatter block; the typed fields carry the metadata."`
-	ID              string   `json:"id,omitempty" jsonschema:"Stable note id. Derived from the path when omitted."`
+	ID              string   `json:"id,omitempty" jsonschema:"Stable note id. Derived from the path (namespace-prefixed) when omitted."`
+	Namespace       string   `json:"namespace,omitempty" jsonschema:"Logical bucket for the note (e.g. demo, claude, work, personal). Defaults to 'default'."`
 	Kind            string   `json:"kind,omitempty" jsonschema:"fact|decision|episode|reference|preference. Default fact."`
 	Tier            string   `json:"tier,omitempty" jsonschema:"core (always-loaded) or tail (retrieved). Default tail."`
 	Title           string   `json:"title,omitempty" jsonschema:"Short title. Derived from the first heading when omitted."`
@@ -186,7 +191,7 @@ func (e *Engine) Write(ctx context.Context, in *WriteInput) (WriteOutput, error)
 	if !index.ValidTier(in.Tier) {
 		return WriteOutput{}, fmt.Errorf("invalid tier %q (want core|tail)", in.Tier)
 	}
-	id, err := index.DeriveNoteID("", in.Path, in.ID)
+	id, err := index.DeriveNoteID(in.Namespace, in.Path, in.ID)
 	if err != nil {
 		return WriteOutput{}, err
 	}
@@ -210,6 +215,7 @@ func (e *Engine) Write(ctx context.Context, in *WriteInput) (WriteOutput, error)
 
 	res, err := e.store.WriteNote(ctx, e.tenantID, &index.PGNoteInput{
 		ID:         id,
+		Namespace:  in.Namespace,
 		Kind:       in.Kind,
 		Tier:       in.Tier,
 		Title:      index.DeriveTitle(in.Title, in.Body, id),

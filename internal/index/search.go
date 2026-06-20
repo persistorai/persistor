@@ -24,6 +24,7 @@ type SearchOpts struct {
 	Limit             int
 	IncludeSuperseded bool   // default retrieval excludes superseded notes
 	Tier              string // "" = any; "core"/"tail" restrict (models the static baseline)
+	Namespace         string // "" = all namespaces; otherwise restrict to one
 }
 
 // SearchNotes runs full-text search over chunk tsvectors, deduplicates to the
@@ -56,13 +57,14 @@ func (s *Store) SearchNotes(ctx context.Context, tenantID, query string, opts Se
 		  AND n.deleted = FALSE
 		  AND (n.superseded = FALSE OR $2)
 		  AND ($3 = '' OR n.tier = $3)
+		  AND ($4 = '' OR n.namespace = $4)
 		GROUP BY n.id, n.title, n.kind, n.tier, n.superseded
 		ORDER BY rank DESC, n.id
-		LIMIT $4`
+		LIMIT $5`
 
 	var hits []NoteHit
 	err := s.inReadTx(ctx, tenantID, func(tx pgx.Tx) error {
-		rows, err := tx.Query(ctx, q, orQuery, opts.IncludeSuperseded, opts.Tier, limit)
+		rows, err := tx.Query(ctx, q, orQuery, opts.IncludeSuperseded, opts.Tier, opts.Namespace, limit)
 		if err != nil {
 			return fmt.Errorf("querying chunks: %w", err)
 		}
