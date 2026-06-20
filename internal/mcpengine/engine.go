@@ -1,14 +1,14 @@
 // Package mcpengine is the transport-agnostic MCP layer for Persistor: the
 // memory Engine the tools call, the tool schemas/handlers, and a NewServer
-// constructor. The stdio binary (cmd/persistor-mcp) and the remote HTTP daemon
-// (cmd/persistor-server) are thin transports over this one source of truth.
+// constructor. The remote HTTP daemon (cmd/persistor-server) is a thin transport
+// over this one source of truth.
 package mcpengine
 
 import (
 	"context"
 	"errors"
 	"fmt"
-	"path/filepath"
+	"strings"
 
 	"github.com/persistorai/persistor/internal/index"
 )
@@ -18,15 +18,17 @@ import (
 // status; the message is user-facing.
 var ErrReadOnly = errors.New("identity is read-only: memory_write is not permitted")
 
-// Engine is the memory backend the MCP tools call. It wraps the local index
+// defaultSurface labels a write whose transport did not set one (the audit
+// surface in note_versions). The remote daemon overrides it per session.
+const defaultSurface = "mcp"
+
+// Engine is the memory backend the MCP tools call. It wraps the PG-native index
 // store directly, so the tools search, read, write, and brief over the same
-// Postgres full-text index the CLI uses.
+// Postgres full-text index — no filesystem. Each Engine is bound to one tenant.
 type Engine struct {
 	store    *index.Store
-	indexer  *index.Indexer
 	tenantID string
-	roots    []index.Root
-	writeDir string
+	surface  string
 	readOnly bool
 }
 
@@ -34,17 +36,26 @@ type Engine struct {
 type EngineOption func(*Engine)
 
 // WithReadOnly marks the engine read-only, rejecting mutating tools. The remote
-// daemon sets this for an identity whose resolved role is "readonly"; the local
-// stdio path leaves it false (the operator is the owner).
+// daemon sets this for an identity whose resolved role is "readonly".
 func WithReadOnly(ro bool) EngineOption {
 	return func(e *Engine) { e.readOnly = ro }
 }
 
-// NewEngine builds an Engine over the given store for one tenant. roots are the
-// watched note roots (for memory_write's reindex); writeDir is where memory_write
-// writes new notes (default <notesDir>/memory/atomic, a watched include).
-func NewEngine(store *index.Store, indexer *index.Indexer, tenantID string, roots []index.Root, writeDir string, opts ...EngineOption) *Engine {
-	e := &Engine{store: store, indexer: indexer, tenantID: tenantID, roots: roots, writeDir: writeDir}
+// WithSurface sets the audit surface recorded for every write (which client/
+// identity made it). It lands in note_versions.surface, the write audit trail.
+func WithSurface(surface string) EngineOption {
+	return func(e *Engine) {
+		if surface != "" {
+			e.surface = surface
+		}
+	}
+}
+
+// NewEngine builds an Engine over the given store for one tenant. Writes go
+// straight to Postgres (no notes dir, no roots): the tenant from the verified
+// token is the only write boundary.
+func NewEngine(store *index.Store, tenantID string, opts ...EngineOption) *Engine {
+	e := &Engine{store: store, tenantID: tenantID, surface: defaultSurface}
 	for _, opt := range opts {
 		opt(e)
 	}
@@ -106,70 +117,87 @@ type GetInput struct {
 	ID string `json:"id" jsonschema:"The note id to fetch (as returned by memory_search)."`
 }
 
-// GetOutput is the memory_get result shape (the full note body).
+// GetOutput is the memory_get result shape (the full note body). Version is the
+// note's current version — pass it back as expected_version on a memory_write
+// update or a memory_delete to get optimistic-concurrency safety.
 type GetOutput struct {
-	Found      bool   `json:"found"`
-	ID         string `json:"id"`
-	Kind       string `json:"kind"`
-	Tier       string `json:"tier"`
-	Title      string `json:"title"`
-	Body       string `json:"body"`
-	SourcePath string `json:"source_path"`
+	Found   bool   `json:"found"`
+	ID      string `json:"id"`
+	Kind    string `json:"kind"`
+	Tier    string `json:"tier"`
+	Title   string `json:"title"`
+	Body    string `json:"body"`
+	Version int    `json:"version"`
 }
 
-// Get fetches one note's full record by id.
+// Get fetches one note's full record by id, including its current version. A
+// tombstoned note reads as not-found.
 func (e *Engine) Get(ctx context.Context, in GetInput) (GetOutput, error) {
 	if in.ID == "" {
 		return GetOutput{}, fmt.Errorf("id is required")
 	}
-	recs, err := e.store.LoadNotes(ctx, e.tenantID, []string{in.ID})
+	st, found, err := e.store.NoteState(ctx, e.tenantID, in.ID)
 	if err != nil {
 		return GetOutput{}, fmt.Errorf("get: %w", err)
 	}
-	if len(recs) == 0 {
+	if !found || st.Deleted {
 		return GetOutput{Found: false, ID: in.ID}, nil
 	}
-	r := recs[0]
 	return GetOutput{
-		Found: true, ID: r.ID, Kind: r.Kind, Tier: r.Tier,
-		Title: r.Title, Body: r.Body, SourcePath: r.SourcePath,
+		Found: true, ID: st.ID, Kind: st.Kind, Tier: st.Tier,
+		Title: st.Title, Body: st.Body, Version: st.Version,
 	}, nil
 }
 
-// WriteInput is the memory_write argument shape — one note of a consolidation
-// plan.
+// WriteInput is the memory_write argument shape — one durable note.
 type WriteInput struct {
-	Path       string   `json:"path" jsonschema:"File path for the note, relative to the notes dir, ending in .md (no absolute paths or ..)."`
-	Body       string   `json:"body" jsonschema:"The note's markdown prose. Do not include a frontmatter block; it is rendered from the typed fields."`
-	ID         string   `json:"id,omitempty" jsonschema:"Stable note id. Derived from the path when omitted."`
-	Kind       string   `json:"kind,omitempty" jsonschema:"fact|decision|episode|reference|preference. Default fact."`
-	Tier       string   `json:"tier,omitempty" jsonschema:"core (always-loaded) or tail (retrieved). Default tail."`
-	Title      string   `json:"title,omitempty" jsonschema:"Short title. Derived from the first heading when omitted."`
-	Supersedes string   `json:"supersedes,omitempty" jsonschema:"Id of the note this CORRECTS. Use only to replace a stale fact, not for a new point in a timeline."`
-	Links      []string `json:"links,omitempty" jsonschema:"Optional related note ids."`
+	Path            string   `json:"path,omitempty" jsonschema:"Optional .md path used to derive the note id when id is omitted (no absolute paths or ..). The note is stored in Postgres, not as a file."`
+	Body            string   `json:"body" jsonschema:"The note's markdown prose. Do not include a frontmatter block; the typed fields carry the metadata."`
+	ID              string   `json:"id,omitempty" jsonschema:"Stable note id. Derived from the path when omitted."`
+	Kind            string   `json:"kind,omitempty" jsonschema:"fact|decision|episode|reference|preference. Default fact."`
+	Tier            string   `json:"tier,omitempty" jsonschema:"core (always-loaded) or tail (retrieved). Default tail."`
+	Title           string   `json:"title,omitempty" jsonschema:"Short title. Derived from the first heading when omitted."`
+	Supersedes      string   `json:"supersedes,omitempty" jsonschema:"Id of the note this CORRECTS. Use only to replace a stale fact, not for a new point in a timeline."`
+	ExpectedVersion int      `json:"expected_version,omitempty" jsonschema:"Optimistic-concurrency guard. Omit (or 0) to CREATE a new note; pass the current version (from memory_get) to UPDATE an existing one. A mismatch is rejected as a version conflict."`
+	Links           []string `json:"links,omitempty" jsonschema:"Optional related note ids (reserved)."`
 }
 
 // WriteOutput is the memory_write result shape.
 type WriteOutput struct {
-	Written    string `json:"written"`    // relative path written
-	Notes      int    `json:"notes"`      // total notes after the reindex
-	Superseded int    `json:"superseded"` // supersession flips this reindex
+	ID         string `json:"id"`         // the note id written
+	Version    int    `json:"version"`    // the note's new version
+	Op         string `json:"op"`         // create | update
+	Superseded int    `json:"superseded"` // supersession flips this write reconciled
 }
 
-// Write applies a single-note consolidation plan: write the prose file, then
-// reindex (which reconciles supersession).
+// Write creates or updates a single PG-native note under optimistic concurrency,
+// then reconciles supersession across the tenant. The tenant comes from the
+// verified token, so the write is tenant-isolated with no shared directory.
 func (e *Engine) Write(ctx context.Context, in *WriteInput) (WriteOutput, error) {
 	if e.readOnly {
 		return WriteOutput{}, ErrReadOnly
 	}
-	// Reject a self-supersede: a write whose supersedes resolves to the same note
-	// it lands on forks no history and would otherwise silently do nothing.
-	if err := index.CheckSelfSupersede(e.roots, e.writeDir, in.Path, in.ID, in.Supersedes); err != nil {
+	if strings.TrimSpace(in.Body) == "" {
+		return WriteOutput{}, fmt.Errorf("body is required")
+	}
+	if !index.ValidKind(in.Kind) {
+		return WriteOutput{}, fmt.Errorf("invalid kind %q", in.Kind)
+	}
+	if !index.ValidTier(in.Tier) {
+		return WriteOutput{}, fmt.Errorf("invalid tier %q (want core|tail)", in.Tier)
+	}
+	id, err := index.DeriveNoteID("", in.Path, in.ID)
+	if err != nil {
 		return WriteOutput{}, err
+	}
+	// Reject a self-supersede: a write whose supersedes is the very id it lands on
+	// forks no history and would otherwise silently do nothing.
+	if in.Supersedes != "" && in.Supersedes == id {
+		return WriteOutput{}, &index.SelfSupersedeError{ID: id, Path: in.Path}
 	}
 	// Reject a supersede of a non-existent note. Otherwise the reconcile marks
 	// nothing and the new note is still written with a dangling supersedes pointer
-	// — a silent no-op that a prompt-injected write could use to fake a correction.
+	// — a silent no-op a prompt-injected write could use to fake a correction.
 	if in.Supersedes != "" {
 		exists, err := e.store.NoteExists(ctx, e.tenantID, in.Supersedes)
 		if err != nil {
@@ -179,22 +207,82 @@ func (e *Engine) Write(ctx context.Context, in *WriteInput) (WriteOutput, error)
 			return WriteOutput{}, fmt.Errorf("supersedes target %q does not exist", in.Supersedes)
 		}
 	}
-	plan := &index.Plan{Notes: []index.PlanNote{{
-		ID: in.ID, Path: in.Path, Kind: in.Kind, Tier: in.Tier,
-		Title: in.Title, Supersedes: in.Supersedes, Links: in.Links, Body: in.Body,
-	}}}
-	written, err := index.ApplyPlan(plan, e.writeDir)
+
+	res, err := e.store.WriteNote(ctx, e.tenantID, &index.PGNoteInput{
+		ID:         id,
+		Kind:       in.Kind,
+		Tier:       in.Tier,
+		Title:      index.DeriveTitle(in.Title, in.Body, id),
+		Body:       in.Body,
+		Supersedes: in.Supersedes,
+		Surface:    e.surface,
+	}, in.ExpectedVersion)
 	if err != nil {
-		return WriteOutput{}, fmt.Errorf("write: %w", err)
+		return WriteOutput{}, err
 	}
-	// Index just the file we wrote rather than walking and hashing every watched
-	// file; supersession is still reconciled corpus-wide inside IndexPath.
-	abs := filepath.Join(e.writeDir, filepath.FromSlash(written[0]))
-	rep, err := e.indexer.IndexPath(ctx, e.tenantID, e.roots, abs)
+	superseded, err := e.store.ReconcileSupersessions(ctx, e.tenantID)
 	if err != nil {
-		return WriteOutput{}, fmt.Errorf("indexing after write: %w", err)
+		return WriteOutput{}, fmt.Errorf("reconciling supersessions: %w", err)
 	}
-	return WriteOutput{Written: written[0], Notes: rep.Notes, Superseded: rep.Superseded}, nil
+	return WriteOutput{ID: res.ID, Version: res.Version, Op: res.Op, Superseded: int(superseded)}, nil
+}
+
+// DeleteInput is the memory_delete argument shape.
+type DeleteInput struct {
+	ID              string `json:"id" jsonschema:"The note id to delete (tombstone)."`
+	ExpectedVersion int    `json:"expected_version" jsonschema:"The note's current version (from memory_get). Guards against deleting a note that changed under you."`
+}
+
+// MutationOutput is the result shape for delete/restore.
+type MutationOutput struct {
+	ID      string `json:"id"`
+	Version int    `json:"version"`
+	Op      string `json:"op"` // delete | restore
+}
+
+// Delete tombstones a note: history is preserved (memory_restore can undo it) but
+// it leaves live retrieval. Optimistic via expected_version.
+func (e *Engine) Delete(ctx context.Context, in DeleteInput) (MutationOutput, error) {
+	if e.readOnly {
+		return MutationOutput{}, ErrReadOnly
+	}
+	if in.ID == "" {
+		return MutationOutput{}, fmt.Errorf("id is required")
+	}
+	res, err := e.store.DeleteNote(ctx, e.tenantID, in.ID, in.ExpectedVersion, e.surface)
+	if err != nil {
+		return MutationOutput{}, err
+	}
+	if _, err := e.store.ReconcileSupersessions(ctx, e.tenantID); err != nil {
+		return MutationOutput{}, fmt.Errorf("reconciling supersessions: %w", err)
+	}
+	return MutationOutput{ID: res.ID, Version: res.Version, Op: res.Op}, nil
+}
+
+// RestoreInput is the memory_restore argument shape.
+type RestoreInput struct {
+	ID              string `json:"id" jsonschema:"The note id to restore."`
+	TargetVersion   int    `json:"target_version,omitempty" jsonschema:"The history version to restore. Omit (or 0) for the most recent non-delete version — the usual undo."`
+	ExpectedVersion int    `json:"expected_version" jsonschema:"The note's current version (from memory_get). Guards against restoring over a concurrent change."`
+}
+
+// Restore copies a prior version's content forward as a new version — the undo
+// for an accidental delete or a bad overwrite.
+func (e *Engine) Restore(ctx context.Context, in RestoreInput) (MutationOutput, error) {
+	if e.readOnly {
+		return MutationOutput{}, ErrReadOnly
+	}
+	if in.ID == "" {
+		return MutationOutput{}, fmt.Errorf("id is required")
+	}
+	res, err := e.store.RestoreNote(ctx, e.tenantID, in.ID, in.TargetVersion, in.ExpectedVersion, e.surface)
+	if err != nil {
+		return MutationOutput{}, err
+	}
+	if _, err := e.store.ReconcileSupersessions(ctx, e.tenantID); err != nil {
+		return MutationOutput{}, fmt.Errorf("reconciling supersessions: %w", err)
+	}
+	return MutationOutput{ID: res.ID, Version: res.Version, Op: res.Op}, nil
 }
 
 // BriefInput is the brief argument shape.
@@ -235,9 +323,4 @@ func (e *Engine) Brief(ctx context.Context, in BriefInput) (BriefOutput, error) 
 		TailTokens:  ws.TailTokens,
 		TotalTokens: ws.TotalTokens,
 	}, nil
-}
-
-// DefaultWriteDir is where memory_write writes when no override is given.
-func DefaultWriteDir(notesDir string) string {
-	return filepath.Join(notesDir, "memory", "atomic")
 }

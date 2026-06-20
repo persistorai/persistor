@@ -33,7 +33,6 @@ import (
 	"github.com/persistorai/persistor/internal/db/migrations"
 	"github.com/persistorai/persistor/internal/dbpool"
 	"github.com/persistorai/persistor/internal/index"
-	"github.com/persistorai/persistor/internal/mcpengine"
 )
 
 const defaultListenAddr = "127.0.0.1:8088"
@@ -68,20 +67,14 @@ func run(ctx context.Context) error {
 		return fmt.Errorf("applying migrations: %w", err)
 	}
 
-	roots, err := index.BuildRoots(cfg.notesDir, cfg.claudeMemoryDir, "")
-	if err != nil {
-		return fmt.Errorf("building roots: %w", err)
-	}
-
 	store := index.NewStore(pool, log)
-	indexer := index.NewIndexer(store, log, 0)
 
 	authn, err := buildAuth(ctx, &cfg, pool)
 	if err != nil {
 		return fmt.Errorf("building authenticator: %w", err)
 	}
 
-	httpServer, err := buildHTTPServer(&cfg, store, indexer, roots, authn, log, pool.Ping)
+	httpServer, err := buildHTTPServer(&cfg, store, authn, log, pool.Ping)
 	if err != nil {
 		return err
 	}
@@ -94,8 +87,8 @@ func run(ctx context.Context) error {
 // (plus the OIDC consent page), wrapped in access logging and security headers,
 // with timeouts suited to a long-running network service. ready is the /readyz
 // DB probe.
-func buildHTTPServer(cfg *serverConfig, store *index.Store, indexer *index.Indexer, roots []index.Root, authn authBundle, log *logrus.Logger, ready func(context.Context) error) (*http.Server, error) {
-	getServer := tenantServer(store, indexer, roots, cfg.writeDir, config.Version)
+func buildHTTPServer(cfg *serverConfig, store *index.Store, authn authBundle, log *logrus.Logger, ready func(context.Context) error) (*http.Server, error) {
+	getServer := tenantServer(store, config.Version)
 	mux := newMux(getServer, authn.verify, authn.opts, authn.metadata, ready)
 	if cfg.authMode == authModeOIDC && cfg.stytchPublicToken != "" {
 		consent, err := newConsentHandler(cfg.stytchPublicToken)
@@ -145,16 +138,13 @@ func serve(ctx context.Context, srv *http.Server, log *logrus.Logger) error {
 // serverConfig is the daemon's resolved environment configuration. There is no
 // tenant here: the serving tenant is resolved per request from the bearer token.
 type serverConfig struct {
-	databaseURL     string
-	notesDir        string
-	claudeMemoryDir string
-	writeDir        string
-	listenAddr      string
-	authMode        string // static | oidc
-	publicURL       string // externally-visible base URL (resource + metadata)
-	oidcIssuer      string
-	oidcAudience    string
-	oidcJWKSURL     string
+	databaseURL  string
+	listenAddr   string
+	authMode     string // static | oidc
+	publicURL    string // externally-visible base URL (resource + metadata)
+	oidcIssuer   string
+	oidcAudience string
+	oidcJWKSURL  string
 	// stytchPublicToken, when set in oidc mode, serves the Stytch consent page
 	// at /authorize (the OAuth Authorization URL). Publishable, not a secret.
 	stytchPublicToken string
@@ -163,9 +153,6 @@ type serverConfig struct {
 func loadConfig() (serverConfig, error) {
 	cfg := serverConfig{
 		databaseURL:       os.Getenv("DATABASE_URL"),
-		notesDir:          os.Getenv("PERSISTOR_NOTES_DIR"),
-		claudeMemoryDir:   os.Getenv("CLAUDE_MEMORY_DIR"),
-		writeDir:          os.Getenv("PERSISTOR_WRITE_DIR"),
 		listenAddr:        os.Getenv("PERSISTOR_LISTEN_ADDR"),
 		authMode:          os.Getenv("PERSISTOR_AUTH_MODE"),
 		publicURL:         os.Getenv("PERSISTOR_PUBLIC_URL"),
@@ -174,11 +161,8 @@ func loadConfig() (serverConfig, error) {
 		oidcJWKSURL:       os.Getenv("PERSISTOR_OIDC_JWKS_URL"),
 		stytchPublicToken: os.Getenv("PERSISTOR_STYTCH_PUBLIC_TOKEN"),
 	}
-	if cfg.databaseURL == "" || cfg.notesDir == "" {
-		return serverConfig{}, fmt.Errorf("DATABASE_URL and PERSISTOR_NOTES_DIR are required")
-	}
-	if cfg.writeDir == "" {
-		cfg.writeDir = mcpengine.DefaultWriteDir(cfg.notesDir)
+	if cfg.databaseURL == "" {
+		return serverConfig{}, fmt.Errorf("DATABASE_URL is required")
 	}
 	if cfg.listenAddr == "" {
 		cfg.listenAddr = defaultListenAddr

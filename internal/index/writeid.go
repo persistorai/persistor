@@ -6,6 +6,45 @@ import (
 	"strings"
 )
 
+// DeriveNoteID computes the final id for a PG-native note write. An explicit id
+// is validated and returned as-is; otherwise the id is derived from the note's
+// path slug, prefixed with namespace when non-empty (e.g. "scout:memory-foo").
+// The path is only a key for deriving a stable slug — PG-native notes have no
+// backing file — so it must still be a clean relative .md path.
+func DeriveNoteID(namespace, path, explicitID string) (string, error) {
+	if explicitID != "" {
+		if err := validateNoteID(explicitID); err != nil {
+			return "", err
+		}
+		return explicitID, nil
+	}
+	clean, err := cleanRelPath(path)
+	if err != nil {
+		return "", fmt.Errorf("deriving id from path: %w", err)
+	}
+	id := slugFromPath(clean)
+	if namespace != "" {
+		id = namespace + ":" + id
+	}
+	if err := validateNoteID(id); err != nil {
+		return "", err
+	}
+	return id, nil
+}
+
+// validateNoteID enforces the length and character-set constraints shared by the
+// chk_note_id_len DB constraint and noteIDPattern, so a bad id fails with a clear
+// app-layer error instead of a constraint violation.
+func validateNoteID(id string) error {
+	if len(id) > maxNoteIDLen {
+		return fmt.Errorf("id too long: %d > %d", len(id), maxNoteIDLen)
+	}
+	if !noteIDPattern.MatchString(id) {
+		return fmt.Errorf("invalid id %q (want a lowercase slug of a-z, 0-9, and :._-)", id)
+	}
+	return nil
+}
+
 // ResolveWriteID computes the note id a plan note will have once written under
 // notesDir and indexed: the explicit id if set, else `<root>:<slug(relpath)>`
 // where relpath is the written file's path relative to the watched root that
