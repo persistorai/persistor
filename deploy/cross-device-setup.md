@@ -1,0 +1,148 @@
+# Cross-device setup: connect a remote Claude to persistor-server
+
+Runbook for connecting a Claude agent on another machine (laptop, etc.) to the
+Persistor remote MCP daemon (`persistor-server`) running on **warp-core** over
+Tailscale. This is the manual half of the P1 acceptance gate.
+
+You are the agent on the **remote** machine. Work through the steps, run the
+commands, and fill in the report template at the end. Most steps are pure
+shell; only Step 6 needs a Claude Code session reload.
+
+## What this is
+
+`persistor-server` is a long-running HTTP daemon that exposes four memory tools
+(`memory_search`, `memory_get`, `memory_write`, `brief`) over the MCP Streamable
+HTTP transport. In this phase it is **tailnet-bound and unauthenticated** — it
+serves a throwaway test tenant, never warp-core's live memory. The goal of this
+runbook is to prove a second device on the tailnet can list and call those tools.
+
+## Prerequisite: the daemon must be running on warp-core
+
+This is done **on warp-core**, not the remote machine. If `curl` in Step 2 fails,
+ask Brian to run this (or run it yourself if you have a warp-core shell):
+
+```bash
+# On warp-core. Builds the daemon, then runs it bound to the Tailscale IP,
+# serving a THROWAWAY tenant on the TEST database (never the live memory).
+make -C /home/brian/code/persistor build-server
+
+mkdir -p /tmp/persistor-remote-test/memory/daily
+
+DATABASE_URL="postgres://persistor:$(cat /tmp/.pgpw_persistor)@localhost:5432/persistor_test?sslmode=disable" \
+PERSISTOR_TENANT_ID="11111111-1111-1111-1111-111111111111" \
+PERSISTOR_NOTES_DIR=/tmp/persistor-remote-test \
+PERSISTOR_LISTEN_ADDR="$(tailscale ip -4 | head -1):8088" \
+/home/brian/code/persistor/bin/persistor-server
+```
+
+The daemon logs the address it is listening on. Leave it running in that
+terminal for the duration of the test. A fixed tenant UUID is used so notes you
+write below persist and are searchable.
+
+## Step 1 - Find warp-core on the tailnet
+
+On the remote machine:
+
+```bash
+tailscale status | grep -i warp-core
+```
+
+Take the `100.x.y.z` address from that line (or use the MagicDNS name
+`warp-core` if MagicDNS is enabled) and set it as a variable for the rest:
+
+```bash
+WARPCORE=100.x.y.z   # replace with the address from the line above
+```
+
+## Step 2 - Confirm reachability
+
+```bash
+curl -sS "http://${WARPCORE}:8088/healthz" -o /dev/null -w '%{http_code}\n'
+```
+
+Expect `200`. If this hangs or refuses, the daemon is not running or is bound to
+localhost instead of the tailnet IP — see Troubleshooting.
+
+## Step 3 - Prove it is the persistor MCP server
+
+```bash
+curl -sS -X POST "http://${WARPCORE}:8088/mcp" \
+  -H 'Content-Type: application/json' \
+  -H 'Accept: application/json, text/event-stream' \
+  -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}'
+```
+
+The response is a server-sent-events frame (`event: message` then `data: {...}`).
+The `data` JSON should contain `"serverInfo":{"name":"persistor",...}`. That
+confirms the MCP endpoint is reachable and is Persistor.
+
+## Step 4 - Add the MCP server to this machine
+
+```bash
+claude mcp add --transport http persistor-remote "http://${WARPCORE}:8088/mcp"
+```
+
+## Step 5 - Verify the tools are listed
+
+```bash
+claude mcp list
+claude mcp get persistor-remote
+```
+
+`claude mcp list` should show `persistor-remote`; recent Claude Code versions
+perform a live connection check and show it connected. If it shows the four
+tools or a connected status, the wire-level gate is met.
+
+## Step 6 - Functional round-trip
+
+Restart Claude Code (or start a fresh session) so it loads the new MCP server,
+then make these tool calls (ask the model to use the tools, or call them
+directly if your harness allows):
+
+1. `memory_write` — path `daily/laptop-check.md`, body something like
+   `# Laptop check\n\nConnected from the laptop over Tailscale.`
+2. `memory_search` — query `laptop`. Expect the note just written to come back.
+3. `brief` — seed `laptop`. Expect a non-empty markdown working-set.
+
+If all three succeed, the tools are callable end to end from this device.
+
+## Step 7 - Report back
+
+Reply to Brian with:
+
+```text
+Cross-device P1 check:
+- Reachability (healthz 200): PASS / FAIL
+- initialize returns serverInfo name=persistor: PASS / FAIL
+- claude mcp list shows persistor-remote connected: PASS / FAIL
+- memory_write -> memory_search round-trip: PASS / FAIL / not-tested
+- Tailscale address used: 100.x.y.z (or MagicDNS name)
+- Notes / anything odd:
+```
+
+## Step 8 - Clean up
+
+```bash
+claude mcp remove persistor-remote
+```
+
+Then stop the daemon on warp-core with Ctrl-C in its terminal. The throwaway
+tenant data lives only in the test database and can be ignored.
+
+## Troubleshooting
+
+| Symptom | Likely cause | Fix |
+| --- | --- | --- |
+| `healthz` refused or hangs | daemon down, or bound to `127.0.0.1` not the tailnet | set `PERSISTOR_LISTEN_ADDR` to the Tailscale IP; check the daemon log |
+| `403 Forbidden` | DNS-rebind protection | use the Tailscale IP or MagicDNS name in the URL, never `localhost` |
+| refused only from the laptop | Tailscale down or ACLs block the port | `tailscale status` on both machines; allow TCP 8088 in tailnet ACLs |
+| `404` on `/mcp` | wrong path | the URL must end in `/mcp` |
+| empty search results | nothing written yet | run `memory_write` first — there is no startup reindex |
+
+## Security note
+
+In this phase the daemon has **no authentication**: anyone on the tailnet can
+read and write the served tenant's memory. That is why it serves a throwaway
+test tenant and must never bind a public interface or serve warp-core's live
+`scout:`/`claude:` memory. Per-tenant bearer tokens arrive in P2; real OAuth
+(for claude.ai and mobile) in P3.
