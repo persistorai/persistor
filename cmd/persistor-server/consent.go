@@ -22,6 +22,9 @@ func newConsentHandler(publicToken string) (http.HandlerFunc, error) {
 	}
 	return func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		// The consent page is iterated during setup and carries OAuth query
+		// params; never let a browser serve a stale copy.
+		w.Header().Set("Cache-Control", "no-store")
 		if err := tmpl.Execute(w, struct{ PublicToken string }{PublicToken: publicToken}); err != nil {
 			http.Error(w, "render error", http.StatusInternalServerError)
 		}
