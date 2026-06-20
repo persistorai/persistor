@@ -25,6 +25,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/modelcontextprotocol/go-sdk/auth"
 	"github.com/sirupsen/logrus"
 
 	"github.com/briancolinger/persistor/internal/config"
@@ -32,6 +33,7 @@ import (
 	"github.com/briancolinger/persistor/internal/db/migrations"
 	"github.com/briancolinger/persistor/internal/dbpool"
 	"github.com/briancolinger/persistor/internal/index"
+	"github.com/briancolinger/persistor/internal/mcpauth"
 	"github.com/briancolinger/persistor/internal/mcpengine"
 )
 
@@ -74,15 +76,21 @@ func run(ctx context.Context) error {
 
 	store := index.NewStore(pool, log)
 	indexer := index.NewIndexer(store, log, 0)
-	engine := mcpengine.NewEngine(store, indexer, cfg.tenantID, roots, cfg.writeDir)
-	server := mcpengine.NewServer(engine, config.Version)
+	verifier := mcpauth.NewStaticTokenAuth(mcpauth.NewPGKeyStore(pool))
+
+	getServer := tenantServer(store, indexer, roots, cfg.writeDir, config.Version)
+	authOpts := &auth.RequireBearerTokenOptions{
+		// Advertised in WWW-Authenticate on a 401. The metadata endpoint itself
+		// is served in P3 (OIDC); static-token clients ignore it.
+		ResourceMetadataURL: "http://" + cfg.listenAddr + "/.well-known/oauth-protected-resource",
+	}
 
 	httpServer := &http.Server{
 		Addr:              cfg.listenAddr,
-		Handler:           newMux(server),
+		Handler:           newMux(getServer, verifier.Verify, authOpts),
 		ReadHeaderTimeout: 10 * time.Second,
 	}
-	log.WithField("addr", cfg.listenAddr).Warn("persistor-server listening (tailnet-bound, no auth — do not expose publicly)")
+	log.WithField("addr", cfg.listenAddr).Warn("persistor-server listening (tailnet-bound, static-token auth)")
 	return serve(ctx, httpServer, log)
 }
 
@@ -112,10 +120,10 @@ func serve(ctx context.Context, srv *http.Server, log *logrus.Logger) error {
 	}
 }
 
-// serverConfig is the daemon's resolved environment configuration.
+// serverConfig is the daemon's resolved environment configuration. There is no
+// tenant here: the serving tenant is resolved per request from the bearer token.
 type serverConfig struct {
 	databaseURL     string
-	tenantID        string
 	notesDir        string
 	claudeMemoryDir string
 	writeDir        string
@@ -125,14 +133,13 @@ type serverConfig struct {
 func loadConfig() (serverConfig, error) {
 	cfg := serverConfig{
 		databaseURL:     os.Getenv("DATABASE_URL"),
-		tenantID:        os.Getenv("PERSISTOR_TENANT_ID"),
 		notesDir:        os.Getenv("PERSISTOR_NOTES_DIR"),
 		claudeMemoryDir: os.Getenv("CLAUDE_MEMORY_DIR"),
 		writeDir:        os.Getenv("PERSISTOR_WRITE_DIR"),
 		listenAddr:      os.Getenv("PERSISTOR_LISTEN_ADDR"),
 	}
-	if cfg.databaseURL == "" || cfg.tenantID == "" || cfg.notesDir == "" {
-		return serverConfig{}, fmt.Errorf("DATABASE_URL, PERSISTOR_TENANT_ID, and PERSISTOR_NOTES_DIR are required")
+	if cfg.databaseURL == "" || cfg.notesDir == "" {
+		return serverConfig{}, fmt.Errorf("DATABASE_URL and PERSISTOR_NOTES_DIR are required")
 	}
 	if cfg.writeDir == "" {
 		cfg.writeDir = mcpengine.DefaultWriteDir(cfg.notesDir)

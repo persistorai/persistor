@@ -7,21 +7,32 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/google/uuid"
+	"github.com/modelcontextprotocol/go-sdk/auth"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/sirupsen/logrus"
 
 	"github.com/briancolinger/persistor/internal/dbpool"
 	"github.com/briancolinger/persistor/internal/index"
+	"github.com/briancolinger/persistor/internal/mcpauth"
 	"github.com/briancolinger/persistor/internal/mcpengine"
 )
 
-// newSeededEngine connects to TEST_DATABASE_URL (skipping when unset), seeds a
-// synthetic corpus, and returns an Engine. Mirrors the mcpengine test harness;
-// the schema is assumed migrated (the loop gate runs fresh-migrate first).
-func newSeededEngine(t *testing.T) *mcpengine.Engine {
+// testStack is an in-process daemon: the real auth-gated mux over a test DB.
+type testStack struct {
+	ts       *httptest.Server
+	indexer  *index.Indexer
+	keyStore *mcpauth.PGKeyStore
+	pool     *dbpool.Pool
+}
+
+// newTestStack stands up the auth-gated HTTP handler against TEST_DATABASE_URL
+// (skipping when unset). The schema is assumed migrated (the loop gate runs
+// fresh-migrate first).
+func newTestStack(t *testing.T) *testStack {
 	t.Helper()
 	dbURL := os.Getenv("TEST_DATABASE_URL")
 	if dbURL == "" {
@@ -34,10 +45,45 @@ func newSeededEngine(t *testing.T) *mcpengine.Engine {
 	}
 	t.Cleanup(pool.Close)
 
+	log := logrus.New()
+	log.SetLevel(logrus.ErrorLevel)
+	store := index.NewStore(pool, log)
+	indexer := index.NewIndexer(store, log, 0)
+	keyStore := mcpauth.NewPGKeyStore(pool)
+
+	verifier := mcpauth.NewStaticTokenAuth(keyStore)
+	getServer := tenantServer(store, indexer, nil, t.TempDir(), "test")
+	authOpts := &auth.RequireBearerTokenOptions{ResourceMetadataURL: "http://example/.well-known/oauth-protected-resource"}
+	ts := httptest.NewServer(newMux(getServer, verifier.Verify, authOpts))
+	t.Cleanup(ts.Close)
+
+	return &testStack{ts: ts, indexer: indexer, keyStore: keyStore, pool: pool}
+}
+
+// seededNoteID is the id every seeded note lands at; isolation comes from the
+// tenant, not the path.
+const seededNoteID = "demo:memory-daily-note"
+
+// tenant seeds one tenant with a single note and mints an API key for it,
+// returning the raw token.
+func (s *testStack) tenant(t *testing.T, noteBody string) string {
+	t.Helper()
+	ctx := context.Background()
 	tenantID := uuid.New().String()
+
+	dir := t.TempDir()
+	mustWrite(t, dir, "memory/daily/note.md", noteBody)
+	if _, err := s.indexer.Reindex(ctx, tenantID, []index.Root{{Name: "demo", Dir: dir}}); err != nil {
+		t.Fatalf("seed reindex: %v", err)
+	}
+	token, err := s.keyStore.CreateAPIKey(ctx, tenantID, "test")
+	if err != nil {
+		t.Fatalf("mint key: %v", err)
+	}
 	t.Cleanup(func() {
 		clean := context.Background()
-		tx, err := pool.Begin(clean)
+		_, _ = s.pool.Exec(clean, "DELETE FROM api_keys WHERE tenant_id = $1", tenantID)
+		tx, err := s.pool.Begin(clean)
 		if err != nil {
 			return
 		}
@@ -50,19 +96,7 @@ func newSeededEngine(t *testing.T) *mcpengine.Engine {
 		_, _ = tx.Exec(clean, "DELETE FROM sources WHERE tenant_id = current_setting('app.tenant_id')::uuid")
 		_ = tx.Commit(clean)
 	})
-
-	dir := t.TempDir()
-	mustWrite(t, dir, "memory/daily/aurora.md", "# Aurora Protocol\n\nThe safety protocol for polar storms.\n")
-	roots := []index.Root{{Name: "demo", Dir: dir}}
-
-	log := logrus.New()
-	log.SetLevel(logrus.ErrorLevel)
-	store := index.NewStore(pool, log)
-	indexer := index.NewIndexer(store, log, 0)
-	if _, err := indexer.Reindex(ctx, tenantID, roots); err != nil {
-		t.Fatalf("seed reindex: %v", err)
-	}
-	return mcpengine.NewEngine(store, indexer, tenantID, roots, filepath.Join(dir, "memory", "atomic"))
+	return token
 }
 
 func mustWrite(t *testing.T, dir, rel, content string) {
@@ -76,75 +110,154 @@ func mustWrite(t *testing.T, dir, rel, content string) {
 	}
 }
 
-// TestHTTPTransport_ToolsOverStreamableHTTP proves the daemon serves the MCP
-// tool surface over real HTTP: a go-sdk client connects to /mcp, lists the four
-// tools, and calls memory_search end to end. This is the automated half of the
-// P1 gate (the cross-device tailnet check is manual).
-func TestHTTPTransport_ToolsOverStreamableHTTP(t *testing.T) {
-	engine := newSeededEngine(t)
+// TestHTTP_AuthRequired: the /mcp endpoint rejects missing/invalid tokens with a
+// 401 and a WWW-Authenticate header; /healthz stays open.
+func TestHTTP_AuthRequired(t *testing.T) {
+	st := newTestStack(t)
 	ctx := context.Background()
 
-	server := mcpengine.NewServer(engine, "test")
-	ts := httptest.NewServer(newMux(server))
-	defer ts.Close()
-
-	// Liveness probe.
-	healthReq, err := http.NewRequestWithContext(ctx, http.MethodGet, ts.URL+"/healthz", http.NoBody)
+	// No token -> 401 + WWW-Authenticate.
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, st.ts.URL+"/mcp", strings.NewReader("{}"))
 	if err != nil {
-		t.Fatalf("healthz request: %v", err)
+		t.Fatalf("request: %v", err)
 	}
-	resp, err := http.DefaultClient.Do(healthReq)
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("post: %v", err)
+	}
+	_ = resp.Body.Close()
+	if resp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("no-token status = %d, want 401", resp.StatusCode)
+	}
+	if resp.Header.Get("WWW-Authenticate") == "" {
+		t.Fatal("401 missing WWW-Authenticate header")
+	}
+
+	// Bogus token -> 401.
+	req2, _ := http.NewRequestWithContext(ctx, http.MethodPost, st.ts.URL+"/mcp", strings.NewReader("{}"))
+	req2.Header.Set("Content-Type", "application/json")
+	req2.Header.Set("Authorization", "Bearer psk_bogus")
+	resp2, err := http.DefaultClient.Do(req2)
+	if err != nil {
+		t.Fatalf("post bogus: %v", err)
+	}
+	_ = resp2.Body.Close()
+	if resp2.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("bogus-token status = %d, want 401", resp2.StatusCode)
+	}
+
+	// healthz stays open.
+	hreq, _ := http.NewRequestWithContext(ctx, http.MethodGet, st.ts.URL+"/healthz", http.NoBody)
+	hresp, err := http.DefaultClient.Do(hreq)
 	if err != nil {
 		t.Fatalf("healthz: %v", err)
 	}
-	_ = resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("healthz status = %d, want 200", resp.StatusCode)
+	_ = hresp.Body.Close()
+	if hresp.StatusCode != http.StatusOK {
+		t.Fatalf("healthz status = %d, want 200", hresp.StatusCode)
+	}
+}
+
+// TestHTTP_TenantIsolation: two tenants, two tokens; each token's session sees
+// only its own tenant's notes through the full HTTP + auth + RLS path.
+func TestHTTP_TenantIsolation(t *testing.T) {
+	st := newTestStack(t)
+	tokenA := st.tenant(t, "# Note\n\nalpha secret protocol\n")
+	tokenB := st.tenant(t, "# Note\n\nbravo secret protocol\n")
+
+	// Tenant A's token: lists tools, sees alpha, never bravo.
+	if n := listToolCount(t, st.ts.URL, tokenA); n != 4 {
+		t.Fatalf("tenant A listed %d tools, want 4", n)
+	}
+	if !hasSeededNote(searchOverHTTP(t, st.ts.URL, tokenA, "alpha")) {
+		t.Fatal("tenant A could not find its own note")
+	}
+	if hasSeededNote(searchOverHTTP(t, st.ts.URL, tokenA, "bravo")) {
+		t.Fatal("tenant A leaked tenant B's note")
 	}
 
-	// Connect a real MCP client over the Streamable HTTP transport.
-	transport := &mcp.StreamableClientTransport{Endpoint: ts.URL + "/mcp"}
+	// Tenant B's token: sees bravo, never alpha.
+	if !hasSeededNote(searchOverHTTP(t, st.ts.URL, tokenB, "bravo")) {
+		t.Fatal("tenant B could not find its own note")
+	}
+	if hasSeededNote(searchOverHTTP(t, st.ts.URL, tokenB, "alpha")) {
+		t.Fatal("tenant B leaked tenant A's note")
+	}
+}
+
+// bearerClient is an http.Client that attaches a static bearer token to every
+// request (POST and the standalone SSE GET).
+func bearerClient(token string) *http.Client {
+	return &http.Client{Transport: bearerRoundTripper{token: token, base: http.DefaultTransport}}
+}
+
+type bearerRoundTripper struct {
+	token string
+	base  http.RoundTripper
+}
+
+func (b bearerRoundTripper) RoundTrip(r *http.Request) (*http.Response, error) {
+	r = r.Clone(r.Context())
+	r.Header.Set("Authorization", "Bearer "+b.token)
+	return b.base.RoundTrip(r)
+}
+
+func connectClient(t *testing.T, url, token string) *mcp.ClientSession {
+	t.Helper()
+	transport := &mcp.StreamableClientTransport{Endpoint: url + "/mcp", HTTPClient: bearerClient(token)}
 	client := mcp.NewClient(&mcp.Implementation{Name: "test-client", Version: "test"}, nil)
-	cs, err := client.Connect(ctx, transport, nil)
+	cs, err := client.Connect(context.Background(), transport, nil)
 	if err != nil {
 		t.Fatalf("client connect: %v", err)
 	}
-	defer func() { _ = cs.Close() }()
+	t.Cleanup(func() { _ = cs.Close() })
+	return cs
+}
 
-	tools, err := cs.ListTools(ctx, nil)
+func listToolCount(t *testing.T, url, token string) int {
+	t.Helper()
+	cs := connectClient(t, url, token)
+	tools, err := cs.ListTools(context.Background(), nil)
 	if err != nil {
 		t.Fatalf("list tools: %v", err)
 	}
-	if got := len(tools.Tools); got != 4 {
-		t.Fatalf("listed %d tools, want 4", got)
-	}
+	return len(tools.Tools)
+}
 
-	res, err := cs.CallTool(ctx, &mcp.CallToolParams{
+func searchOverHTTP(t *testing.T, url, token, query string) []string {
+	t.Helper()
+	cs := connectClient(t, url, token)
+	res, err := cs.CallTool(context.Background(), &mcp.CallToolParams{
 		Name:      "memory_search",
-		Arguments: map[string]any{"query": "polar storm protocol"},
+		Arguments: map[string]any{"query": query},
 	})
 	if err != nil {
-		t.Fatalf("call memory_search: %v", err)
+		t.Fatalf("search %q: %v", query, err)
 	}
 	if res.IsError {
-		t.Fatalf("memory_search returned error: %+v", res.Content)
+		t.Fatalf("search %q returned error: %+v", query, res.Content)
 	}
-
 	var out mcpengine.SearchOutput
 	b, err := json.Marshal(res.StructuredContent)
 	if err != nil {
-		t.Fatalf("marshal result: %v", err)
+		t.Fatalf("marshal: %v", err)
 	}
 	if err := json.Unmarshal(b, &out); err != nil {
-		t.Fatalf("unmarshal result: %v", err)
+		t.Fatalf("unmarshal: %v", err)
 	}
-	found := false
-	for _, r := range out.Results {
-		if r.ID == "demo:memory-daily-aurora" {
-			found = true
+	ids := make([]string, len(out.Results))
+	for i, r := range out.Results {
+		ids[i] = r.ID
+	}
+	return ids
+}
+
+func hasSeededNote(ids []string) bool {
+	for _, id := range ids {
+		if id == seededNoteID {
+			return true
 		}
 	}
-	if !found {
-		t.Fatalf("memory_search over HTTP missed aurora: %+v", out.Results)
-	}
+	return false
 }
