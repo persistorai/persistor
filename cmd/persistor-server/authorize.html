@@ -8,56 +8,113 @@
     body { font-family: system-ui, -apple-system, sans-serif; max-width: 28rem; margin: 4rem auto; padding: 0 1rem; line-height: 1.5; }
     h1 { font-size: 1.25rem; }
     .muted { color: #666; font-size: 0.9rem; }
+    #status { font-size: 0.85rem; color: #555; white-space: pre-wrap; margin-bottom: 1rem; }
+    #status.err { color: #b00020; }
   </style>
+
+  <!-- Pin a single instance of react / react-dom / @stytch/vanilla-js. @stytch/react
+       takes all three as PEER deps; if esm.sh hands it a second copy of react the
+       hooks throw "invalid hook call" and the widget renders blank. ?external= forces
+       @stytch/react to import the bare specifiers, which this map resolves to the one
+       copy. Versions are the known-good set from stytchauth/stytch-react-example
+       (react 18.3.1 + @stytch/react 19.5.2 + @stytch/vanilla-js ^5). -->
+  <script type="importmap">
+  {
+    "imports": {
+      "react": "https://esm.sh/react@18.3.1",
+      "react-dom": "https://esm.sh/react-dom@18.3.1?external=react",
+      "react-dom/client": "https://esm.sh/react-dom@18.3.1/client?external=react",
+      "@stytch/vanilla-js": "https://esm.sh/@stytch/vanilla-js@5.24.1",
+      "@stytch/react": "https://esm.sh/@stytch/react@19.5.2?external=react,react-dom,@stytch/vanilla-js"
+    }
+  }
+  </script>
 </head>
 <body>
   <h1>Authorize access to your Persistor memory</h1>
   <p class="muted">Sign in to approve this application's access to your memory.</p>
-  <div id="stytch-login"></div>
-  <div id="stytch-idp"></div>
+  <div id="status">Loading…</div>
+  <div id="root"></div>
 
   <script type="module">
-    // Stytch Connected Apps consent page — this is the OAuth "Authorization URL".
-    // The Stytch IdentityProvider component reads the OAuth params (client_id,
-    // redirect_uri, scope, state) from the query string, shows the consent
-    // dialog, and redirects back to the client with an authorization code.
-    //
-    // FIRST-DRAFT integration: built from Stytch's documented vanilla-js API but
-    // NOT yet verified in a live browser. The SDK load path (esm.sh CDN) and the
-    // login config shape may need adjustment — see deploy/p3-stytch-setup.md.
-    import { StytchUIClient } from 'https://esm.sh/@stytch/vanilla-js';
+    // Stytch Connected Apps consent page — the OAuth "Authorization URL". Rendered
+    // with Stytch's SUPPORTED React components (the vanilla-js mount* helpers are
+    // deprecated and render an empty placeholder). Flow:
+    //   1. No session  -> <StytchLogin> (email magic link).
+    //   2. Magic-link return -> TokenAuthenticator authenticates the token, then
+    //      reloads this same URL with the OAuth params intact (token stripped).
+    //   3. Session present -> <IdentityProvider> reads client_id/redirect_uri/scope/
+    //      state from the query string, shows consent, redirects back with a code.
+    import React from 'react';
+    import { createRoot } from 'react-dom/client';
+    import { StytchProvider, StytchLogin, IdentityProvider, useStytch, useStytchUser } from '@stytch/react';
+    import { StytchUIClient, Products } from '@stytch/vanilla-js';
 
-    const stytch = new StytchUIClient('{{.PublicToken}}');
+    const h = React.createElement;
+    const statusEl = document.getElementById('status');
+    const show = (msg, isErr) => { statusEl.textContent = msg || ''; statusEl.className = isErr ? 'err' : ''; };
+    // Surface async failures on the page instead of a silent blank.
+    window.addEventListener('error', (e) => show('Error: ' + (e.message || e), true));
+    window.addEventListener('unhandledrejection', (e) => show('Error: ' + (e.reason?.message || e.reason), true));
 
-    function showConsent() {
-      // User is authenticated -> render the consent/authorize component.
-      stytch.mountIdentityProvider({ elementId: '#stytch-idp' });
-    }
+    // The same URL we are on, minus the magic-link token params — preserves the
+    // OAuth authorize params (client_id, redirect_uri, scope, state, code_challenge)
+    // across the magic-link round-trip so IdentityProvider can read them on return.
+    const authorizeReturnURL = () => {
+      const u = new URL(window.location.href);
+      u.searchParams.delete('token');
+      u.searchParams.delete('stytch_token_type');
+      return u.toString();
+    };
 
-    function showLogin() {
-      // The user must be authenticated before they can consent. Mount Stytch's
-      // login UI; on success the page returns here logged-in and shows consent.
-      stytch.mountLogin({
-        elementId: '#stytch-login',
-        config: {
-          products: ['emailMagicLinks', 'oauth'],
+    try {
+      const stytch = new StytchUIClient('{{.PublicToken}}');
+
+      // Detects the magic-link redirect (?token=...&stytch_token_type=magic_links),
+      // authenticates it into a session, then reloads with the OAuth params intact.
+      function TokenAuthenticator({ children }) {
+        const client = useStytch();
+        const { user } = useStytchUser();
+        React.useEffect(() => {
+          if (!client || user) return;
+          const qp = new URLSearchParams(window.location.search);
+          const token = qp.get('token');
+          const tokenType = qp.get('stytch_token_type');
+          if (token && tokenType === 'magic_links') {
+            show('Signing you in…');
+            client.magicLinks
+              .authenticate(token, { session_duration_minutes: 60 })
+              .then(() => { window.location.href = authorizeReturnURL(); })
+              .catch((err) => show('Sign-in failed: ' + (err?.message || err), true));
+          }
+        }, [client, user]);
+        return children;
+      }
+
+      function App() {
+        const { user } = useStytchUser();
+        React.useEffect(() => { show(user ? '' : 'Sign in to approve access to your Persistor memory.'); }, [user]);
+        if (user) {
+          return h(IdentityProvider);
+        }
+        const here = authorizeReturnURL();
+        const config = {
+          products: [Products.emailMagicLinks],
           emailMagicLinksOptions: {
-            loginRedirectURL: window.location.href,
-            signupRedirectURL: window.location.href,
+            loginRedirectURL: here,
+            loginExpirationMinutes: 60,
+            signupRedirectURL: here,
+            signupExpirationMinutes: 60,
           },
-          oauthOptions: {
-            providers: [{ type: 'google' }],
-            loginRedirectURL: window.location.href,
-            signupRedirectURL: window.location.href,
-          },
-        },
-      });
-    }
+        };
+        return h(StytchLogin, { config });
+      }
 
-    if (stytch.user.getSync()) {
-      showConsent();
-    } else {
-      showLogin();
+      createRoot(document.getElementById('root')).render(
+        h(StytchProvider, { stytch }, h(TokenAuthenticator, null, h(App))),
+      );
+    } catch (err) {
+      show('Setup failed: ' + (err?.message || err), true);
     }
   </script>
 </body>
