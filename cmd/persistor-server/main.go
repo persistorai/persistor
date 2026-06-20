@@ -108,6 +108,19 @@ func buildHTTPServer(cfg *serverConfig, store *index.Store, authn authBundle, lo
 			return nil, fmt.Errorf("building consent page: %w", err)
 		}
 		mux.HandleFunc("/authorize", consent)
+		// Authorization-server facade for MCP clients that perform OAuth discovery
+		// at the resource origin instead of following the cross-origin
+		// authorization_servers pointer (claude.ai web). Only meaningful alongside
+		// the consent page, which is the facade's authorization_endpoint. The
+		// same-origin /register proxy bridges DCR to the IdP.
+		asMeta := newAuthServerMetadata(cfg.publicURL, cfg.oidcIssuer, cfg.oidcJWKSURL)
+		mux.HandleFunc("/.well-known/oauth-authorization-server", asMeta.serveHTTP)
+		mux.HandleFunc("/.well-known/openid-configuration", asMeta.serveHTTP)
+		regProxy := newRegisterProxy(
+			&http.Client{Timeout: 10 * time.Second},
+			stytchEndpoint(cfg.oidcIssuer, "/v1/oauth2/register"),
+		)
+		mux.HandleFunc("/register", regProxy)
 	}
 	handler := requestLogger(log, securityHeaders(mux))
 	return &http.Server{
