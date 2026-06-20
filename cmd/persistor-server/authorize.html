@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Authorize · Persistor</title>
+  <style>
+    body { font-family: system-ui, -apple-system, sans-serif; max-width: 28rem; margin: 4rem auto; padding: 0 1rem; line-height: 1.5; }
+    h1 { font-size: 1.25rem; }
+    .muted { color: #666; font-size: 0.9rem; }
+  </style>
+</head>
+<body>
+  <h1>Authorize access to your Persistor memory</h1>
+  <p class="muted">Sign in to approve this application's access to your memory.</p>
+  <div id="stytch-login"></div>
+  <div id="stytch-idp"></div>
+
+  <script type="module">
+    // Stytch Connected Apps consent page — this is the OAuth "Authorization URL".
+    // The Stytch IdentityProvider component reads the OAuth params (client_id,
+    // redirect_uri, scope, state) from the query string, shows the consent
+    // dialog, and redirects back to the client with an authorization code.
+    //
+    // FIRST-DRAFT integration: built from Stytch's documented vanilla-js API but
+    // NOT yet verified in a live browser. The SDK load path (esm.sh CDN) and the
+    // login config shape may need adjustment — see deploy/p3-stytch-setup.md.
+    import { StytchUIClient } from 'https://esm.sh/@stytch/vanilla-js';
+
+    const stytch = new StytchUIClient('{{.PublicToken}}');
+
+    function showConsent() {
+      // User is authenticated -> render the consent/authorize component.
+      stytch.mountIdentityProvider({ elementId: '#stytch-idp' });
+    }
+
+    function showLogin() {
+      // The user must be authenticated before they can consent. Mount Stytch's
+      // login UI; on success the page returns here logged-in and shows consent.
+      stytch.mountLogin({
+        elementId: '#stytch-login',
+        config: {
+          products: ['emailMagicLinks', 'oauth'],
+          emailMagicLinksOptions: {
+            loginRedirectURL: window.location.href,
+            signupRedirectURL: window.location.href,
+          },
+          oauthOptions: {
+            providers: [{ type: 'google' }],
+            loginRedirectURL: window.location.href,
+            signupRedirectURL: window.location.href,
+          },
+        },
+      });
+    }
+
+    if (stytch.user.getSync()) {
+      showConsent();
+    } else {
+      showLogin();
+    }
+  </script>
+</body>
+</html>
