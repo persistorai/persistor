@@ -136,14 +136,18 @@ become hard requirements before any multi-tenant / public-MCP deployment:
 ## Architecture
 
 ```text
-cmd/persistor-cli/     # the `persistor` CLI: reindex, brief, search, consolidate, eval
-cmd/persistor-mcp/     # the MCP server (stdio): memory_search, memory_get, memory_write, brief
+cmd/persistor-cli/     # the `persistor` CLI: reindex, brief, search, consolidate, export, admin, key, eval
+cmd/persistor-mcp/     # stdio MCP transport (local): memory_search, memory_get, memory_write, brief
+cmd/persistor-server/  # remote MCP HTTP daemon (tailnet/OIDC): the same tools over Streamable HTTP + auth
 internal/
-  index/               # memory engine: file-sync indexer, chunking, FTS search
+  index/               # memory engine: file-sync indexer, chunking, FTS search, PG-native versioned notes
+  mcpengine/           # transport-agnostic MCP engine + tool schemas shared by the stdio + HTTP transports
+  mcpauth/             # pluggable bearer auth: static API keys + OIDC/JWT (JWKS) verifier
+  identity/            # RLS-exempt tenant + identity onboarding store (resolve/provision per login)
   eval/                # deterministic retrieval eval (recall@k) + baselines
   db/                  # goose migrations (one schema) + runner
-  db/migrations/       # the SQL migration
-  dbpool/              # Connection pool
+  db/migrations/       # the SQL migrations
+  dbpool/              # connection pool (asserts a NOSUPERUSER/NOBYPASSRLS role at startup)
   config/              # build-time Version only (env is read at point of use)
 scripts/               # loop-gate.sh, git hooks
 ```
