@@ -10,6 +10,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/briancolinger/persistor/internal/index"
+	"github.com/briancolinger/persistor/internal/mcpauth"
 	"github.com/briancolinger/persistor/internal/mcpengine"
 )
 
@@ -83,10 +84,12 @@ func newMux(getServer func(*http.Request) *mcp.Server, verifier auth.TokenVerifi
 func tenantServer(store *index.Store, indexer *index.Indexer, roots []index.Root, writeDir, version string) func(*http.Request) *mcp.Server {
 	return func(r *http.Request) *mcp.Server {
 		tenantID := ""
+		readOnly := false
 		if ti := auth.TokenInfoFromContext(r.Context()); ti != nil {
 			tenantID = ti.UserID
+			readOnly = mcpauth.IsReadOnly(ti)
 		}
-		engine := mcpengine.NewEngine(store, indexer, tenantID, roots, writeDir)
+		engine := mcpengine.NewEngine(store, indexer, tenantID, roots, writeDir, mcpengine.WithReadOnly(readOnly))
 		return mcpengine.NewServer(engine, version)
 	}
 }

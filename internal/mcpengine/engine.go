@@ -6,11 +6,17 @@ package mcpengine
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"path/filepath"
 
 	"github.com/briancolinger/persistor/internal/index"
 )
+
+// ErrReadOnly is returned by mutating tools when the caller's identity has the
+// readonly role. It is a typed sentinel so a transport can map it to the right
+// status; the message is user-facing.
+var ErrReadOnly = errors.New("identity is read-only: memory_write is not permitted")
 
 // Engine is the memory backend the MCP tools call. It wraps the local index
 // store directly, so the tools search, read, write, and brief over the same
@@ -21,13 +27,28 @@ type Engine struct {
 	tenantID string
 	roots    []index.Root
 	writeDir string
+	readOnly bool
+}
+
+// EngineOption configures optional Engine behavior.
+type EngineOption func(*Engine)
+
+// WithReadOnly marks the engine read-only, rejecting mutating tools. The remote
+// daemon sets this for an identity whose resolved role is "readonly"; the local
+// stdio path leaves it false (the operator is the owner).
+func WithReadOnly(ro bool) EngineOption {
+	return func(e *Engine) { e.readOnly = ro }
 }
 
 // NewEngine builds an Engine over the given store for one tenant. roots are the
 // watched note roots (for memory_write's reindex); writeDir is where memory_write
 // writes new notes (default <notesDir>/memory/atomic, a watched include).
-func NewEngine(store *index.Store, indexer *index.Indexer, tenantID string, roots []index.Root, writeDir string) *Engine {
-	return &Engine{store: store, indexer: indexer, tenantID: tenantID, roots: roots, writeDir: writeDir}
+func NewEngine(store *index.Store, indexer *index.Indexer, tenantID string, roots []index.Root, writeDir string, opts ...EngineOption) *Engine {
+	e := &Engine{store: store, indexer: indexer, tenantID: tenantID, roots: roots, writeDir: writeDir}
+	for _, opt := range opts {
+		opt(e)
+	}
+	return e
 }
 
 // SearchInput is the memory_search argument shape.
@@ -138,6 +159,9 @@ type WriteOutput struct {
 // Write applies a single-note consolidation plan: write the prose file, then
 // reindex (which reconciles supersession).
 func (e *Engine) Write(ctx context.Context, in *WriteInput) (WriteOutput, error) {
+	if e.readOnly {
+		return WriteOutput{}, ErrReadOnly
+	}
 	// Reject a self-supersede: a write whose supersedes resolves to the same note
 	// it lands on forks no history and would otherwise silently do nothing.
 	if err := index.CheckSelfSupersede(e.roots, e.writeDir, in.Path, in.ID, in.Supersedes); err != nil {
