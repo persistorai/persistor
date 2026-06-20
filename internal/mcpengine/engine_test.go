@@ -413,8 +413,9 @@ func TestMCPRoundTrip(t *testing.T) {
 		t.Fatalf("tool returned error: %+v", res.Content)
 	}
 
-	var out mcpengine.SearchOutput
-	reMarshal(t, res.StructuredContent, &out)
+	// Persistor returns results as a JSON text block (no structuredContent) for
+	// broad client compatibility — see registerTools/textResult.
+	out := decodeTextResult[mcpengine.SearchOutput](t, res)
 	if !hasResult(out.Results, "demo:memory-daily-aurora") {
 		t.Errorf("MCP search missed aurora: %+v", out.Results)
 	}
@@ -500,13 +501,21 @@ func hasResult(rs []mcpengine.SearchHit, id string) bool {
 	return false
 }
 
-func reMarshal(t *testing.T, v, dst any) {
+// decodeTextResult extracts the single JSON text content block from a tool
+// result and unmarshals it into T. Persistor returns its payload as a text
+// block (no structuredContent) for broad client compatibility.
+func decodeTextResult[T any](t *testing.T, res *mcp.CallToolResult) T {
 	t.Helper()
-	b, err := json.Marshal(v)
-	if err != nil {
-		t.Fatalf("marshal structured content: %v", err)
+	if len(res.Content) == 0 {
+		t.Fatalf("tool result has no content")
 	}
-	if err := json.Unmarshal(b, dst); err != nil {
-		t.Fatalf("unmarshal structured content: %v", err)
+	tc, ok := res.Content[0].(*mcp.TextContent)
+	if !ok {
+		t.Fatalf("tool result content[0] is %T, want *mcp.TextContent", res.Content[0])
 	}
+	var out T
+	if err := json.Unmarshal([]byte(tc.Text), &out); err != nil {
+		t.Fatalf("unmarshal tool text result: %v", err)
+	}
+	return out
 }

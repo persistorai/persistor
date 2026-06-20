@@ -293,12 +293,17 @@ func searchOverHTTP(t *testing.T, url, token, query string) []string {
 	if res.IsError {
 		t.Fatalf("search %q returned error: %+v", query, res.Content)
 	}
+	// Persistor returns results as a JSON text block, not structuredContent, for
+	// broad client compatibility (see mcpengine.registerTools).
 	var out mcpengineSearchOutput
-	b, err := json.Marshal(res.StructuredContent)
-	if err != nil {
-		t.Fatalf("marshal: %v", err)
+	if len(res.Content) == 0 {
+		t.Fatalf("search %q: result has no content", query)
 	}
-	if err := json.Unmarshal(b, &out); err != nil {
+	tc, ok := res.Content[0].(*mcp.TextContent)
+	if !ok {
+		t.Fatalf("search %q: content[0] is %T, want *mcp.TextContent", query, res.Content[0])
+	}
+	if err := json.Unmarshal([]byte(tc.Text), &out); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
 	ids := make([]string, len(out.Results))
