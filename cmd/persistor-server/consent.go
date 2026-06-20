@@ -25,6 +25,14 @@ func newConsentHandler(publicToken string) (http.HandlerFunc, error) {
 		// The consent page is iterated during setup and carries OAuth query
 		// params; never let a browser serve a stale copy.
 		w.Header().Set("Cache-Control", "no-store")
+		// Override the global no-referrer policy ONLY for this page: the Stytch
+		// SDK call from here is rejected (bad_domain_for_stytch_sdk, "Origin
+		// header was null") when the browser sends no referrer, because Stytch
+		// validates the calling domain against its allowlist. strict-origin-when-
+		// cross-origin sends just the origin (scheme+host), enough for that check
+		// without leaking the OAuth query string. The strict policy still applies
+		// to every other route (the JSON API).
+		w.Header().Set("Referrer-Policy", "strict-origin-when-cross-origin")
 		if err := tmpl.Execute(w, struct{ PublicToken string }{PublicToken: publicToken}); err != nil {
 			http.Error(w, "render error", http.StatusInternalServerError)
 		}

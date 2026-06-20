@@ -38,6 +38,11 @@ func TestConsentHandler(t *testing.T) {
 	if cc := resp.Header.Get("Cache-Control"); cc != "no-store" {
 		t.Fatalf("cache-control = %q, want no-store", cc)
 	}
+	// The page must override the global no-referrer policy so the browser sends
+	// its origin to Stytch (else the SDK call fails bad_domain_for_stytch_sdk).
+	if rp := resp.Header.Get("Referrer-Policy"); rp != "strict-origin-when-cross-origin" {
+		t.Fatalf("referrer-policy = %q, want strict-origin-when-cross-origin", rp)
+	}
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		t.Fatalf("read body: %v", err)
