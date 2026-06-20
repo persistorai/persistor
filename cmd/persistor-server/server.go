@@ -46,9 +46,15 @@ func (m *protectedResourceMetadata) serveHTTP(w http.ResponseWriter, _ *http.Req
 func newMux(getServer func(*http.Request) *mcp.Server, verifier auth.TokenVerifier, authOpts *auth.RequireBearerTokenOptions, metadata *protectedResourceMetadata, ready func(context.Context) error) *http.ServeMux {
 	mcpHandler := mcp.NewStreamableHTTPHandler(getServer, nil)
 	authed := auth.RequireBearerToken(verifier, authOpts)(mcpHandler)
-
+	// Cross-origin protection (CSRF / DNS-rebinding): the SDK applies none with
+	// nil options, and its localhost rebind guard doesn't cover the tailnet bind.
+	// http.CrossOriginProtection keys off Sec-Fetch-Site, which only browsers
+	// send, so non-browser MCP clients (Claude Code) are unaffected while a
+	// browser cross-origin request is denied. Outermost so it rejects before auth.
+	// A future browser client (claude.ai) is added via AddTrustedOrigin.
+	protection := http.NewCrossOriginProtection()
 	mux := http.NewServeMux()
-	mux.Handle("/mcp", authed)
+	mux.Handle("/mcp", protection.Handler(authed))
 	// /healthz is pure liveness (the process is up); /readyz also checks the DB,
 	// the daemon's only hard dependency, so an orchestrator won't route to an
 	// instance whose Postgres is unreachable.
