@@ -201,6 +201,89 @@ func TestPGNote_DeleteNotFound(t *testing.T) {
 	}
 }
 
+// TestPGNote_ConcurrentCreateConflict exercises the create-create race
+// deterministically: a create (expectedVersion 0) locks no row, so it cannot see
+// a concurrent creator and only trips the note_versions PK as a unique violation.
+// Pre-seeding a version-1 history row for an id with no live note reproduces
+// exactly the loser's state, and WriteNote must report it as a clean
+// *VersionConflictError (409), not the raw unique violation (500).
+func TestPGNote_ConcurrentCreateConflict(t *testing.T) {
+	store, pool, tenant := newStoreTest(t)
+	ctx := context.Background()
+	const id = "test:race"
+
+	// The winning creator already wrote version 1 to history; the live notes row
+	// is irrelevant to the loser's failure, which happens at appendVersion.
+	execTenant(t, pool, tenant,
+		"INSERT INTO note_versions (tenant_id, note_id, version, op) "+
+			"VALUES (current_setting('app.tenant_id')::uuid, 'test:race', 1, 'create')")
+
+	_, err := store.WriteNote(ctx, tenant, &index.PGNoteInput{ID: id, Body: "loser"}, 0)
+	var conflict *index.VersionConflictError
+	if !errors.As(err, &conflict) {
+		t.Fatalf("concurrent create: want VersionConflictError, got %v", err)
+	}
+	if conflict.Expected != 0 || conflict.Actual != 1 {
+		t.Fatalf("conflict = (expected %d, actual %d), want (0, 1)", conflict.Expected, conflict.Actual)
+	}
+}
+
+// TestPGNote_DeleteRestoreConflicts covers the optimistic-concurrency guards on
+// the delete and restore paths, which the lifecycle/not-found tests never reach.
+func TestPGNote_DeleteRestoreConflicts(t *testing.T) {
+	store, _, tenant := newStoreTest(t)
+	ctx := context.Background()
+	const id = "test:conflict"
+
+	if _, err := store.WriteNote(ctx, tenant, &index.PGNoteInput{ID: id, Body: "live"}, 0); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+
+	var conflict *index.VersionConflictError
+	// Delete with a stale expectedVersion on a LIVE note hits the version check.
+	if _, err := store.DeleteNote(ctx, tenant, id, 99, "x"); !errors.As(err, &conflict) {
+		t.Fatalf("delete stale: want VersionConflictError, got %v", err)
+	} else if conflict.Actual != 1 {
+		t.Fatalf("delete conflict.Actual = %d, want 1", conflict.Actual)
+	}
+
+	// Tombstone it for real, then exercise restore's guards.
+	if _, err := store.DeleteNote(ctx, tenant, id, 1, "x"); err != nil {
+		t.Fatalf("delete: %v", err)
+	}
+	// Restore with a stale expectedVersion (current is 2 after the delete).
+	if _, err := store.RestoreNote(ctx, tenant, id, 0, 99, "x"); !errors.As(err, &conflict) {
+		t.Fatalf("restore stale: want VersionConflictError, got %v", err)
+	}
+	// Restore a never-existed id is not-found.
+	var notFound *index.NoteNotFoundError
+	if _, err := store.RestoreNote(ctx, tenant, "test:ghost", 0, 0, "x"); !errors.As(err, &notFound) {
+		t.Fatalf("restore missing: want NoteNotFoundError, got %v", err)
+	}
+}
+
+// TestNoteVersions_AppendOnly verifies the database trigger makes the audit log
+// immutable: UPDATE and DELETE on note_versions are rejected even by the owning
+// tenant. Only INSERT (a new version, including a restore) is legal.
+func TestNoteVersions_AppendOnly(t *testing.T) {
+	store, pool, tenant := newStoreTest(t)
+	ctx := context.Background()
+	const id = "test:immutable"
+
+	if _, err := store.WriteNote(ctx, tenant, &index.PGNoteInput{ID: id, Body: "history"}, 0); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+
+	if err := tryTenantExec(pool, tenant,
+		"UPDATE note_versions SET body = 'tamper' WHERE note_id = 'test:immutable'"); err == nil {
+		t.Fatal("UPDATE on note_versions succeeded; append-only trigger not enforced")
+	}
+	if err := tryTenantExec(pool, tenant,
+		"DELETE FROM note_versions WHERE note_id = 'test:immutable'"); err == nil {
+		t.Fatal("DELETE on note_versions succeeded; append-only trigger not enforced")
+	}
+}
+
 func TestReindexPGNative_RebuildsChunks(t *testing.T) {
 	store, pool, tenant := newStoreTest(t)
 	ctx := context.Background()
@@ -293,6 +376,23 @@ func execTenant(t *testing.T, pool *dbpool.Pool, tenant, sql string) {
 	if err := tx.Commit(ctx); err != nil {
 		t.Fatalf("commit: %v", err)
 	}
+}
+
+// tryTenantExec runs a statement in a tenant-scoped transaction and returns its
+// error (rolling back), for asserting that a statement is REJECTED. nil means
+// the statement was allowed.
+func tryTenantExec(pool *dbpool.Pool, tenant, sql string) error {
+	ctx := context.Background()
+	tx, err := pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	if _, err := tx.Exec(ctx, "SELECT set_config('app.tenant_id', $1, true)", tenant); err != nil {
+		return err
+	}
+	_, err = tx.Exec(ctx, sql)
+	return err
 }
 
 // tryCrossTenantVersionInsert attempts to insert a note_versions row for
