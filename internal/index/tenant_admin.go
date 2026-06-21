@@ -60,6 +60,58 @@ func (s *Store) DeleteTenant(ctx context.Context, tenantID string) (DeleteTenant
 	return res, nil
 }
 
+// PurgeNoteResult reports what a single-note purge removed.
+type PurgeNoteResult struct {
+	Found    bool
+	Versions int64
+	Chunks   int64
+}
+
+// PurgeNote irreversibly hard-deletes ONE note by id — its live row, its full
+// append-only version history, and its chunk projection. It is the surgical
+// counterpart to DeleteTenant: the operator "scrub this one note out of
+// existence, history included" path, for a note that should never have been
+// written. Per the no-soft-delete doctrine this is irreversible; the everyday,
+// reversible path is a tombstone (memory_delete / DeleteNote), and the CLI gates
+// this behind an explicit --yes.
+//
+// It runs with app.tenant_id set, so RLS scopes every delete to the tenant, and
+// authorizes the note_versions append-only guard for this transaction only via
+// the tx-local app.purge escape hatch. Found reports whether the id matched
+// anything; purging an unknown id is a harmless no-op.
+func (s *Store) PurgeNote(ctx context.Context, tenantID, noteID string) (PurgeNoteResult, error) {
+	ctx, cancel := context.WithTimeout(ctx, storeQueryTimeout)
+	defer cancel()
+
+	var res PurgeNoteResult
+	err := s.inTx(ctx, tenantID, func(tx pgx.Tx) error {
+		// Authorize the one legal exception to the note_versions append-only guard
+		// for this transaction only (set_config(..., true) is tx-local).
+		if _, err := tx.Exec(ctx, "SELECT set_config('app.purge', 'on', true)"); err != nil {
+			return fmt.Errorf("enabling purge: %w", err)
+		}
+
+		var err error
+		guc := "tenant_id = current_setting('app.tenant_id')::uuid"
+		if res.Chunks, err = execCount(ctx, tx, "DELETE FROM chunks WHERE "+guc+" AND note_id = $1", noteID); err != nil {
+			return fmt.Errorf("deleting chunks: %w", err)
+		}
+		if res.Versions, err = execCount(ctx, tx, "DELETE FROM note_versions WHERE "+guc+" AND note_id = $1", noteID); err != nil {
+			return fmt.Errorf("deleting note_versions: %w", err)
+		}
+		notes, err := execCount(ctx, tx, "DELETE FROM notes WHERE "+guc+" AND id = $1", noteID)
+		if err != nil {
+			return fmt.Errorf("deleting note: %w", err)
+		}
+		res.Found = notes > 0 || res.Versions > 0
+		return nil
+	})
+	if err != nil {
+		return PurgeNoteResult{}, err
+	}
+	return res, nil
+}
+
 // execCount runs a statement and returns the number of rows it affected.
 func execCount(ctx context.Context, tx pgx.Tx, sql string, args ...any) (int64, error) {
 	tag, err := tx.Exec(ctx, sql, args...)
