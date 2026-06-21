@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
+	"unicode/utf16"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -77,8 +79,34 @@ func textResult(v any) (*mcp.CallToolResult, any, error) {
 		return nil, nil, fmt.Errorf("marshaling tool output: %w", err)
 	}
 	return &mcp.CallToolResult{
-		Content: []mcp.Content{&mcp.TextContent{Text: string(b)}},
+		Content: []mcp.Content{&mcp.TextContent{Text: asciiSafeJSON(b)}},
 	}, nil, nil
+}
+
+// asciiSafeJSON re-encodes already-valid JSON so every non-ASCII rune becomes a
+// \uXXXX escape, yielding pure-ASCII JSON. This is a lossless transform — it
+// decodes back to the identical value — but it sidesteps clients that mishandle
+// raw multibyte UTF-8 in a tool result (the claude.ai web connector chokes on
+// note bodies containing emoji / variation selectors like U+FE0F, even though
+// the response is valid UTF-8 JSON). ASCII-safe JSON is also broadly the most
+// portable wire form across heterogeneous MCP clients. Non-ASCII bytes only ever
+// occur inside JSON string literals (all structural tokens are ASCII), so
+// escaping runes in place keeps the document valid.
+func asciiSafeJSON(b []byte) string {
+	var out strings.Builder
+	out.Grow(len(b))
+	for _, r := range string(b) {
+		switch {
+		case r < 0x80:
+			out.WriteByte(byte(r))
+		case r > 0xFFFF:
+			hi, lo := utf16.EncodeRune(r)
+			fmt.Fprintf(&out, "\\u%04x\\u%04x", hi, lo)
+		default:
+			fmt.Fprintf(&out, "\\u%04x", r)
+		}
+	}
+	return out.String()
 }
 
 // registerTools adds the memory tools to the server. Each tool keeps its typed
