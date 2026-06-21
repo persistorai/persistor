@@ -18,7 +18,7 @@ func (s *Store) ExportNotes(ctx context.Context, tenantID string) ([]Note, error
 	var out []Note
 	err := s.inReadTx(ctx, tenantID, func(tx pgx.Tx) error {
 		rows, err := tx.Query(ctx,
-			`SELECT id, kind, tier, title, body, source_path, COALESCE(supersedes, '')
+			`SELECT id, kind, tier, title, body, COALESCE(supersedes, '')
 			   FROM notes
 			  WHERE tenant_id = current_setting('app.tenant_id')::uuid AND deleted = FALSE
 			  ORDER BY id`)
@@ -28,7 +28,7 @@ func (s *Store) ExportNotes(ctx context.Context, tenantID string) ([]Note, error
 		defer rows.Close()
 		for rows.Next() {
 			var n Note
-			if err := rows.Scan(&n.ID, &n.Kind, &n.Tier, &n.Title, &n.Body, &n.SourcePath, &n.Supersedes); err != nil {
+			if err := rows.Scan(&n.ID, &n.Kind, &n.Tier, &n.Title, &n.Body, &n.Supersedes); err != nil {
 				return fmt.Errorf("scanning note: %w", err)
 			}
 			out = append(out, n)

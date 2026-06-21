@@ -261,16 +261,15 @@ func (e *Engine) Namespaces(ctx context.Context) (NamespacesOutput, error) {
 
 // WriteInput is the memory_write argument shape — one durable note.
 type WriteInput struct {
-	Path            string   `json:"path,omitempty" jsonschema:"Optional .md path used to derive the note id when id is omitted (no absolute paths or ..). The note is stored in Postgres, not as a file."`
-	Body            string   `json:"body" jsonschema:"The note's markdown prose. Do not include a frontmatter block; the typed fields carry the metadata."`
-	ID              string   `json:"id,omitempty" jsonschema:"Stable note id. Derived from the path (namespace-prefixed) when omitted."`
-	Namespace       string   `json:"namespace,omitempty" jsonschema:"Logical bucket for the note (e.g. scout, claude, work, personal). Defaults to 'default'."`
-	Kind            string   `json:"kind,omitempty" jsonschema:"fact|decision|episode|reference|preference. Default fact."`
-	Tier            string   `json:"tier,omitempty" jsonschema:"core (always-loaded) or tail (retrieved). Default tail."`
-	Title           string   `json:"title,omitempty" jsonschema:"Short title. Derived from the first heading when omitted."`
-	Supersedes      string   `json:"supersedes,omitempty" jsonschema:"Id of the note this CORRECTS. Use only to replace a stale fact, not for a new point in a timeline."`
-	ExpectedVersion int      `json:"expected_version,omitempty" jsonschema:"Optimistic-concurrency guard. Omit (or 0) to CREATE a new note; pass the current version (from memory_get) to UPDATE an existing one. A mismatch is rejected as a version conflict."`
-	Links           []string `json:"links,omitempty" jsonschema:"Optional related note ids (reserved)."`
+	Path            string `json:"path,omitempty" jsonschema:"Optional .md path used to derive the note id when id is omitted (no absolute paths or ..). The note is stored in Postgres, not as a file."`
+	Body            string `json:"body" jsonschema:"The note's markdown prose. Do not include a frontmatter block; the typed fields carry the metadata."`
+	ID              string `json:"id,omitempty" jsonschema:"Stable note id. Derived from the path (namespace-prefixed) when omitted."`
+	Namespace       string `json:"namespace,omitempty" jsonschema:"Logical bucket for the note (e.g. scout, claude, work, personal). Defaults to 'default'."`
+	Kind            string `json:"kind,omitempty" jsonschema:"fact|decision|episode|reference|preference. Default fact."`
+	Tier            string `json:"tier,omitempty" jsonschema:"core (always-loaded) or tail (retrieved). Default tail."`
+	Title           string `json:"title,omitempty" jsonschema:"Short title. Derived from the first heading when omitted."`
+	Supersedes      string `json:"supersedes,omitempty" jsonschema:"Id of the note this CORRECTS. Use only to replace a stale fact, not for a new point in a timeline."`
+	ExpectedVersion int    `json:"expected_version,omitempty" jsonschema:"Optimistic-concurrency guard. Omit (or 0) to CREATE a new note; pass the current version (from memory_get) to UPDATE an existing one. A mismatch is rejected as a version conflict."`
 }
 
 // WriteOutput is the memory_write result shape.

@@ -17,9 +17,9 @@ import (
 // Store, the underlying pool (for out-of-band SQL the public API does not
 // expose), and a random tenant. The schema is assumed migrated (the loop gate
 // runs the fresh-migration step first). Cleanup removes the tenant's
-// notes/chunks/sources; note_versions is append-only (a trigger blocks DELETE),
-// but each test uses a fresh random tenant so leftover history rows are
-// invisible to every other tenant.
+// notes/chunks; note_versions is append-only (a trigger blocks DELETE), but each
+// test uses a fresh random tenant so leftover history rows are invisible to
+// every other tenant.
 func newStoreTest(t *testing.T) (*index.Store, *dbpool.Pool, string) {
 	t.Helper()
 	dbURL := os.Getenv("TEST_DATABASE_URL")
@@ -54,7 +54,6 @@ func cleanupTenant(pool *dbpool.Pool, tenantID string) {
 	}
 	_, _ = tx.Exec(ctx, "DELETE FROM chunks WHERE tenant_id = current_setting('app.tenant_id')::uuid")
 	_, _ = tx.Exec(ctx, "DELETE FROM notes WHERE tenant_id = current_setting('app.tenant_id')::uuid")
-	_, _ = tx.Exec(ctx, "DELETE FROM sources WHERE tenant_id = current_setting('app.tenant_id')::uuid")
 	_ = tx.Commit(ctx)
 }
 

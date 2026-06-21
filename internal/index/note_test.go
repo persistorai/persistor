@@ -37,9 +37,8 @@ We decided to do the thing.
 	if n.Supersedes != "old-note" {
 		t.Errorf("Supersedes = %q", n.Supersedes)
 	}
-	if len(n.Links) != 1 || n.Links[0] != "other-note" {
-		t.Errorf("Links = %v", n.Links)
-	}
+	// An unknown `links:` frontmatter key (the retired placeholder) is tolerated:
+	// ParseNote ignores it rather than failing.
 	mustContain(t, n.Body, "decided to do the thing")
 }
 

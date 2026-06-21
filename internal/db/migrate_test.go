@@ -59,11 +59,9 @@ func TestRunMigrationsFreshDatabase(t *testing.T) {
 	// Spot-check the end-state schema: the migrations stand up
 	// the index tables, with NO embedding column
 	// and no leftover graph tables.
-	assertColumn(ctx, t, pool, "sources", "sha256", true)
 	assertColumn(ctx, t, pool, "notes", "superseded", true)
 	assertColumn(ctx, t, pool, "chunks", "search_tsv", true)
 	assertColumn(ctx, t, pool, "chunks", "embedding", false)
-	assertColumn(ctx, t, pool, "links", "target_note_id", true)
 	assertTableAbsent(ctx, t, pool, "kg_nodes")
 
 	// 003: notes-as-source-of-truth columns + the append-only version log.
@@ -71,12 +69,17 @@ func TestRunMigrationsFreshDatabase(t *testing.T) {
 	assertColumn(ctx, t, pool, "notes", "deleted", true)
 	assertColumn(ctx, t, pool, "note_versions", "op", true)
 
-	// 004: the RLS-exempt API-key auth table.
-	assertColumn(ctx, t, pool, "api_keys", "key_hash", true)
-
 	// 005: the RLS-exempt onboarding tables that route an IdP identity to a tenant.
 	assertColumn(ctx, t, pool, "tenants", "label", true)
 	assertColumn(ctx, t, pool, "identities", "tenant_id", true)
+
+	// 009: retired-subsystem residue is dropped — the file-indexer sources table,
+	// the StaticTokenAuth api_keys table, the never-populated links table, and the
+	// vestigial notes.source_path column are all gone.
+	assertTableAbsent(ctx, t, pool, "sources")
+	assertTableAbsent(ctx, t, pool, "api_keys")
+	assertTableAbsent(ctx, t, pool, "links")
+	assertColumn(ctx, t, pool, "notes", "source_path", false)
 }
 
 func assertTableAbsent(ctx context.Context, t *testing.T, pool *dbpool.Pool, table string) {

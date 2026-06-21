@@ -134,10 +134,8 @@ func isUniqueViolation(err error) bool {
 	return errors.As(err, &pgErr) && pgErr.Code == "23505"
 }
 
-// ReindexPGNative rebuilds the chunk projection for every live PG-native note
-// (empty source_path, not tombstoned) from its current body — the PG-to-PG
-// equivalent of the file-sync reindexer. File-backed notes are left to the disk
-// indexer. It returns the number of notes re-chunked.
+// ReindexPGNative rebuilds the chunk projection for every live note (not
+// tombstoned) from its current body. It returns the number of notes re-chunked.
 func (s *Store) ReindexPGNative(ctx context.Context, tenantID string) (int, error) {
 	ctx, cancel := context.WithTimeout(ctx, storeQueryTimeout)
 	defer cancel()
@@ -160,16 +158,15 @@ func (s *Store) ReindexPGNative(ctx context.Context, tenantID string) (int, erro
 	return len(recs), nil
 }
 
-// pgNativeNotes reads the live PG-native notes (empty source_path, not deleted)
-// for a tenant, ordered by id.
+// pgNativeNotes reads the live notes (not deleted) for a tenant, ordered by id.
 func (s *Store) pgNativeNotes(ctx context.Context, tenantID string) ([]NoteRecord, error) {
 	var out []NoteRecord
 	err := s.inReadTx(ctx, tenantID, func(tx pgx.Tx) error {
 		rows, err := tx.Query(ctx,
-			`SELECT id, kind, tier, title, body, source_path
+			`SELECT id, kind, tier, title, body
 			   FROM notes
 			  WHERE tenant_id = current_setting('app.tenant_id')::uuid
-			    AND source_path = '' AND deleted = FALSE
+			    AND deleted = FALSE
 			  ORDER BY id`)
 		if err != nil {
 			return fmt.Errorf("querying pg-native notes: %w", err)
