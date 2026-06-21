@@ -122,7 +122,7 @@ func buildHTTPServer(cfg *serverConfig, store *index.Store, authn authBundle, lo
 		)
 		mux.HandleFunc("/register", regProxy)
 	}
-	handler := requestLogger(log, securityHeaders(mux))
+	handler := requestLogger(log, securityHeaders(contentLengthBuffer(mux)))
 	return &http.Server{
 		Addr:              cfg.listenAddr,
 		Handler:           handler,
