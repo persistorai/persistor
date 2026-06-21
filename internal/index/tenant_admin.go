@@ -12,21 +12,19 @@ type DeleteTenantResult struct {
 	Notes      int64
 	Versions   int64
 	Chunks     int64
-	APIKeys    int64
 	Identities int64
 }
 
 // DeleteTenant hard-deletes ALL of a tenant's data — the operator "delete my
 // account" purge. It removes the live notes, their chunks, and the full
 // append-only version history (permitted here, and only here, via the app.purge
-// escape hatch), plus the tenant's API keys and identity mappings. Per the
-// no-soft-delete doctrine this is irreversible; the CLI gates it behind an
-// explicit confirmation.
+// escape hatch), plus the tenant's identity mappings. Per the no-soft-delete
+// doctrine this is irreversible; the CLI gates it behind an explicit
+// confirmation.
 //
 // The memory tables are RLS-scoped, so their deletes run with app.tenant_id set;
-// api_keys and identities are RLS-exempt admin tables keyed by tenant_id, deleted
-// directly. Everything runs in one transaction: a failure leaves the tenant
-// intact.
+// identities is an RLS-exempt admin table keyed by tenant_id, deleted directly.
+// Everything runs in one transaction: a failure leaves the tenant intact.
 func (s *Store) DeleteTenant(ctx context.Context, tenantID string) (DeleteTenantResult, error) {
 	ctx, cancel := context.WithTimeout(ctx, storeQueryTimeout)
 	defer cancel()
@@ -50,10 +48,7 @@ func (s *Store) DeleteTenant(ctx context.Context, tenantID string) (DeleteTenant
 		if res.Notes, err = execCount(ctx, tx, "DELETE FROM notes WHERE "+guc); err != nil {
 			return fmt.Errorf("deleting notes: %w", err)
 		}
-		// RLS-exempt admin tables: delete by explicit tenant_id.
-		if res.APIKeys, err = execCount(ctx, tx, "DELETE FROM api_keys WHERE tenant_id = $1", tenantID); err != nil {
-			return fmt.Errorf("deleting api_keys: %w", err)
-		}
+		// RLS-exempt admin table: delete by explicit tenant_id.
 		if res.Identities, err = execCount(ctx, tx, "DELETE FROM identities WHERE tenant_id = $1", tenantID); err != nil {
 			return fmt.Errorf("deleting identities: %w", err)
 		}

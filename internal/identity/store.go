@@ -1,9 +1,9 @@
 // Package identity maps IdP identities to tenants for the remote MCP daemon
 // (Phase P4 onboarding). It owns the RLS-EXEMPT tenants/identities admin tables:
 // the OIDC auth path resolves a token's (issuer, subject) to a tenant here,
-// auto-provisioning a personal tenant on first login. Like the api_keys store it
-// queries directly on the pool with no app.tenant_id set — resolving the identity
-// is how the tenant is discovered in the first place.
+// auto-provisioning a personal tenant on first login. It queries directly on the
+// pool with no app.tenant_id set — resolving the identity is how the tenant is
+// discovered in the first place.
 package identity
 
 import (
