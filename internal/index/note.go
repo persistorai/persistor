@@ -22,23 +22,17 @@ type Note struct {
 	Tier       string
 	Title      string
 	Body       string // prose with frontmatter stripped
-	SourcePath string
 	Supersedes string
-	// Links is reserved: it is parsed from frontmatter and threaded through the
-	// write path, but RenderNote omits it and IndexFile never persists it (the
-	// links table is an intentional placeholder). Not yet a queryable edge.
-	Links []string
 }
 
 // frontmatter mirrors the YAML block at the top of a note. All fields are
 // optional; missing values get derived defaults in ParseNote.
 type frontmatter struct {
-	ID         string   `yaml:"id"`
-	Kind       string   `yaml:"kind"`
-	Tier       string   `yaml:"tier"`
-	Title      string   `yaml:"title"`
-	Supersedes string   `yaml:"supersedes,omitempty"`
-	Links      []string `yaml:"links,omitempty"`
+	ID         string `yaml:"id"`
+	Kind       string `yaml:"kind"`
+	Tier       string `yaml:"tier"`
+	Title      string `yaml:"title"`
+	Supersedes string `yaml:"supersedes,omitempty"`
 }
 
 const (
@@ -97,9 +91,7 @@ func ParseNote(namespace, relPath, content string, isCore bool) Note {
 		Tier:       strings.TrimSpace(fm.Tier),
 		Title:      strings.TrimSpace(fm.Title),
 		Body:       strings.TrimRight(body, "\n") + "\n",
-		SourcePath: relPath,
 		Supersedes: strings.TrimSpace(fm.Supersedes),
-		Links:      fm.Links,
 	}
 	normalize(&n, namespace, relPath, body, isCore)
 	return n
@@ -126,10 +118,8 @@ func normalize(n *Note, namespace, relPath, body string, isCore bool) {
 }
 
 // RenderNote renders a note back to .md content (YAML frontmatter + body) — the
-// inverse of ParseNote for the persisted fields. Links are intentionally omitted:
-// they are derived from the body's [[id]] references on reindex, so a re-imported
-// export reconstructs them. ParseNote(RenderNote(n)) round-trips
-// id/kind/tier/title/supersedes and the body.
+// inverse of ParseNote for the persisted fields. ParseNote(RenderNote(n))
+// round-trips id/kind/tier/title/supersedes and the body.
 func RenderNote(n *Note) (string, error) {
 	y, err := yaml.Marshal(frontmatter{
 		ID:         n.ID,

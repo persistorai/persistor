@@ -69,7 +69,7 @@ func runDeleteTenant(ctx context.Context, o *deleteTenantOpts) error {
 		return err
 	}
 	fmt.Fprintf(os.Stderr,
-		"deleted tenant %s: %d notes, %d versions, %d chunks, %d api keys, %d identities\n",
-		o.tenantID, res.Notes, res.Versions, res.Chunks, res.APIKeys, res.Identities)
+		"deleted tenant %s: %d notes, %d versions, %d chunks, %d identities\n",
+		o.tenantID, res.Notes, res.Versions, res.Chunks, res.Identities)
 	return nil
 }

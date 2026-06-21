@@ -95,14 +95,11 @@ func runExport(ctx context.Context, o *exportOpts) error {
 	return nil
 }
 
-// exportRelPath picks a safe, relative .md path for a note: its source_path when
-// present and well-behaved, else a filename derived from the id. It rejects any
-// path that would escape the output directory (absolute or containing "..").
+// exportRelPath picks a safe, relative .md filename for a note, derived from its
+// id. It rejects any path that would escape the output directory (absolute or
+// containing "..") as defense-in-depth, though an id-derived name never does.
 func exportRelPath(n *index.Note) (string, error) {
-	rel := n.SourcePath
-	if rel == "" {
-		rel = strings.ReplaceAll(strings.ReplaceAll(n.ID, ":", "-"), "/", "-") + ".md"
-	}
+	rel := strings.ReplaceAll(strings.ReplaceAll(n.ID, ":", "-"), "/", "-") + ".md"
 	clean := filepath.Clean(rel)
 	if filepath.IsAbs(clean) || clean == ".." || strings.HasPrefix(clean, ".."+string(filepath.Separator)) {
 		return "", fmt.Errorf("unsafe note path %q (from id %q)", rel, n.ID)

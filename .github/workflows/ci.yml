@@ -29,7 +29,10 @@ jobs:
           --health-retries 10
 
     env:
-      CI_DATABASE_URL: postgres://persistor:persistor@localhost:5432/persistor_test?sslmode=disable
+      # Provisioning runs as the bootstrap superuser; migrations + tests run as a
+      # separate non-superuser role (see the "Provision app role" step).
+      CI_ADMIN_URL: postgres://persistor:persistor@localhost:5432/persistor_test?sslmode=disable
+      CI_DATABASE_URL: postgres://persistor_app:persistor_app@localhost:5432/persistor_test?sslmode=disable
 
     steps:
       - uses: actions/checkout@v6
@@ -43,6 +46,18 @@ jobs:
 
       - name: Vet
         run: go vet ./...
+
+      - name: Provision a non-superuser app role (CI superuser bypasses RLS otherwise)
+        # POSTGRES_USER is the bootstrap SUPERUSER and cannot be demoted (the
+        # cluster requires it to keep SUPERUSER). dbpool refuses a SUPERUSER/
+        # BYPASSRLS connection so tenant isolation can't be silently voided, so
+        # create a separate NOSUPERUSER/NOBYPASSRLS role that owns the public
+        # schema and run migrations + tests as it — matching prod's RLS posture.
+        run: |
+          psql "${{ env.CI_ADMIN_URL }}" -v ON_ERROR_STOP=1 <<'SQL'
+          CREATE ROLE persistor_app LOGIN PASSWORD 'persistor_app' NOSUPERUSER NOBYPASSRLS;
+          ALTER SCHEMA public OWNER TO persistor_app;
+          SQL
 
       - name: Fresh-install migrations
         # Runs the full migration chain against the empty service database.

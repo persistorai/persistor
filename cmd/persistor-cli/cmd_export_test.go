@@ -6,40 +6,29 @@ import (
 	"github.com/briancolinger/persistor/internal/index"
 )
 
-// TestExportRelPath checks the path-safety guard that keeps an export from
-// writing outside its --out directory: absolute paths and "../" escapes are
-// rejected, and a missing/odd source_path falls back to an id-derived filename.
+// TestExportRelPath checks that an export filename is derived safely from a
+// note id: colons and slashes are flattened to hyphens, a .md suffix is added,
+// and the result can never escape the --out directory (no separators survive,
+// so the path-safety guard is defense-in-depth that an id can't trip).
 func TestExportRelPath(t *testing.T) {
 	tests := []struct {
-		name       string
-		id         string
-		sourcePath string
-		want       string
-		wantErr    bool
+		name string
+		id   string
+		want string
 	}{
-		{name: "id fallback sanitizes colons and slashes", id: "demo:foo/bar", want: "demo-foo-bar.md"},
-		{name: "id fallback adds .md", id: "claude:note", want: "claude-note.md"},
-		{name: "well-behaved relative path kept", id: "x", sourcePath: "memory/atomic/x.md", want: "memory/atomic/x.md"},
-		{name: "relative path gets .md suffix", id: "x", sourcePath: "memory/atomic/x", want: "memory/atomic/x.md"},
-		{name: "interior dot-dot cleaned but stays inside", id: "x", sourcePath: "a/../b.md", want: "b.md"},
-		{name: "absolute path rejected", id: "x", sourcePath: "/etc/passwd", wantErr: true},
-		{name: "parent escape rejected", id: "x", sourcePath: "../../etc/passwd", wantErr: true},
-		{name: "bare dot-dot rejected", id: "x", sourcePath: "..", wantErr: true},
+		{name: "namespaced id flattens colon and slash", id: "demo:foo/bar", want: "demo-foo-bar.md"},
+		{name: "simple namespaced id", id: "claude:note", want: "claude-note.md"},
+		{name: "bare id gets .md", id: "x", want: "x.md"},
+		{name: "dot-dot in id stays inside, no escape", id: "..:evil", want: "..-evil.md"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := exportRelPath(&index.Note{ID: tt.id, SourcePath: tt.sourcePath})
-			if tt.wantErr {
-				if err == nil {
-					t.Fatalf("exportRelPath(%q, %q) = %q, want error", tt.id, tt.sourcePath, got)
-				}
-				return
-			}
+			got, err := exportRelPath(&index.Note{ID: tt.id})
 			if err != nil {
-				t.Fatalf("exportRelPath(%q, %q) unexpected error: %v", tt.id, tt.sourcePath, err)
+				t.Fatalf("exportRelPath(%q) unexpected error: %v", tt.id, err)
 			}
 			if got != tt.want {
-				t.Fatalf("exportRelPath(%q, %q) = %q, want %q", tt.id, tt.sourcePath, got, tt.want)
+				t.Fatalf("exportRelPath(%q) = %q, want %q", tt.id, got, tt.want)
 			}
 		})
 	}
