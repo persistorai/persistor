@@ -482,13 +482,27 @@ func TestEngine_ReadOnlyRejectsWrite(t *testing.T) {
 // store is touched (so it needs no DB).
 func TestEngine_RateLimited(t *testing.T) {
 	// Burst 0 → the very first write is denied.
-	e := mcpengine.NewEngine(nil, "tenant", mcpengine.WithWriteLimiter(mcpengine.NewWriteLimiter(5, 0)))
+	e := mcpengine.NewEngine(nil, "tenant", mcpengine.WithWriteLimiter(mcpengine.NewKeyLimiter(5, 0)))
 	ctx := context.Background()
 	if _, err := e.Write(ctx, &mcpengine.WriteInput{ID: "x", Body: "body"}); !errors.Is(err, mcpengine.ErrRateLimited) {
 		t.Fatalf("write: got %v, want ErrRateLimited", err)
 	}
 	if _, err := e.Delete(ctx, mcpengine.DeleteInput{ID: "x"}); !errors.Is(err, mcpengine.ErrRateLimited) {
 		t.Fatalf("delete: got %v, want ErrRateLimited", err)
+	}
+}
+
+// TestEngine_ReadRateLimited: a tenant over its read budget is rejected before
+// the store is touched, so read tools can't run unbounded FTS per tenant.
+func TestEngine_ReadRateLimited(t *testing.T) {
+	// Burst 0 → the very first read is denied. A nil store is never reached.
+	e := mcpengine.NewEngine(nil, "tenant", mcpengine.WithReadLimiter(mcpengine.NewKeyLimiter(5, 0)))
+	ctx := context.Background()
+	if _, err := e.Search(ctx, mcpengine.SearchInput{Query: "q"}); !errors.Is(err, mcpengine.ErrRateLimited) {
+		t.Fatalf("search: got %v, want ErrRateLimited", err)
+	}
+	if _, err := e.Brief(ctx, mcpengine.BriefInput{}); !errors.Is(err, mcpengine.ErrRateLimited) {
+		t.Fatalf("brief: got %v, want ErrRateLimited", err)
 	}
 }
 

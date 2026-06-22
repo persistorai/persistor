@@ -7,7 +7,10 @@
 // - Programmatic usage is straightforward (goose.NewProvider)
 //
 // Migration files live in internal/db/migrations/ and are embedded via //go:embed.
-// On startup, RunMigrations applies all pending migrations automatically.
+// RunMigrations applies all pending migrations as the schema-owning role (the
+// daemon at boot when PERSISTOR_AUTO_MIGRATE is on, or `persistor migrate`).
+// MigrationsPending is the read-only check the daemon uses to fail closed when
+// auto-migrate is off and the schema is stale.
 //
 // Compatibility: goose uses its own version table (goose_db_version). The old
 // hand-rolled schema_migrations table is left in place (harmless) but no longer used.
@@ -26,31 +29,60 @@ import (
 	"github.com/briancolinger/persistor/internal/dbpool"
 )
 
-// RunMigrations applies all pending migrations from the provided filesystem.
-// The fsys should contain goose-annotated SQL files (e.g. "001_initial.sql").
-func RunMigrations(ctx context.Context, pool *dbpool.Pool, log *logrus.Logger, fsys fs.FS) error {
-	// goose requires a *sql.DB. Acquire a raw connection from the pgx pool
-	// and wrap it via the pgx stdlib driver.
-	connStr := pool.ConnString()
-
-	sqlDB, err := sql.Open("pgx", connStr)
+// openProvider builds a goose provider over a database/sql connection wrapped
+// around the pgx pool's connection string. The caller must close the returned
+// *sql.DB. The all-zeros placeholder tenant only satisfies RLS policy evaluation
+// during DDL (which isn't subject to RLS); it is session-scoped (is_local=false)
+// because goose runs each migration across its own statements, not one wrapped
+// transaction, so the setting must outlive any single tx.
+func openProvider(ctx context.Context, pool *dbpool.Pool, fsys fs.FS) (*goose.Provider, *sql.DB, error) {
+	sqlDB, err := sql.Open("pgx", pool.ConnString())
 	if err != nil {
-		return fmt.Errorf("opening sql.DB for migrations: %w", err)
+		return nil, nil, fmt.Errorf("opening sql.DB for migrations: %w", err)
 	}
-	defer sqlDB.Close()
 
-	// Session-scoped (is_local=false) on purpose: migrations are DDL that runs
-	// across goose's own statements rather than one wrapped transaction, so the
-	// setting must outlive any single tx. DDL isn't subject to RLS, so the
-	// all-zeros placeholder tenant is only here to satisfy policy evaluation.
 	if _, err := sqlDB.ExecContext(ctx, "SELECT set_config('app.tenant_id', '00000000-0000-0000-0000-000000000000', false)"); err != nil {
-		return fmt.Errorf("initializing migration tenant setting: %w", err)
+		sqlDB.Close()
+		return nil, nil, fmt.Errorf("initializing migration tenant setting: %w", err)
 	}
 
 	provider, err := goose.NewProvider(goose.DialectPostgres, sqlDB, fsys)
 	if err != nil {
-		return fmt.Errorf("creating goose provider: %w", err)
+		sqlDB.Close()
+		return nil, nil, fmt.Errorf("creating goose provider: %w", err)
 	}
+	return provider, sqlDB, nil
+}
+
+// MigrationsPending reports whether any embedded migration has not yet been
+// applied to the database. The daemon uses it to fail closed at boot when
+// auto-migrate is off (the production posture): a non-owner app role cannot run
+// DDL, so it must refuse to serve against a schema that an operator has not yet
+// migrated with `persistor migrate`, rather than erroring on the first query.
+func MigrationsPending(ctx context.Context, pool *dbpool.Pool, fsys fs.FS) (bool, error) {
+	provider, sqlDB, err := openProvider(ctx, pool, fsys)
+	if err != nil {
+		return false, err
+	}
+	defer sqlDB.Close()
+
+	pending, err := provider.HasPending(ctx)
+	if err != nil {
+		return false, fmt.Errorf("checking pending migrations: %w", err)
+	}
+	return pending, nil
+}
+
+// RunMigrations applies all pending migrations from the provided filesystem.
+// The fsys should contain goose-annotated SQL files (e.g. "001_initial.sql").
+// It must run as the schema-owning migrator role; a least-privilege app role
+// cannot execute the DDL.
+func RunMigrations(ctx context.Context, pool *dbpool.Pool, log *logrus.Logger, fsys fs.FS) error {
+	provider, sqlDB, err := openProvider(ctx, pool, fsys)
+	if err != nil {
+		return err
+	}
+	defer sqlDB.Close()
 
 	results, err := provider.Up(ctx)
 	if err != nil {

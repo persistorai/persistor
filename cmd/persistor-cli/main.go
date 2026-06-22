@@ -36,6 +36,7 @@ func main() {
 	rootCmd.SetVersionTemplate("{{.Version}}\n")
 	rootCmd.PersistentFlags().StringVar(&flagFmt, "format", "json", "Output format: json|table")
 
+	rootCmd.AddCommand(newMigrateCmd())
 	rootCmd.AddCommand(newEvalCmd())
 	rootCmd.AddCommand(newBriefCmd())
 	rootCmd.AddCommand(newSearchCmd())

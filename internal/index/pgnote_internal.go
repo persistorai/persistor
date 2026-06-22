@@ -31,6 +31,69 @@ func lockNote(ctx context.Context, tx pgx.Tx, id string) (*NoteState, bool, erro
 	return &st, true, nil
 }
 
+// writeNoteTx performs a create/update inside an open transaction: lock + version
+// check, supersedes-target existence check, the note/version/chunk writes, and a
+// scoped supersession reconcile — all committing together. namespace/kind/tier
+// are pre-normalized by the caller.
+func writeNoteTx(ctx context.Context, tx pgx.Tx, in *PGNoteInput, namespace, kind, tier string, expectedVersion int) (WriteResult, error) {
+	cur, found, err := lockNote(ctx, tx, in.ID)
+	if err != nil {
+		return WriteResult{}, err
+	}
+	op, newVersion, err := resolveWrite(in.ID, expectedVersion, cur, found)
+	if err != nil {
+		return WriteResult{}, err
+	}
+	// Existence of the supersedes target, checked in this same transaction so the
+	// precondition and the write commit together (no check-then-write TOCTOU). An
+	// empty pointer skips the check.
+	if err := assertSupersedesTarget(ctx, tx, in.ID, in.Supersedes); err != nil {
+		return WriteResult{}, err
+	}
+	var oldTarget string
+	if found && cur != nil {
+		oldTarget = cur.Supersedes
+	}
+	if err := upsertPGNote(ctx, tx, in, namespace, kind, tier, newVersion); err != nil {
+		return WriteResult{}, err
+	}
+	if err := appendVersion(ctx, tx, in.ID, newVersion, in.Title, in.Body, kind, tier, op, in.Surface); err != nil {
+		return WriteResult{}, err
+	}
+	if err := replaceChunks(ctx, tx, in.ID, Chunk(in.Title, in.Body, DefaultChunkWords)); err != nil {
+		return WriteResult{}, err
+	}
+	// Reconcile only the notes this write can affect — the note itself and its
+	// old/new supersedes targets — in the same tx, so there is no window where the
+	// row is written but supersession flags are stale.
+	n, err := reconcileSupersessionsTx(ctx, tx, in.ID, in.Supersedes, oldTarget)
+	if err != nil {
+		return WriteResult{}, err
+	}
+	return WriteResult{ID: in.ID, Version: newVersion, Op: op, Superseded: n}, nil
+}
+
+// assertSupersedesTarget verifies, inside the write transaction, that a non-empty
+// supersedes pointer targets a live (non-tombstoned) note. Running it in the same
+// tx as the write closes the check-then-write race that a separate pre-check
+// leaves open. An empty target is a no-op.
+func assertSupersedesTarget(ctx context.Context, tx pgx.Tx, noteID, target string) error {
+	if target == "" {
+		return nil
+	}
+	var exists bool
+	if err := tx.QueryRow(ctx,
+		`SELECT EXISTS (SELECT 1 FROM notes
+		    WHERE tenant_id = current_setting('app.tenant_id')::uuid
+		      AND id = $1 AND deleted = FALSE)`, target).Scan(&exists); err != nil {
+		return fmt.Errorf("checking supersedes target: %w", err)
+	}
+	if !exists {
+		return &SupersedesMissingError{NoteID: noteID, Target: target}
+	}
+	return nil
+}
+
 // resolveWrite validates the optimistic precondition for a create/update and
 // returns the op and the new version number. cur is nil when no row exists.
 func resolveWrite(id string, expected int, cur *NoteState, found bool) (op string, newVersion int, err error) {
