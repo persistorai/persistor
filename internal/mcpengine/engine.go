@@ -304,21 +304,12 @@ func (e *Engine) Write(ctx context.Context, in *WriteInput) (WriteOutput, error)
 		return WriteOutput{}, err
 	}
 	// Reject a self-supersede: a write whose supersedes is the very id it lands on
-	// forks no history and would otherwise silently do nothing.
+	// forks no history and would otherwise silently do nothing. The supersedes
+	// TARGET-exists check (rejecting a dangling pointer a prompt-injected write
+	// could use to fake a correction) now runs inside WriteNote's transaction, so
+	// the precondition and the write commit atomically.
 	if in.Supersedes != "" && in.Supersedes == id {
 		return WriteOutput{}, &index.SelfSupersedeError{ID: id, Path: in.Path}
-	}
-	// Reject a supersede of a non-existent note. Otherwise the reconcile marks
-	// nothing and the new note is still written with a dangling supersedes pointer
-	// — a silent no-op a prompt-injected write could use to fake a correction.
-	if in.Supersedes != "" {
-		exists, err := e.store.NoteExists(ctx, e.tenantID, in.Supersedes)
-		if err != nil {
-			return WriteOutput{}, fmt.Errorf("checking supersedes target: %w", err)
-		}
-		if !exists {
-			return WriteOutput{}, fmt.Errorf("supersedes target %q does not exist", in.Supersedes)
-		}
 	}
 
 	res, err := e.store.WriteNote(ctx, e.tenantID, &index.PGNoteInput{
@@ -334,11 +325,7 @@ func (e *Engine) Write(ctx context.Context, in *WriteInput) (WriteOutput, error)
 	if err != nil {
 		return WriteOutput{}, err
 	}
-	superseded, err := e.store.ReconcileSupersessions(ctx, e.tenantID)
-	if err != nil {
-		return WriteOutput{}, fmt.Errorf("reconciling supersessions: %w", err)
-	}
-	return WriteOutput{ID: res.ID, Version: res.Version, Op: res.Op, Superseded: int(superseded)}, nil
+	return WriteOutput{ID: res.ID, Version: res.Version, Op: res.Op, Superseded: int(res.Superseded)}, nil
 }
 
 // DeleteInput is the memory_delete argument shape.
@@ -370,9 +357,6 @@ func (e *Engine) Delete(ctx context.Context, in DeleteInput) (MutationOutput, er
 	if err != nil {
 		return MutationOutput{}, err
 	}
-	if _, err := e.store.ReconcileSupersessions(ctx, e.tenantID); err != nil {
-		return MutationOutput{}, fmt.Errorf("reconciling supersessions: %w", err)
-	}
 	return MutationOutput{ID: res.ID, Version: res.Version, Op: res.Op}, nil
 }
 
@@ -398,9 +382,6 @@ func (e *Engine) Restore(ctx context.Context, in RestoreInput) (MutationOutput, 
 	res, err := e.store.RestoreNote(ctx, e.tenantID, in.ID, in.TargetVersion, in.ExpectedVersion, e.surface)
 	if err != nil {
 		return MutationOutput{}, err
-	}
-	if _, err := e.store.ReconcileSupersessions(ctx, e.tenantID); err != nil {
-		return MutationOutput{}, fmt.Errorf("reconciling supersessions: %w", err)
 	}
 	return MutationOutput{ID: res.ID, Version: res.Version, Op: res.Op}, nil
 }
