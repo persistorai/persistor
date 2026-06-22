@@ -30,6 +30,23 @@ go test ./...
 
 If any fail, fix them. Do not commit broken code. Do not skip tests.
 
+The DB integration tests (RLS, tenant isolation, store, server) `t.Skip` when
+`TEST_DATABASE_URL` is unset — so a bare `go test ./...` passes while silently
+skipping the guarantees that matter most. Run them against a disposable Postgres
+(matching the CI role posture):
+
+```bash
+docker run -d --name pg -e POSTGRES_USER=persistor -e POSTGRES_PASSWORD=persistor \
+  -e POSTGRES_DB=persistor_test -p 127.0.0.1:5467:5432 postgres:18
+docker exec pg psql -U persistor -d persistor_test -c \
+  "CREATE EXTENSION IF NOT EXISTS btree_gin; \
+   CREATE ROLE persistor_app LOGIN PASSWORD 'persistor_app' NOSUPERUSER NOBYPASSRLS; \
+   ALTER SCHEMA public OWNER TO persistor_app;"
+URL=postgres://persistor_app:persistor_app@127.0.0.1:5467/persistor_test?sslmode=disable
+TEST_MIGRATE_DATABASE_URL=$URL go test ./internal/db/ -run TestRunMigrationsFreshDatabase -count=1
+TEST_DATABASE_URL=$URL go test ./... -count=1
+```
+
 ## Go Standards
 
 Follow standard Go best practices (Effective Go, Google Go style guide).

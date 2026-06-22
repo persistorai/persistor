@@ -30,9 +30,22 @@ type PGNoteInput struct {
 
 // WriteResult reports the outcome of a PG-native mutation.
 type WriteResult struct {
-	ID      string
-	Version int
-	Op      string // create | update | delete | restore.
+	ID         string
+	Version    int
+	Op         string // create | update | delete | restore.
+	Superseded int64  // rows whose superseded flag the in-tx reconcile flipped.
+}
+
+// SupersedesMissingError is returned when a write's supersedes pointer targets a
+// note that does not exist (or is tombstoned). The check runs inside the write
+// transaction so the precondition and the write commit atomically.
+type SupersedesMissingError struct {
+	NoteID string
+	Target string
+}
+
+func (e *SupersedesMissingError) Error() string {
+	return fmt.Sprintf("supersedes target %q does not exist", e.Target)
 }
 
 // NoteState is the current stored state of a PG-native note, including the
@@ -93,25 +106,9 @@ func (s *Store) WriteNote(ctx context.Context, tenantID string, in *PGNoteInput,
 
 	var res WriteResult
 	err := s.inTx(ctx, tenantID, func(tx pgx.Tx) error {
-		cur, found, err := lockNote(ctx, tx, in.ID)
-		if err != nil {
-			return err
-		}
-		op, newVersion, err := resolveWrite(in.ID, expectedVersion, cur, found)
-		if err != nil {
-			return err
-		}
-		if err := upsertPGNote(ctx, tx, in, namespace, kind, tier, newVersion); err != nil {
-			return err
-		}
-		if err := appendVersion(ctx, tx, in.ID, newVersion, in.Title, in.Body, kind, tier, op, in.Surface); err != nil {
-			return err
-		}
-		if err := replaceChunks(ctx, tx, in.ID, Chunk(in.Title, in.Body, DefaultChunkWords)); err != nil {
-			return err
-		}
-		res = WriteResult{ID: in.ID, Version: newVersion, Op: op}
-		return nil
+		var err error
+		res, err = writeNoteTx(ctx, tx, in, namespace, kind, tier, expectedVersion)
+		return err
 	})
 	if err != nil {
 		// A create (expectedVersion 0) can't see a concurrent creator: both lock
@@ -215,6 +212,11 @@ func (s *Store) DeleteNote(ctx context.Context, tenantID, id string, expectedVer
 		if err := replaceChunks(ctx, tx, id, nil); err != nil {
 			return err
 		}
+		// Tombstoning this note stops it superseding its target, which may flip the
+		// target back to not-superseded. Reconcile just the note and its target.
+		if _, err := reconcileSupersessionsTx(ctx, tx, id, cur.Supersedes); err != nil {
+			return err
+		}
 		res = WriteResult{ID: id, Version: newVersion, Op: "delete"}
 		return nil
 	})
@@ -261,6 +263,12 @@ func (s *Store) RestoreNote(ctx context.Context, tenantID, id string, targetVers
 			return err
 		}
 		if err := replaceChunks(ctx, tx, id, Chunk(snap.Title, snap.Body, DefaultChunkWords)); err != nil {
+			return err
+		}
+		// Restore force-cleared this note's superseded flag and un-deleted it (so it
+		// supersedes its target again). Recompute both the note's own flag (in case
+		// another note supersedes it) and its target's.
+		if _, err := reconcileSupersessionsTx(ctx, tx, id, cur.Supersedes); err != nil {
 			return err
 		}
 		res = WriteResult{ID: id, Version: newVersion, Op: "restore"}

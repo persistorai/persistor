@@ -36,7 +36,6 @@ type WorkingSet struct {
 	TailTokens  int
 	TotalTokens int
 	Truncated   bool // some body was truncated to fit the budget
-	Degraded    bool // assembled from disk because the index was unreachable
 }
 
 // AssembleWorkingSet builds the working-set from the index: every Core note
@@ -133,9 +132,9 @@ func truncateToTokens(text string, maxTokens int) string {
 func RenderMarkdown(ws *WorkingSet) string {
 	var b strings.Builder
 	b.WriteString("# Memory working set\n")
-	fmt.Fprintf(&b, "<!-- core=%d tok, tail=%d tok, total=%d tok%s%s -->\n\n",
+	fmt.Fprintf(&b, "<!-- core=%d tok, tail=%d tok, total=%d tok%s -->\n\n",
 		ws.CoreTokens, ws.TailTokens, ws.TotalTokens,
-		flag(ws.Truncated, ", truncated"), flag(ws.Degraded, ", degraded(core-from-disk)"))
+		flag(ws.Truncated, ", truncated"))
 
 	b.WriteString("## Core\n\n")
 	writeNotes(&b, ws.Core)
