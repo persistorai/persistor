@@ -117,6 +117,11 @@ func tenantServer(store *index.Store, writeLimiter, readLimiter *mcpengine.KeyLi
 			tenantID = ti.UserID
 			readOnly = mcpauth.IsReadOnly(ti)
 		}
+		// Attribute the request to its tenant in the access log without the logger
+		// having to parse the token itself.
+		if st := reqStateFrom(r.Context()); st != nil {
+			st.tenantID = tenantID
+		}
 		engine := mcpengine.NewEngine(store, tenantID,
 			mcpengine.WithReadOnly(readOnly), mcpengine.WithSurface(surface),
 			mcpengine.WithWriteLimiter(writeLimiter), mcpengine.WithReadLimiter(readLimiter))

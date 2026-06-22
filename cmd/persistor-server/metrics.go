@@ -1,0 +1,95 @@
+package main
+
+import (
+	"context"
+	"encoding/json"
+	"net/http"
+	"sync/atomic"
+
+	"github.com/persistorai/persistor/internal/dbpool"
+)
+
+// metrics holds dependency-free process counters for the /metrics endpoint: a
+// long-running daemon otherwise has no per-call visibility. Counts are HTTP-level
+// (every route), so they include tool calls (each MCP tool call is one POST to
+// /mcp) without coupling the transport-agnostic engine to a metrics type. DB pool
+// saturation is read live from the pool.
+type metrics struct {
+	requestsTotal atomic.Int64
+	status2xx     atomic.Int64
+	status4xx     atomic.Int64
+	status5xx     atomic.Int64
+	durationMs    atomic.Int64 // cumulative; mean = durationMs / requestsTotal
+	rateLimited   atomic.Int64 // HTTP 429s (e.g. the /register per-IP limit)
+	poolStat      func() dbpool.Stat
+}
+
+// newMetrics builds a metrics sink. poolStat may be nil (tests with no pool), in
+// which case the db_pool block is omitted.
+func newMetrics(poolStat func() dbpool.Stat) *metrics {
+	return &metrics{poolStat: poolStat}
+}
+
+// record tallies one finished request by status class and duration.
+func (m *metrics) record(status int, durationMs int64) {
+	if m == nil {
+		return
+	}
+	m.requestsTotal.Add(1)
+	m.durationMs.Add(durationMs)
+	switch {
+	case status >= 500:
+		m.status5xx.Add(1)
+	case status == http.StatusTooManyRequests:
+		m.rateLimited.Add(1)
+		m.status4xx.Add(1)
+	case status >= 400:
+		m.status4xx.Add(1)
+	default:
+		m.status2xx.Add(1)
+	}
+}
+
+// serveHTTP writes the metrics snapshot as JSON. It exposes only aggregate
+// counters and pool saturation — no tenant-identifying data — so it is safe to
+// serve unauthenticated on the tailnet, like /healthz.
+func (m *metrics) serveHTTP(w http.ResponseWriter, _ *http.Request) {
+	snap := map[string]any{
+		"requests_total":      m.requestsTotal.Load(),
+		"requests_2xx":        m.status2xx.Load(),
+		"requests_4xx":        m.status4xx.Load(),
+		"requests_5xx":        m.status5xx.Load(),
+		"request_duration_ms": m.durationMs.Load(),
+		"rate_limited_total":  m.rateLimited.Load(),
+	}
+	if m.poolStat != nil {
+		snap["db_pool"] = m.poolStat()
+	}
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(snap); err != nil {
+		return
+	}
+}
+
+// ctxKey is the unexported type for this package's context keys.
+type ctxKey int
+
+const reqStateKey ctxKey = iota
+
+// reqState is per-request observability state threaded through the context: the
+// correlation id (always set by the observe middleware) and the tenant (set by
+// tenantServer once the bearer token resolves, so the access log can attribute
+// the request without the logger needing to parse the token itself).
+type reqState struct {
+	requestID string
+	tenantID  string
+}
+
+// reqStateFrom returns the request's observability state, or nil if absent.
+func reqStateFrom(ctx context.Context) *reqState {
+	st, ok := ctx.Value(reqStateKey).(*reqState)
+	if !ok {
+		return nil
+	}
+	return st
+}

@@ -2,10 +2,12 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"net/http"
 	"strconv"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/sirupsen/logrus"
 )
 
@@ -108,20 +110,36 @@ func (s *statusRecorder) WriteHeader(code int) {
 	s.ResponseWriter.WriteHeader(code)
 }
 
-// requestLogger logs one structured line per request (method, path, status,
-// duration) for a long-running network daemon that otherwise has no per-call
-// visibility. It deliberately logs only the path, never the query string or
-// headers, to avoid recording bearer tokens or other sensitive values.
-func requestLogger(log *logrus.Logger, next http.Handler) http.Handler {
+// observe is the outermost middleware: it assigns a correlation id, threads
+// per-request observability state through the context, records process metrics,
+// and logs one structured line per request for a long-running daemon that
+// otherwise has no per-call visibility. It deliberately logs only the path, never
+// the query string or headers, to avoid recording bearer tokens. The tenant is
+// filled in by tenantServer once the token resolves, so it appears in the log
+// without the logger parsing the token itself.
+func observe(log *logrus.Logger, m *metrics, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		rid := r.Header.Get("X-Request-Id")
+		if rid == "" {
+			rid = uuid.NewString()
+		}
+		st := &reqState{requestID: rid}
+		r = r.WithContext(context.WithValue(r.Context(), reqStateKey, st))
+		w.Header().Set("X-Request-Id", rid)
+
 		start := time.Now()
 		rec := &statusRecorder{ResponseWriter: w, status: http.StatusOK}
 		next.ServeHTTP(rec, r)
+		durMs := time.Since(start).Milliseconds()
+
+		m.record(rec.status, durMs)
 		log.WithFields(logrus.Fields{
-			"method":   r.Method,
-			"path":     r.URL.Path,
-			"status":   rec.status,
-			"duration": time.Since(start).String(),
+			"method":     r.Method,
+			"path":       r.URL.Path,
+			"status":     rec.status,
+			"duration":   time.Since(start).String(),
+			"request_id": rid,
+			"tenant":     st.tenantID,
 		}).Info("request")
 	})
 }

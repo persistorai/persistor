@@ -139,6 +139,25 @@ func (p *Pool) ConnString() string {
 	return p.pool.Config().ConnString()
 }
 
+// Stat is a snapshot of pool saturation for the metrics endpoint.
+type Stat struct {
+	AcquiredConns int32 `json:"acquired_conns"`
+	IdleConns     int32 `json:"idle_conns"`
+	TotalConns    int32 `json:"total_conns"`
+	MaxConns      int32 `json:"max_conns"`
+}
+
+// Stat returns a snapshot of connection-pool saturation.
+func (p *Pool) Stat() Stat {
+	s := p.pool.Stat()
+	return Stat{
+		AcquiredConns: s.AcquiredConns(),
+		IdleConns:     s.IdleConns(),
+		TotalConns:    s.TotalConns(),
+		MaxConns:      s.MaxConns(),
+	}
+}
+
 // Close closes the connection pool.
 func (p *Pool) Close() {
 	p.pool.Close()

@@ -81,7 +81,11 @@ func run(ctx context.Context) error {
 
 	log := logrus.New()
 	log.SetOutput(os.Stderr)
-	log.SetLevel(logrus.InfoLevel)
+	level, err := logrus.ParseLevel(cfg.logLevel)
+	if err != nil {
+		return fmt.Errorf("invalid PERSISTOR_LOG_LEVEL %q: %w", cfg.logLevel, err)
+	}
+	log.SetLevel(level)
 
 	pool, err := dbpool.NewPool(ctx, cfg.databaseURL, 8)
 	if err != nil {
@@ -100,7 +104,7 @@ func run(ctx context.Context) error {
 		return fmt.Errorf("building authenticator: %w", err)
 	}
 
-	httpServer, err := buildHTTPServer(&cfg, store, authn, log, pool.Ping)
+	httpServer, err := buildHTTPServer(&cfg, store, authn, log, pool.Ping, pool.Stat)
 	if err != nil {
 		return err
 	}
@@ -147,11 +151,13 @@ func applySchema(ctx context.Context, cfg *serverConfig, pool *dbpool.Pool, log 
 // (plus the OIDC consent page), wrapped in access logging and security headers,
 // with timeouts suited to a long-running network service. ready is the /readyz
 // DB probe.
-func buildHTTPServer(cfg *serverConfig, store *index.Store, authn authBundle, log *logrus.Logger, ready func(context.Context) error) (*http.Server, error) {
+func buildHTTPServer(cfg *serverConfig, store *index.Store, authn authBundle, log *logrus.Logger, ready func(context.Context) error, poolStat func() dbpool.Stat) (*http.Server, error) {
 	writeLimiter := mcpengine.NewKeyLimiter(writeRatePerSecond, writeRateBurst)
 	readLimiter := mcpengine.NewKeyLimiter(readRatePerSecond, readRateBurst)
 	getServer := tenantServer(store, writeLimiter, readLimiter, config.Version)
 	mux := newMux(getServer, authn.verify, authn.opts, authn.metadata, ready)
+	m := newMetrics(poolStat)
+	mux.HandleFunc("/metrics", m.serveHTTP)
 	if cfg.stytchPublicToken != "" {
 		consent, err := newConsentHandler(cfg.stytchPublicToken)
 		if err != nil {
@@ -173,7 +179,7 @@ func buildHTTPServer(cfg *serverConfig, store *index.Store, authn authBundle, lo
 		regLimiter := mcpengine.NewKeyLimiter(registerRatePerSecond, registerRateBurst)
 		mux.Handle("/register", perIPLimit(regLimiter, regProxy))
 	}
-	handler := requestLogger(log, securityHeaders(contentLengthBuffer(mux)))
+	handler := observe(log, m, securityHeaders(contentLengthBuffer(mux)))
 	return &http.Server{
 		Addr:              cfg.listenAddr,
 		Handler:           handler,
@@ -227,6 +233,8 @@ type serverConfig struct {
 	// self-host posture). Set PERSISTOR_AUTO_MIGRATE=false in production, where
 	// migrations run separately as the owner and the daemon is a non-owner role.
 	autoMigrate bool
+	// logLevel is the logrus level name (default "info").
+	logLevel string
 }
 
 func loadConfig() (serverConfig, error) {
@@ -241,6 +249,10 @@ func loadConfig() (serverConfig, error) {
 		// Default on: preserves the single-box self-host behavior. Only an
 		// explicit "false" turns it off (the production split-role posture).
 		autoMigrate: !strings.EqualFold(os.Getenv("PERSISTOR_AUTO_MIGRATE"), "false"),
+		logLevel:    os.Getenv("PERSISTOR_LOG_LEVEL"),
+	}
+	if cfg.logLevel == "" {
+		cfg.logLevel = "info"
 	}
 	if cfg.databaseURL == "" {
 		return serverConfig{}, fmt.Errorf("DATABASE_URL is required")
