@@ -28,10 +28,20 @@ type serverConfig struct {
 	logLevel string
 	// dbMaxConns sizes the connection pool (default defaultDBMaxConns).
 	dbMaxConns int32
+	// trustedOrigins are browser origins allowed to make cross-origin requests to
+	// /mcp past the CSRF/DNS-rebinding guard. Browser MCP clients (claude.ai web)
+	// send Sec-Fetch-Site: cross-site, which the guard otherwise rejects; a trusted
+	// origin is exempted. Non-browser clients (Claude Code) are unaffected either
+	// way. Defaults to the Claude web app.
+	trustedOrigins []string
 }
 
 // defaultDBMaxConns is the pool size when PERSISTOR_DB_MAX_CONNS is unset.
 const defaultDBMaxConns = 8
+
+// defaultTrustedOrigin is the browser origin trusted for cross-origin /mcp
+// requests when PERSISTOR_TRUSTED_ORIGINS is unset: the Claude web app.
+const defaultTrustedOrigin = "https://claude.ai"
 
 func loadConfig() (serverConfig, error) {
 	cfg := serverConfig{
@@ -44,8 +54,9 @@ func loadConfig() (serverConfig, error) {
 		stytchPublicToken: os.Getenv("PERSISTOR_STYTCH_PUBLIC_TOKEN"),
 		// Default on: preserves the single-box self-host behavior. Only an
 		// explicit "false" turns it off (the production split-role posture).
-		autoMigrate: !strings.EqualFold(os.Getenv("PERSISTOR_AUTO_MIGRATE"), "false"),
-		logLevel:    os.Getenv("PERSISTOR_LOG_LEVEL"),
+		autoMigrate:    !strings.EqualFold(os.Getenv("PERSISTOR_AUTO_MIGRATE"), "false"),
+		logLevel:       os.Getenv("PERSISTOR_LOG_LEVEL"),
+		trustedOrigins: parseTrustedOrigins(os.Getenv("PERSISTOR_TRUSTED_ORIGINS")),
 	}
 	if cfg.logLevel == "" {
 		cfg.logLevel = "info"
@@ -69,6 +80,22 @@ func loadConfig() (serverConfig, error) {
 		return serverConfig{}, err
 	}
 	return cfg, nil
+}
+
+// parseTrustedOrigins resolves the comma-separated browser origins allowed to
+// make cross-origin /mcp requests, defaulting to the Claude web app when unset.
+// Whitespace around entries is trimmed and empties are dropped.
+func parseTrustedOrigins(raw string) []string {
+	if strings.TrimSpace(raw) == "" {
+		return []string{defaultTrustedOrigin}
+	}
+	var origins []string
+	for o := range strings.SplitSeq(raw, ",") {
+		if o = strings.TrimSpace(o); o != "" {
+			origins = append(origins, o)
+		}
+	}
+	return origins
 }
 
 // parseMaxConns resolves the pool size from PERSISTOR_DB_MAX_CONNS, defaulting to

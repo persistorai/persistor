@@ -25,9 +25,9 @@ DOCR Starter tier is free (1 repo, 500 MB — our image is tiny).
 doctl registry create persistor --subscription-tier starter
 doctl registry login
 docker build -f deploy/do/Dockerfile --platform linux/amd64 \
-  --build-arg VERSION=v0.9.0 \
-  -t registry.digitalocean.com/persistor/persistor:v0.9.0 .
-docker push registry.digitalocean.com/persistor/persistor:v0.9.0
+  --build-arg VERSION=v0.9.1 \
+  -t registry.digitalocean.com/persistor/persistor:v0.9.1 .
+docker push registry.digitalocean.com/persistor/persistor:v0.9.1
 ```
 
 ### 2. Managed PostgreSQL 18, single-node  `[$ $15/mo]`
