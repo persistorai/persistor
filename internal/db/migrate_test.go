@@ -56,6 +56,16 @@ func TestRunMigrationsFreshDatabase(t *testing.T) {
 		t.Fatalf("running migrations on fresh database: %v", err)
 	}
 
+	// After a full apply, nothing is pending — the daemon's boot check (used when
+	// auto-migrate is off) must agree, or it would refuse to serve a current DB.
+	pending, err := db.MigrationsPending(ctx, pool, migrations.FS)
+	if err != nil {
+		t.Fatalf("checking pending migrations: %v", err)
+	}
+	if pending {
+		t.Error("MigrationsPending = true immediately after a full migration; want false")
+	}
+
 	// Spot-check the end-state schema: the migrations stand up
 	// the index tables, with NO embedding column
 	// and no leftover graph tables.

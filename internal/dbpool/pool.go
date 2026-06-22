@@ -76,6 +76,34 @@ func assertRLSEnforceable(ctx context.Context, pool *pgxpool.Pool) error {
 	return nil
 }
 
+// AssertNonOwner fails closed when the connection's role owns a tenant table.
+// FORCE ROW LEVEL SECURITY subjects even the owner to RLS, but only a non-owner
+// is barred from ALTER TABLE ... DISABLE TRIGGER and DROP POLICY — the
+// operations that would void the append-only audit log and the isolation
+// policies themselves. In production the daemon connects as a least-privilege,
+// non-owning app role and migrations run separately as the owner; this assertion
+// enforces that split so a misconfigured owner connection is refused rather than
+// silently able to disarm the audit trail. Checked against `notes` as a
+// representative tenant table.
+func (p *Pool) AssertNonOwner(ctx context.Context) error {
+	var owner string
+	var isOwner bool
+	err := p.pool.QueryRow(ctx,
+		`SELECT pg_catalog.pg_get_userbyid(c.relowner), pg_catalog.pg_get_userbyid(c.relowner) = current_user
+		   FROM pg_catalog.pg_class c
+		   JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
+		  WHERE c.relname = 'notes' AND n.nspname = 'public'`).Scan(&owner, &isOwner)
+	if err != nil {
+		return fmt.Errorf("checking table ownership: %w", err)
+	}
+	if isOwner {
+		return fmt.Errorf("database role %q owns the notes table; in production connect as a non-owner "+
+			"NOSUPERUSER NOBYPASSRLS app role (migrate separately as the owner) so the append-only audit "+
+			"log cannot be disarmed — or set PERSISTOR_AUTO_MIGRATE=true for the single-role self-host posture", owner)
+	}
+	return nil
+}
+
 // Exec executes a query that doesn't return rows.
 func (p *Pool) Exec(ctx context.Context, sql string, arguments ...any) (pgconn.CommandTag, error) {
 	return p.pool.Exec(ctx, sql, arguments...)

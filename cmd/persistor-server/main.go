@@ -74,8 +74,8 @@ func run(ctx context.Context) error {
 	}
 	defer pool.Close()
 
-	if err := db.RunMigrations(ctx, pool, log, migrations.FS); err != nil {
-		return fmt.Errorf("applying migrations: %w", err)
+	if err := applySchema(ctx, &cfg, pool, log); err != nil {
+		return err
 	}
 
 	store := index.NewStore(pool, log)
@@ -92,6 +92,40 @@ func run(ctx context.Context) error {
 	log.WithFields(logrus.Fields{"addr": cfg.listenAddr, "auth": "oidc"}).
 		Warn("persistor-server listening (tailnet-bound)")
 	return serve(ctx, httpServer, log)
+}
+
+// applySchema brings the database schema into the state the daemon needs.
+//
+// With auto-migrate on (PERSISTOR_AUTO_MIGRATE!=false, the default — the
+// single-role self-host posture) the daemon applies migrations at boot, which
+// requires it to connect as the schema owner.
+//
+// With auto-migrate off (the production posture) migrations are an explicit,
+// separately-run `persistor migrate` step as the schema-owning migrator, and the
+// daemon connects as a non-owner least-privilege app role. It cannot run DDL, so
+// it instead (1) refuses to serve a schema with pending migrations and (2)
+// asserts it is not the table owner, enforcing the role split that protects the
+// append-only audit log.
+func applySchema(ctx context.Context, cfg *serverConfig, pool *dbpool.Pool, log *logrus.Logger) error {
+	if cfg.autoMigrate {
+		if err := db.RunMigrations(ctx, pool, log, migrations.FS); err != nil {
+			return fmt.Errorf("applying migrations: %w", err)
+		}
+		return nil
+	}
+
+	pending, err := db.MigrationsPending(ctx, pool, migrations.FS)
+	if err != nil {
+		return fmt.Errorf("checking schema version: %w", err)
+	}
+	if pending {
+		return fmt.Errorf("database has pending migrations and PERSISTOR_AUTO_MIGRATE is off; " +
+			"run `persistor migrate` as the schema-owning migrator role before starting the daemon")
+	}
+	if err := pool.AssertNonOwner(ctx); err != nil {
+		return err
+	}
+	return nil
 }
 
 // buildHTTPServer assembles the daemon's HTTP server: the auth-gated MCP mux
@@ -172,6 +206,10 @@ type serverConfig struct {
 	// stytchPublicToken, when set, serves the Stytch consent page at /authorize
 	// (the OAuth Authorization URL). Publishable, not a secret.
 	stytchPublicToken string
+	// autoMigrate applies migrations at boot (default true, the single-role
+	// self-host posture). Set PERSISTOR_AUTO_MIGRATE=false in production, where
+	// migrations run separately as the owner and the daemon is a non-owner role.
+	autoMigrate bool
 }
 
 func loadConfig() (serverConfig, error) {
@@ -183,6 +221,9 @@ func loadConfig() (serverConfig, error) {
 		oidcAudience:      os.Getenv("PERSISTOR_OIDC_AUDIENCE"),
 		oidcJWKSURL:       os.Getenv("PERSISTOR_OIDC_JWKS_URL"),
 		stytchPublicToken: os.Getenv("PERSISTOR_STYTCH_PUBLIC_TOKEN"),
+		// Default on: preserves the single-box self-host behavior. Only an
+		// explicit "false" turns it off (the production split-role posture).
+		autoMigrate: !strings.EqualFold(os.Getenv("PERSISTOR_AUTO_MIGRATE"), "false"),
 	}
 	if cfg.databaseURL == "" {
 		return serverConfig{}, fmt.Errorf("DATABASE_URL is required")
