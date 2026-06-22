@@ -22,6 +22,14 @@ import (
 // but this also bounds connection acquisition).
 const authQueryTimeout = 5 * time.Second
 
+// lastSeenStaleAfterMinutes bounds how often the auth hot path refreshes
+// identities.last_seen_at. Auth runs on EVERY request (reads included), so
+// updating last_seen_at each time would turn every read into a row-locking
+// write + WAL and serialize same-subject requests on that row. Instead the
+// refresh fires at most this often, folded into the lookup statement so a fresh
+// row produces a no-op write (the inner UPDATE matches nothing).
+const lastSeenStaleAfterMinutes = 15
+
 // Roles an identity can hold against its tenant.
 const (
 	RoleOwner    = "owner"
@@ -65,6 +73,41 @@ func (s *Store) ResolveOrProvision(ctx context.Context, issuer, subject, default
 	ctx, cancel := context.WithTimeout(ctx, authQueryTimeout)
 	defer cancel()
 
+	// Hot path: one statement that looks the identity up and refreshes
+	// last_seen_at only when stale (or never set). When the row is fresh the
+	// data-modifying CTE's WHERE matches nothing — no row lock, no WAL — so a
+	// steady-state request (the overwhelming majority, all reads included) does
+	// not amplify into a write. The CTE always executes but prunes to a no-op.
+	err = s.pool.QueryRow(ctx,
+		`WITH touched AS (
+		     UPDATE identities SET last_seen_at = NOW()
+		      WHERE issuer = $1 AND subject = $2
+		        AND (last_seen_at IS NULL OR last_seen_at < NOW() - make_interval(mins => $3))
+		    RETURNING tenant_id::text AS tenant_id, role
+		 )
+		 SELECT tenant_id, role FROM touched
+		 UNION ALL
+		 SELECT tenant_id::text, role FROM identities
+		  WHERE issuer = $1 AND subject = $2 AND NOT EXISTS (SELECT 1 FROM touched)
+		 LIMIT 1`,
+		issuer, subject, lastSeenStaleAfterMinutes).Scan(&tenantID, &role)
+	switch {
+	case err == nil:
+		return tenantID, role, nil
+	case !errors.Is(err, pgx.ErrNoRows):
+		return "", "", fmt.Errorf("looking up identity: %w", err)
+	}
+
+	// First login: provision in one transaction so a race between two
+	// first-logins cannot double-provision.
+	return s.provision(ctx, issuer, subject, defaultTenant)
+}
+
+// provision creates the personal tenant + owner identity on first login and
+// returns the resolved tenant/role. ON CONFLICT makes both inserts idempotent
+// under a concurrent first-login of the same subject; the loser's
+// UPDATE-returning reads the winner's row.
+func (s *Store) provision(ctx context.Context, issuer, subject, defaultTenant string) (tenantID, role string, err error) {
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
 		return "", "", fmt.Errorf("begin: %w", err)
@@ -77,23 +120,6 @@ func (s *Store) ResolveOrProvision(ctx context.Context, issuer, subject, default
 		}
 	}()
 
-	err = tx.QueryRow(ctx,
-		`UPDATE identities SET last_seen_at = NOW()
-		   WHERE issuer = $1 AND subject = $2
-		 RETURNING tenant_id::text, role`, issuer, subject).Scan(&tenantID, &role)
-	switch {
-	case err == nil:
-		if err := tx.Commit(ctx); err != nil {
-			return "", "", fmt.Errorf("commit: %w", err)
-		}
-		return tenantID, role, nil
-	case !errors.Is(err, pgx.ErrNoRows):
-		return "", "", fmt.Errorf("looking up identity: %w", err)
-	}
-
-	// First login: provision the personal tenant + owner identity. ON CONFLICT
-	// makes both inserts idempotent under a concurrent first-login of the same
-	// subject; the loser's UPDATE-returning below reads the winner's row.
 	if _, err := tx.Exec(ctx,
 		`INSERT INTO tenants (id, label) VALUES ($1, $2) ON CONFLICT (id) DO NOTHING`,
 		defaultTenant, "auto:"+subject); err != nil {
