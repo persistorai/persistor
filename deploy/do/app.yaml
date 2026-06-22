@@ -1,0 +1,105 @@
+# DigitalOcean App Platform spec for Persistor — DRAFT for review.
+# Apply with:  doctl apps create --spec deploy/do/app.yaml
+# Update with: doctl apps update <APP_ID> --spec deploy/do/app.yaml
+#
+# Architecture: Cloudflare (proxied mcp.persistor.ai) -> App Platform service
+# (this spec) -> DO Managed PostgreSQL 18 (single-node), provisioned separately
+# (see README.md) and attached below for automatic trusted-sources firewalling.
+#
+# Secrets (DATABASE_URLs, Stytch public token) are NOT in this file. They are set
+# as encrypted App Platform secrets — either via the dashboard or
+# `doctl apps update` with values sourced from Vault at deploy time. Placeholders
+# below are marked SET-AT-DEPLOY.
+
+name: persistor
+region: nyc
+
+# Attach the separately-provisioned managed PG cluster. This makes App Platform
+# add the app to the cluster's trusted sources (DB firewall) automatically, so
+# Postgres is never exposed to the public internet. We do NOT use the injected
+# ${persistor-db.*} admin (doadmin) credentials for the app — the service and the
+# migrate job each connect as their own least-privilege role (see README.md).
+databases:
+  - name: persistor-db
+    engine: PG
+    version: "18"
+    production: true
+    cluster_name: persistor-db   # the doctl-created cluster name (README step 1)
+
+# Schema migrations run here, BEFORE the new service rolls out, as the
+# schema-OWNING migrator role. Matches the split-role posture: the daemon runs
+# PERSISTOR_AUTO_MIGRATE=false and refuses to start as the owner or against a
+# stale schema, so migrations MUST happen in this separate step.
+jobs:
+  - name: migrate
+    kind: PRE_DEPLOY
+    instance_size_slug: apps-s-1vcpu-0.5gb
+    image:
+      registry_type: DOCR
+      repository: persistor
+      tag: v0.9.0
+    run_command: persistor migrate
+    envs:
+      # persistor_migrator (schema owner). SET-AT-DEPLOY as an encrypted secret.
+      - key: DATABASE_URL
+        scope: RUN_TIME
+        type: SECRET
+        value: "SET-AT-DEPLOY"   # postgres://persistor_migrator:<pw>@<host>:<port>/persistor?sslmode=require
+
+services:
+  - name: server
+    instance_size_slug: apps-s-1vcpu-1gb   # $12/mo shared; bump later if needed
+    instance_count: 1
+    image:
+      registry_type: DOCR
+      repository: persistor
+      tag: v0.9.0
+    http_port: 8080
+    # Platform health check is a LIVENESS probe (a failing check restarts the
+    # container), so point it at /healthz (process up), NOT /readyz (DB-checked) —
+    # /readyz here would turn a transient DB blip into a restart loop. Schema
+    # readiness is already guaranteed by the pre-deploy migrate job + the daemon's
+    # own boot assertion.
+    health_check:
+      http_path: /healthz
+      initial_delay_seconds: 15
+      period_seconds: 10
+      timeout_seconds: 3
+      success_threshold: 1
+      failure_threshold: 3
+    envs:
+      - key: PERSISTOR_LISTEN_ADDR
+        value: "0.0.0.0:8080"
+      - key: PERSISTOR_PUBLIC_URL
+        value: "https://mcp.persistor.ai"
+      - key: PERSISTOR_AUTO_MIGRATE
+        value: "false"
+      - key: PERSISTOR_DB_MAX_CONNS
+        value: "8"             # keep <= cluster max_connections headroom
+      - key: PERSISTOR_LOG_LEVEL
+        value: "info"
+      # --- OIDC: TEST project for the initial bring-up. Flip these four to the
+      #     Stytch LIVE values when we go live (env-only change; tenant UUID will
+      #     change because issuer+subject change — see README.md). ---
+      - key: PERSISTOR_OIDC_ISSUER
+        value: "https://seemly-sunset-9833.customers.stytch.dev"
+      - key: PERSISTOR_OIDC_AUDIENCE
+        value: "project-test-6d376bed-3e28-4959-85f1-395206636333"
+      - key: PERSISTOR_OIDC_JWKS_URL
+        value: "https://seemly-sunset-9833.customers.stytch.dev/.well-known/jwks.json"
+      # Publishable token (not secret, but kept as SECRET for tidiness/rotation).
+      - key: PERSISTOR_STYTCH_PUBLIC_TOKEN
+        scope: RUN_TIME
+        type: SECRET
+        value: "SET-AT-DEPLOY"   # public-token-test-...
+      # persistor_app (non-owner, NOSUPERUSER NOBYPASSRLS). SET-AT-DEPLOY secret.
+      - key: DATABASE_URL
+        scope: RUN_TIME
+        type: SECRET
+        value: "SET-AT-DEPLOY"   # postgres://persistor_app:<pw>@<host>:<port>/persistor?sslmode=require
+
+# mcp.persistor.ai is fronted by Cloudflare (proxied), which forwards to the
+# App Platform default ondigitalocean.app hostname. We deliberately do NOT add a
+# `domains:` block claiming mcp.persistor.ai here, because App Platform would then
+# demand a DNS challenge/ownership it can't see behind Cloudflare's proxy. Cutover
+# plan in README.md (Cloudflare CNAME -> the app's default hostname, SSL Full).
