@@ -41,9 +41,13 @@ func TestCrossOriginProtection(t *testing.T) {
 		return nil, auth.ErrInvalidToken
 	}
 	getServer := func(*http.Request) *mcp.Server { return nil }
-	mux := newMux(getServer, verifier, &auth.RequireBearerTokenOptions{}, nil, nil)
+	protection := http.NewCrossOriginProtection()
+	if err := protection.AddTrustedOrigin("https://claude.ai"); err != nil {
+		t.Fatalf("AddTrustedOrigin: %v", err)
+	}
+	mux := newMux(getServer, verifier, &auth.RequireBearerTokenOptions{}, nil, nil, protection)
 
-	// Browser cross-origin request -> 403 from the cross-origin guard.
+	// Untrusted browser cross-origin request -> 403 from the cross-origin guard.
 	cross := httptest.NewRequest(http.MethodPost, "/mcp", http.NoBody)
 	cross.Header.Set("Sec-Fetch-Site", "cross-site")
 	cross.Header.Set("Origin", "https://evil.example")
@@ -51,6 +55,17 @@ func TestCrossOriginProtection(t *testing.T) {
 	mux.ServeHTTP(crossRec, cross)
 	if crossRec.Code != http.StatusForbidden {
 		t.Fatalf("cross-origin /mcp status = %d, want 403", crossRec.Code)
+	}
+
+	// A TRUSTED browser origin (claude.ai) passes the guard and reaches auth,
+	// which 401s the missing token — i.e. it was NOT blocked as cross-origin.
+	trusted := httptest.NewRequest(http.MethodPost, "/mcp", http.NoBody)
+	trusted.Header.Set("Sec-Fetch-Site", "cross-site")
+	trusted.Header.Set("Origin", "https://claude.ai")
+	trustedRec := httptest.NewRecorder()
+	mux.ServeHTTP(trustedRec, trusted)
+	if trustedRec.Code != http.StatusUnauthorized {
+		t.Fatalf("trusted-origin /mcp status = %d, want 401 (passed guard, hit auth)", trustedRec.Code)
 	}
 
 	// Non-browser request (no Sec-Fetch-Site) passes the guard and reaches auth,
@@ -81,12 +96,65 @@ func TestReadyz(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			mux := newMux(getServer, verifier, &auth.RequireBearerTokenOptions{}, nil, tt.ready)
+			mux := newMux(getServer, verifier, &auth.RequireBearerTokenOptions{}, nil, tt.ready, http.NewCrossOriginProtection())
 			rec := httptest.NewRecorder()
 			mux.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/readyz", http.NoBody))
 			if rec.Code != tt.want {
 				t.Fatalf("/readyz status = %d, want %d", rec.Code, tt.want)
 			}
 		})
+	}
+}
+
+// TestCORSPreflight verifies an OPTIONS preflight is answered with 204 and the
+// CORS headers a browser MCP client needs — without reaching the next handler.
+func TestCORSPreflight(t *testing.T) {
+	called := false
+	h := cors(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { called = true }))
+	req := httptest.NewRequest(http.MethodOptions, "/mcp", http.NoBody)
+	req.Header.Set("Origin", "https://claude.ai")
+	req.Header.Set("Access-Control-Request-Method", "POST")
+	req.Header.Set("Access-Control-Request-Headers", "authorization,content-type")
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("preflight status = %d, want 204", rec.Code)
+	}
+	if called {
+		t.Error("preflight must not reach the next handler")
+	}
+	if got := rec.Header().Get("Access-Control-Allow-Origin"); got != "https://claude.ai" {
+		t.Errorf("Access-Control-Allow-Origin = %q, want the request origin", got)
+	}
+	if got := rec.Header().Get("Access-Control-Allow-Headers"); got != "authorization,content-type" {
+		t.Errorf("Access-Control-Allow-Headers = %q, want the requested headers echoed", got)
+	}
+	if got := rec.Header().Get("Access-Control-Allow-Methods"); got == "" {
+		t.Error("Access-Control-Allow-Methods missing")
+	}
+}
+
+// TestCORSActualRequest verifies a non-preflight request gets CORS headers and
+// still reaches the wrapped handler.
+func TestCORSActualRequest(t *testing.T) {
+	called := false
+	h := cors(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		called = true
+		w.WriteHeader(http.StatusOK)
+	}))
+	req := httptest.NewRequest(http.MethodPost, "/mcp", http.NoBody)
+	req.Header.Set("Origin", "https://claude.ai")
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+
+	if !called {
+		t.Error("non-preflight request must reach the next handler")
+	}
+	if got := rec.Header().Get("Access-Control-Allow-Origin"); got != "https://claude.ai" {
+		t.Errorf("Access-Control-Allow-Origin = %q, want the request origin", got)
+	}
+	if got := rec.Header().Get("Access-Control-Expose-Headers"); got != corsExposeHeaders {
+		t.Errorf("Access-Control-Expose-Headers = %q, want %q", got, corsExposeHeaders)
 	}
 }

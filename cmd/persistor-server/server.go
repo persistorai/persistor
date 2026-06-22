@@ -44,7 +44,7 @@ func (m *protectedResourceMetadata) serveHTTP(w http.ResponseWriter, _ *http.Req
 // 401s missing/invalid tokens with a WWW-Authenticate header.
 // ready probes a dependency (the DB pool) for the /readyz handler; nil means the
 // daemon reports ready unconditionally (used in tests with no pool).
-func newMux(getServer func(*http.Request) *mcp.Server, verifier auth.TokenVerifier, authOpts *auth.RequireBearerTokenOptions, metadata *protectedResourceMetadata, ready func(context.Context) error) *http.ServeMux {
+func newMux(getServer func(*http.Request) *mcp.Server, verifier auth.TokenVerifier, authOpts *auth.RequireBearerTokenOptions, metadata *protectedResourceMetadata, ready func(context.Context) error, protection *http.CrossOriginProtection) *http.ServeMux {
 	// Persistor is a pure request/response tool server: no server-initiated
 	// requests (sampling/elicitation/roots), no streaming results. Stateless +
 	// JSONResponse is the right transport posture for that, and crucially for a
@@ -68,8 +68,8 @@ func newMux(getServer func(*http.Request) *mcp.Server, verifier auth.TokenVerifi
 	// http.CrossOriginProtection keys off Sec-Fetch-Site, which only browsers
 	// send, so non-browser MCP clients (Claude Code) are unaffected while a
 	// browser cross-origin request is denied. Outermost so it rejects before auth.
-	// A future browser client (claude.ai) is added via AddTrustedOrigin.
-	protection := http.NewCrossOriginProtection()
+	// The caller supplies it with its trusted browser origins (claude.ai web)
+	// already registered via AddTrustedOrigin.
 	mux := http.NewServeMux()
 	// Cap the request body so one authenticated tenant can't exhaust memory/disk
 	// with a single huge memory_write: the per-tenant write limiter caps

@@ -154,7 +154,16 @@ func buildHTTPServer(cfg *serverConfig, store *index.Store, authn authBundle, lo
 	writeLimiter := mcpengine.NewKeyLimiter(writeRatePerSecond, writeRateBurst)
 	readLimiter := mcpengine.NewKeyLimiter(readRatePerSecond, readRateBurst)
 	getServer := tenantServer(store, writeLimiter, readLimiter, config.Version)
-	mux := newMux(getServer, authn.verify, authn.opts, authn.metadata, ready)
+	// Cross-origin guard for /mcp, configured with the browser origins allowed to
+	// reach it cross-site (claude.ai web by default). Built here so AddTrustedOrigin
+	// errors on a malformed configured origin surface at startup.
+	protection := http.NewCrossOriginProtection()
+	for _, origin := range cfg.trustedOrigins {
+		if err := protection.AddTrustedOrigin(origin); err != nil {
+			return nil, fmt.Errorf("registering trusted origin %q: %w", origin, err)
+		}
+	}
+	mux := newMux(getServer, authn.verify, authn.opts, authn.metadata, ready, protection)
 	m := newMetrics(poolStat)
 	mux.HandleFunc("/metrics", m.serveHTTP)
 	if cfg.stytchPublicToken != "" {
@@ -178,7 +187,7 @@ func buildHTTPServer(cfg *serverConfig, store *index.Store, authn authBundle, lo
 		regLimiter := mcpengine.NewKeyLimiter(registerRatePerSecond, registerRateBurst)
 		mux.Handle("/register", perIPLimit(regLimiter, regProxy))
 	}
-	handler := observe(log, m, securityHeaders(contentLengthBuffer(mux)))
+	handler := observe(log, m, securityHeaders(cors(contentLengthBuffer(mux))))
 	return &http.Server{
 		Addr:              cfg.listenAddr,
 		Handler:           handler,

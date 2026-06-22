@@ -28,6 +28,55 @@ func securityHeaders(next http.Handler) http.Handler {
 	})
 }
 
+// CORS surface a browser-based MCP client (e.g. claude.ai web connectors) needs:
+// the MCP Streamable HTTP methods, the MCP/auth request headers, and the response
+// headers it must be able to read. WWW-Authenticate is exposed so the browser can
+// read the 401 challenge and start the OAuth flow; Mcp-Session-Id so it can track
+// the session.
+const (
+	corsAllowMethods  = "GET, POST, DELETE, OPTIONS"
+	corsAllowHeaders  = "Authorization, Content-Type, Mcp-Session-Id, Mcp-Protocol-Version, Last-Event-Id"
+	corsExposeHeaders = "Mcp-Session-Id, WWW-Authenticate"
+	corsMaxAge        = "86400"
+)
+
+// cors answers CORS preflights and adds the response headers a browser-based MCP
+// client needs. Browser clients (claude.ai web connectors) send an OPTIONS
+// preflight before POSTing to /mcp; without a 2xx preflight carrying these
+// headers the browser blocks the request and the connection appears to fail.
+//
+// It runs OUTSIDE the auth-gated mux so a preflight is answered without a bearer
+// token (preflights never carry one — answering it with 401 is what breaks the
+// browser). This does not weaken auth: every non-preflight request still goes
+// through the token verifier. CORS only governs which browser ORIGINS may issue a
+// request, not who is authorized. The origin is reflected (with Vary: Origin) so
+// any web client works; possession of a valid token remains the access boundary.
+func cors(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if origin := r.Header.Get("Origin"); origin != "" {
+			h := w.Header()
+			h.Set("Access-Control-Allow-Origin", origin)
+			h.Add("Vary", "Origin")
+			h.Set("Access-Control-Expose-Headers", corsExposeHeaders)
+		}
+		// A CORS preflight is an OPTIONS carrying Access-Control-Request-Method.
+		// Answer it here (204) before it reaches the auth-gated mux.
+		if r.Method == http.MethodOptions && r.Header.Get("Access-Control-Request-Method") != "" {
+			h := w.Header()
+			h.Set("Access-Control-Allow-Methods", corsAllowMethods)
+			if reqHeaders := r.Header.Get("Access-Control-Request-Headers"); reqHeaders != "" {
+				h.Set("Access-Control-Allow-Headers", reqHeaders)
+			} else {
+				h.Set("Access-Control-Allow-Headers", corsAllowHeaders)
+			}
+			h.Set("Access-Control-Max-Age", corsMaxAge)
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
 // maxResponseBuffer caps how much of a response contentLengthBuffer will hold in
 // memory. Tool results are bounded (list pages cap at 500 summaries, note bodies
 // at 1 MiB), so 8 MiB is well above any normal response; a handler that exceeds
