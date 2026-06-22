@@ -18,8 +18,16 @@ type NoteRecord struct {
 	Body  string
 }
 
-// CoreNotes returns every Core-tier note (id, title, body) for the tenant,
-// ordered deterministically by id. These are the always-loaded surface.
+// maxCoreNotes caps how many Core-tier notes the always-loaded surface fetches.
+// Core is meant to be a small, curated pin set; this stops a tenant that writes
+// thousands of core notes from making CoreNotes an unbounded fetch into the
+// working set. The brief budgeter truncates further, so the cap only bounds the
+// read.
+const maxCoreNotes = 500
+
+// CoreNotes returns the Core-tier notes (id, title, body) for the tenant, ordered
+// deterministically by id and capped at maxCoreNotes. These are the always-loaded
+// surface. A tenant at the cap is logged so an oversized Core tier is visible.
 func (s *Store) CoreNotes(ctx context.Context, tenantID string) ([]NoteRecord, error) {
 	ctx, cancel := context.WithTimeout(ctx, storeQueryTimeout)
 	defer cancel()
@@ -31,7 +39,8 @@ func (s *Store) CoreNotes(ctx context.Context, tenantID string) ([]NoteRecord, e
 			   FROM notes
 			  WHERE tenant_id = current_setting('app.tenant_id')::uuid
 			    AND tier = 'core' AND superseded = FALSE AND deleted = FALSE
-			  ORDER BY id`)
+			  ORDER BY id
+			  LIMIT $1`, maxCoreNotes)
 		if err != nil {
 			return fmt.Errorf("querying core notes: %w", err)
 		}
@@ -41,6 +50,10 @@ func (s *Store) CoreNotes(ctx context.Context, tenantID string) ([]NoteRecord, e
 	})
 	if err != nil {
 		return nil, err
+	}
+	if len(out) == maxCoreNotes && s.log != nil {
+		s.log.WithField("cap", maxCoreNotes).
+			Warn("Core tier hit the CoreNotes cap; some core notes are excluded from the working set")
 	}
 	return out, nil
 }

@@ -28,6 +28,12 @@ func securityHeaders(next http.Handler) http.Handler {
 	})
 }
 
+// maxResponseBuffer caps how much of a response contentLengthBuffer will hold in
+// memory. Tool results are bounded (list pages cap at 500 summaries, note bodies
+// at 1 MiB), so 8 MiB is well above any normal response; a handler that exceeds
+// it falls back to chunked streaming rather than buffering without bound.
+const maxResponseBuffer = 8 << 20
+
 // contentLengthBuffer buffers a handler's full response so the server sends a
 // definite Content-Length instead of chunked transfer encoding. Some HTTP client
 // stacks handle chunked responses unreliably — read behavior that degrades as the
@@ -35,9 +41,10 @@ func securityHeaders(next http.Handler) http.Handler {
 // proxy, while the server itself returned the complete body every time.
 //
 // Buffering is safe because the MCP transport runs in JSON-response
-// (non-streaming) mode and every other route is small. As a guard, if a handler
-// ever streams (Content-Type text/event-stream), the writer switches to
-// pass-through so an SSE response is never withheld.
+// (non-streaming) mode and every other route is small. Two guards keep it
+// bounded: if a handler streams (Content-Type text/event-stream) or explicitly
+// flushes, or if the buffered body exceeds maxResponseBuffer, the writer switches
+// to pass-through so the response is neither withheld nor held in memory unbounded.
 func contentLengthBuffer(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		bw := &bufferingWriter{ResponseWriter: w, status: http.StatusOK}
@@ -66,22 +73,57 @@ func (b *bufferingWriter) streaming() bool {
 func (b *bufferingWriter) WriteHeader(code int) {
 	b.status = code
 	if b.streaming() {
-		b.passthrough = true
-		b.wroteHeader = true
-		b.ResponseWriter.WriteHeader(code)
+		b.switchToPassthrough()
 	}
 }
 
 func (b *bufferingWriter) Write(p []byte) (int, error) {
-	if !b.passthrough && !b.wroteHeader && b.streaming() {
-		b.passthrough = true
-		b.wroteHeader = true
-		b.ResponseWriter.WriteHeader(b.status)
+	if !b.passthrough && b.streaming() {
+		b.switchToPassthrough()
+	}
+	// Outsized response: stop withholding it, flush what we have, and stream the
+	// rest (chunked) so memory stays bounded at the cost of the Content-Length.
+	if !b.passthrough && b.buf.Len()+len(p) > maxResponseBuffer {
+		b.switchToPassthrough()
 	}
 	if b.passthrough {
 		return b.ResponseWriter.Write(p)
 	}
 	return b.buf.Write(p)
+}
+
+// switchToPassthrough emits the status line and any buffered bytes to the
+// underlying writer, then routes all further writes straight through. Idempotent.
+func (b *bufferingWriter) switchToPassthrough() {
+	if b.passthrough {
+		return
+	}
+	b.passthrough = true
+	b.wroteHeader = true
+	b.ResponseWriter.WriteHeader(b.status)
+	buffered := b.buf.Bytes()
+	b.buf.Reset()
+	if len(buffered) > 0 {
+		if _, err := b.ResponseWriter.Write(buffered); err != nil {
+			return
+		}
+	}
+}
+
+// Flush satisfies http.Flusher: it switches to pass-through (sending the status
+// and any buffered bytes) and flushes the underlying writer, so a handler that
+// explicitly flushes — e.g. a future streaming path — is not silently withheld.
+func (b *bufferingWriter) Flush() {
+	b.switchToPassthrough()
+	if f, ok := b.ResponseWriter.(http.Flusher); ok {
+		f.Flush()
+	}
+}
+
+// Unwrap exposes the underlying ResponseWriter to http.ResponseController so it
+// can find Flusher/other optional interfaces down the wrapper chain.
+func (b *bufferingWriter) Unwrap() http.ResponseWriter {
+	return b.ResponseWriter
 }
 
 // finish emits the buffered response with a definite Content-Length. It is a
@@ -108,6 +150,12 @@ type statusRecorder struct {
 func (s *statusRecorder) WriteHeader(code int) {
 	s.status = code
 	s.ResponseWriter.WriteHeader(code)
+}
+
+// Unwrap exposes the underlying ResponseWriter to http.ResponseController so
+// optional interfaces (e.g. Flusher) resolve through this wrapper too.
+func (s *statusRecorder) Unwrap() http.ResponseWriter {
+	return s.ResponseWriter
 }
 
 // observe is the outermost middleware: it assigns a correlation id, threads

@@ -2,6 +2,49 @@ package main
 
 import "testing"
 
+// TestRequireHTTPS_ExactHost verifies the loopback carve-out matches the host
+// exactly, so a look-alike like http://127.0.0.1.attacker.tld is rejected.
+func TestRequireHTTPS_ExactHost(t *testing.T) {
+	ok := []string{
+		"https://issuer.example",
+		"http://127.0.0.1:8200/jwks",
+		"http://localhost:9000",
+		"http://[::1]:8200",
+	}
+	for _, u := range ok {
+		if err := requireHTTPS("X", u); err != nil {
+			t.Errorf("requireHTTPS(%q) = %v, want nil", u, err)
+		}
+	}
+	bad := []string{
+		"http://insecure.example",
+		"http://127.0.0.1.attacker.tld/jwks",
+		"http://localhost.attacker.tld",
+		"http://evil.com",
+	}
+	for _, u := range bad {
+		if err := requireHTTPS("X", u); err == nil {
+			t.Errorf("requireHTTPS(%q) = nil, want error", u)
+		}
+	}
+}
+
+// TestParseMaxConns covers the default, valid override, and rejection of bad
+// PERSISTOR_DB_MAX_CONNS values.
+func TestParseMaxConns(t *testing.T) {
+	if n, err := parseMaxConns(""); err != nil || n != defaultDBMaxConns {
+		t.Errorf("parseMaxConns(\"\") = %d, %v; want %d, nil", n, err, defaultDBMaxConns)
+	}
+	if n, err := parseMaxConns("16"); err != nil || n != 16 {
+		t.Errorf("parseMaxConns(\"16\") = %d, %v; want 16, nil", n, err)
+	}
+	for _, bad := range []string{"0", "-1", "abc"} {
+		if _, err := parseMaxConns(bad); err == nil {
+			t.Errorf("parseMaxConns(%q) = nil error, want rejection", bad)
+		}
+	}
+}
+
 // TestLoadConfig_OIDC verifies the OIDC-only config resolution + validation. It
 // uses t.Setenv (no DB, no network).
 func TestLoadConfig_OIDC(t *testing.T) {
