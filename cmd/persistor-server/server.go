@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"net"
 	"net/http"
 	"time"
 
@@ -70,7 +71,11 @@ func newMux(getServer func(*http.Request) *mcp.Server, verifier auth.TokenVerifi
 	// A future browser client (claude.ai) is added via AddTrustedOrigin.
 	protection := http.NewCrossOriginProtection()
 	mux := http.NewServeMux()
-	mux.Handle("/mcp", protection.Handler(authed))
+	// Cap the request body so one authenticated tenant can't exhaust memory/disk
+	// with a single huge memory_write: the per-tenant write limiter caps
+	// frequency, not size. 4 MiB comfortably fits a max-size note (the DB CHECK
+	// bounds the body at 1 MiB) plus JSON-RPC framing.
+	mux.Handle("/mcp", protection.Handler(limitBody(maxMCPBodyBytes, authed)))
 	// /healthz is pure liveness (the process is up); /readyz also checks the DB,
 	// the daemon's only hard dependency, so an orchestrator won't route to an
 	// instance whose Postgres is unreachable.
@@ -103,7 +108,7 @@ func newMux(getServer func(*http.Request) *mcp.Server, verifier auth.TokenVerifi
 // Writes are PG-native: Engine.Write goes straight to Postgres scoped to the
 // token's tenant, so memory_write is fully tenant-isolated by construction — no
 // shared write directory. Reads are tenant-isolated via RLS.
-func tenantServer(store *index.Store, limiter *mcpengine.WriteLimiter, version string) func(*http.Request) *mcp.Server {
+func tenantServer(store *index.Store, writeLimiter, readLimiter *mcpengine.KeyLimiter, version string) func(*http.Request) *mcp.Server {
 	return func(r *http.Request) *mcp.Server {
 		tenantID := ""
 		readOnly := false
@@ -114,7 +119,39 @@ func tenantServer(store *index.Store, limiter *mcpengine.WriteLimiter, version s
 		}
 		engine := mcpengine.NewEngine(store, tenantID,
 			mcpengine.WithReadOnly(readOnly), mcpengine.WithSurface(surface),
-			mcpengine.WithWriteLimiter(limiter))
+			mcpengine.WithWriteLimiter(writeLimiter), mcpengine.WithReadLimiter(readLimiter))
 		return mcpengine.NewServer(engine, version)
 	}
+}
+
+// limitBody caps a handler's request body at maxBytes via http.MaxBytesReader, so
+// a reader that exceeds it fails instead of buffering unboundedly into memory.
+func limitBody(maxBytes int64, next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		r.Body = http.MaxBytesReader(w, r.Body, maxBytes)
+		next.ServeHTTP(w, r)
+	})
+}
+
+// perIPLimit rejects requests from a client IP over its rate, returning 429. Used
+// to bound the open, unauthenticated /register proxy. The key is the connecting
+// peer (RemoteAddr); X-Forwarded-For is deliberately ignored as it is spoofable.
+func perIPLimit(limiter *mcpengine.KeyLimiter, next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !limiter.Allow(clientIP(r)) {
+			http.Error(w, "rate limit exceeded", http.StatusTooManyRequests)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+// clientIP is the connecting peer's IP (host part of RemoteAddr), falling back to
+// the raw RemoteAddr if it has no port.
+func clientIP(r *http.Request) string {
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		return r.RemoteAddr
+	}
+	return host
 }

@@ -18,9 +18,10 @@ import (
 // status; the message is user-facing.
 var ErrReadOnly = errors.New("identity is read-only: memory_write is not permitted")
 
-// ErrRateLimited is returned by mutating tools when the tenant has exceeded its
-// per-tenant write rate. The caller should back off and retry.
-var ErrRateLimited = errors.New("write rate limit exceeded for this tenant: slow down and retry")
+// ErrRateLimited is returned by a tool when the tenant has exceeded its
+// per-tenant rate (a tighter cap on writes, a looser one on reads). The caller
+// should back off and retry.
+var ErrRateLimited = errors.New("rate limit exceeded for this tenant: slow down and retry")
 
 // defaultSurface labels a write whose transport did not set one (the audit
 // surface in note_versions). The remote daemon overrides it per session.
@@ -30,11 +31,12 @@ const defaultSurface = "mcp"
 // store directly, so the tools search, read, write, and brief over the same
 // Postgres full-text index — no filesystem. Each Engine is bound to one tenant.
 type Engine struct {
-	store    *index.Store
-	tenantID string
-	surface  string
-	readOnly bool
-	limiter  *WriteLimiter
+	store       *index.Store
+	tenantID    string
+	surface     string
+	readOnly    bool
+	limiter     *KeyLimiter // write/delete/restore cap (tighter)
+	readLimiter *KeyLimiter // search/get/list/namespaces/brief cap (looser)
 }
 
 // EngineOption configures optional Engine behavior.
@@ -59,8 +61,16 @@ func WithSurface(surface string) EngineOption {
 // WithWriteLimiter attaches a shared per-tenant write rate limiter. The mutating
 // tools consult it before touching the store. A nil limiter (the default) means
 // no limiting.
-func WithWriteLimiter(l *WriteLimiter) EngineOption {
+func WithWriteLimiter(l *KeyLimiter) EngineOption {
 	return func(e *Engine) { e.limiter = l }
+}
+
+// WithReadLimiter attaches a shared per-tenant read rate limiter. The read tools
+// (search/get/list/namespaces/brief) consult it so a single tenant cannot run
+// unbounded FTS/assembly against the daemon. A nil limiter (the default) means
+// no limiting — used by the local single-user CLI path.
+func WithReadLimiter(l *KeyLimiter) EngineOption {
+	return func(e *Engine) { e.readLimiter = l }
 }
 
 // NewEngine builds an Engine over the given store for one tenant. Writes go
@@ -101,6 +111,9 @@ const defaultSearchLimit = 8
 
 // Search runs the full-text retrieval.
 func (e *Engine) Search(ctx context.Context, in SearchInput) (SearchOutput, error) {
+	if !e.readLimiter.Allow(e.tenantID) {
+		return SearchOutput{}, ErrRateLimited
+	}
 	if in.Query == "" {
 		return SearchOutput{}, fmt.Errorf("query is required")
 	}
@@ -149,6 +162,9 @@ type GetOutput struct {
 // Get fetches one note's full record by id, including its current version. A
 // tombstoned note, or a note outside the requested namespace, reads as not-found.
 func (e *Engine) Get(ctx context.Context, in GetInput) (GetOutput, error) {
+	if !e.readLimiter.Allow(e.tenantID) {
+		return GetOutput{}, ErrRateLimited
+	}
 	if in.ID == "" {
 		return GetOutput{}, fmt.Errorf("id is required")
 	}
@@ -203,6 +219,9 @@ const (
 // optionally filtered to one namespace — the browse/page path memory_search
 // cannot serve, because search needs a query term. Bodies come from memory_get.
 func (e *Engine) List(ctx context.Context, in ListInput) (ListOutput, error) {
+	if !e.readLimiter.Allow(e.tenantID) {
+		return ListOutput{}, ErrRateLimited
+	}
 	limit := in.Limit
 	if limit <= 0 {
 		limit = defaultListPageLimit
@@ -248,6 +267,9 @@ type NamespacesOutput struct {
 // the top-level map of where this tenant's memory lives. Useful to discover
 // namespaces before listing or searching within one.
 func (e *Engine) Namespaces(ctx context.Context) (NamespacesOutput, error) {
+	if !e.readLimiter.Allow(e.tenantID) {
+		return NamespacesOutput{}, ErrRateLimited
+	}
 	counts, err := e.store.Namespaces(ctx, e.tenantID)
 	if err != nil {
 		return NamespacesOutput{}, fmt.Errorf("namespaces: %w", err)
@@ -404,6 +426,9 @@ type BriefOutput struct {
 
 // Brief assembles the bounded working-set for the given seed.
 func (e *Engine) Brief(ctx context.Context, in BriefInput) (BriefOutput, error) {
+	if !e.readLimiter.Allow(e.tenantID) {
+		return BriefOutput{}, ErrRateLimited
+	}
 	opts := index.BriefOptions{Budget: in.Budget, CoreBudget: in.CoreBudget, TailLimit: in.TailLimit}
 	if opts.Budget <= 0 {
 		opts.Budget = 6000

@@ -39,13 +39,28 @@ import (
 
 const defaultListenAddr = "127.0.0.1:8088"
 
-// Per-tenant write rate limit at the MCP boundary: a sustained writesPerSecond
-// with a burst, applied to memory_write/delete/restore. Generous enough for any
-// real interactive or import-via-MCP workload, low enough to blunt a runaway or
-// prompt-injected agent.
+// Per-tenant rate limits at the MCP boundary. Writes (memory_write/delete/
+// restore) get a tighter cap that blunts a runaway or prompt-injected agent;
+// reads (search/get/list/namespaces/brief) get a looser cap that still bounds
+// unbounded FTS/assembly per tenant. Both are generous for real interactive or
+// import-via-MCP workloads.
 const (
 	writeRatePerSecond = 5
 	writeRateBurst     = 20
+	readRatePerSecond  = 30
+	readRateBurst      = 60
+)
+
+// maxMCPBodyBytes caps the /mcp request body. 4 MiB fits a max-size note (the DB
+// bounds the body at 1 MiB) plus JSON-RPC framing, while stopping a single
+// authenticated tenant from exhausting memory with one giant request.
+const maxMCPBodyBytes = 4 << 20
+
+// Per-client-IP rate limit for the open /register DCR proxy: it relays to the
+// IdP unauthenticated, so cap how fast any one IP can drive registrations.
+const (
+	registerRatePerSecond = 1
+	registerRateBurst     = 5
 )
 
 func main() {
@@ -133,8 +148,9 @@ func applySchema(ctx context.Context, cfg *serverConfig, pool *dbpool.Pool, log 
 // with timeouts suited to a long-running network service. ready is the /readyz
 // DB probe.
 func buildHTTPServer(cfg *serverConfig, store *index.Store, authn authBundle, log *logrus.Logger, ready func(context.Context) error) (*http.Server, error) {
-	limiter := mcpengine.NewWriteLimiter(writeRatePerSecond, writeRateBurst)
-	getServer := tenantServer(store, limiter, config.Version)
+	writeLimiter := mcpengine.NewKeyLimiter(writeRatePerSecond, writeRateBurst)
+	readLimiter := mcpengine.NewKeyLimiter(readRatePerSecond, readRateBurst)
+	getServer := tenantServer(store, writeLimiter, readLimiter, config.Version)
 	mux := newMux(getServer, authn.verify, authn.opts, authn.metadata, ready)
 	if cfg.stytchPublicToken != "" {
 		consent, err := newConsentHandler(cfg.stytchPublicToken)
@@ -154,7 +170,8 @@ func buildHTTPServer(cfg *serverConfig, store *index.Store, authn authBundle, lo
 			&http.Client{Timeout: 10 * time.Second},
 			stytchEndpoint(cfg.oidcIssuer, "/v1/oauth2/register"),
 		)
-		mux.HandleFunc("/register", regProxy)
+		regLimiter := mcpengine.NewKeyLimiter(registerRatePerSecond, registerRateBurst)
+		mux.Handle("/register", perIPLimit(regLimiter, regProxy))
 	}
 	handler := requestLogger(log, securityHeaders(contentLengthBuffer(mux)))
 	return &http.Server{
