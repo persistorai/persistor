@@ -50,9 +50,11 @@ func (m *metrics) record(status int, durationMs int64) {
 	}
 }
 
-// serveHTTP writes the metrics snapshot as JSON. It exposes only aggregate
-// counters and pool saturation — no tenant-identifying data — so it is safe to
-// serve unauthenticated on the tailnet, like /healthz.
+// serveHTTP writes the metrics snapshot as JSON: aggregate counters and DB pool
+// saturation, no tenant-identifying data. It is bearer-gated at the mux (see
+// buildHTTPServer) rather than public — on a public ingress, exposing pool
+// capacity (max_conns / acquired_conns) would aid a connection-exhaustion
+// attack, so a valid token is required to read it.
 func (m *metrics) serveHTTP(w http.ResponseWriter, _ *http.Request) {
 	snap := map[string]any{
 		"requests_total":      m.requestsTotal.Load(),

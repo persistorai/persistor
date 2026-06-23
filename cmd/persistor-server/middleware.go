@@ -11,19 +11,33 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
+// hstsValue is the Strict-Transport-Security policy for public HTTPS
+// deployments: two years, applied to subdomains. No "preload" — that is a
+// near-irreversible registry commitment, deliberately left as an opt-in.
+const hstsValue = "max-age=63072000; includeSubDomains"
+
 // securityHeaders sets conservative security response headers on every route.
 // Clickjacking is the concrete concern: the /authorize consent page issues an
 // OAuth authorization, so it must never be framable. These headers are safe for
 // the JSON API and the (top-level, never-framed) consent page alike; they do not
 // constrain script/connect sources, so they don't risk the consent page's
 // cross-origin Stytch calls (tighter script-src/SRI is tracked as a follow-up).
-func securityHeaders(next http.Handler) http.Handler {
+//
+// hsts adds Strict-Transport-Security. It is gated on the deployment being
+// public HTTPS (the caller passes publicURL's scheme): TLS terminates upstream
+// (Cloudflare / App Platform), so the request reaches the app over plain HTTP
+// and r.TLS can't be used to detect it. The tailnet deployment legitimately
+// serves http://<tailnet-ip> and must NOT advertise HSTS.
+func securityHeaders(hsts bool, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		h := w.Header()
 		h.Set("X-Frame-Options", "DENY")
 		h.Set("X-Content-Type-Options", "nosniff")
 		h.Set("Referrer-Policy", "no-referrer")
 		h.Set("Content-Security-Policy", "frame-ancestors 'none'")
+		if hsts {
+			h.Set("Strict-Transport-Security", hstsValue)
+		}
 		next.ServeHTTP(w, r)
 	})
 }

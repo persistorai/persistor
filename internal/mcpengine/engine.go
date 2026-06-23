@@ -9,6 +9,8 @@ package mcpengine
 import (
 	"errors"
 
+	"github.com/sirupsen/logrus"
+
 	"github.com/briancolinger/persistor/internal/index"
 )
 
@@ -34,8 +36,9 @@ type Engine struct {
 	tenantID    string
 	surface     string
 	readOnly    bool
-	limiter     *KeyLimiter // write/delete/restore cap (tighter)
-	readLimiter *KeyLimiter // search/get/list/namespaces/brief cap (looser)
+	limiter     *KeyLimiter        // write/delete/restore cap (tighter)
+	readLimiter *KeyLimiter        // search/get/list/namespaces/brief cap (looser)
+	log         logrus.FieldLogger // server-side error logging; nil disables it
 }
 
 // EngineOption configures optional Engine behavior.
@@ -70,6 +73,14 @@ func WithWriteLimiter(l *KeyLimiter) EngineOption {
 // no limiting — used by the local single-user CLI path.
 func WithReadLimiter(l *KeyLimiter) EngineOption {
 	return func(e *Engine) { e.readLimiter = l }
+}
+
+// WithLogger attaches a logger the engine uses to record the detail of internal
+// (store/database) errors server-side before returning a generic ErrInternal to
+// the client (see opError). A nil logger (the default) disables that logging;
+// sanitization still happens.
+func WithLogger(l logrus.FieldLogger) EngineOption {
+	return func(e *Engine) { e.log = l }
 }
 
 // NewEngine builds an Engine over the given store for one tenant. Writes go

@@ -10,7 +10,7 @@ import (
 // SearchInput is the memory_search argument shape.
 type SearchInput struct {
 	Query             string `json:"query" jsonschema:"Search query: natural-language or keywords, matched against the prose notes via full-text search."`
-	Limit             int    `json:"limit,omitempty" jsonschema:"Max notes to return. Default 8."`
+	Limit             int    `json:"limit,omitempty" jsonschema:"Max notes to return. Default 8, capped at 500."`
 	IncludeSuperseded bool   `json:"include_superseded,omitempty" jsonschema:"Include superseded (corrected/stale) notes. Default false — retrieval returns current notes only."`
 	Namespace         string `json:"namespace,omitempty" jsonschema:"Restrict results to one namespace (e.g. demo, claude, work). Omit to search all namespaces."`
 }
@@ -30,7 +30,13 @@ type SearchOutput struct {
 	Results []SearchHit `json:"results"`
 }
 
-const defaultSearchLimit = 8
+const (
+	defaultSearchLimit = 8
+	// maxSearchLimit caps a caller-supplied search/brief result limit so one
+	// request can't force an unbounded FTS scan/sort and result serialization
+	// (a single-request DoS). Mirrors maxListPageLimit's bound on memory_list.
+	maxSearchLimit = 500
+)
 
 // Search runs the full-text retrieval.
 func (e *Engine) Search(ctx context.Context, in SearchInput) (SearchOutput, error) {
@@ -44,13 +50,14 @@ func (e *Engine) Search(ctx context.Context, in SearchInput) (SearchOutput, erro
 	if limit <= 0 {
 		limit = defaultSearchLimit
 	}
+	limit = min(limit, maxSearchLimit)
 	hits, err := e.store.SearchNotes(ctx, e.tenantID, in.Query, index.SearchOpts{
 		Limit:             limit,
 		IncludeSuperseded: in.IncludeSuperseded,
 		Namespace:         in.Namespace,
 	})
 	if err != nil {
-		return SearchOutput{}, fmt.Errorf("search: %w", err)
+		return SearchOutput{}, e.opError("search", err)
 	}
 	out := SearchOutput{Results: make([]SearchHit, len(hits))}
 	for i := range hits {
@@ -93,7 +100,7 @@ func (e *Engine) Get(ctx context.Context, in GetInput) (GetOutput, error) {
 	}
 	st, found, err := e.store.NoteState(ctx, e.tenantID, in.ID)
 	if err != nil {
-		return GetOutput{}, fmt.Errorf("get: %w", err)
+		return GetOutput{}, e.opError("get", err)
 	}
 	if !found || st.Deleted || (in.Namespace != "" && st.Namespace != in.Namespace) {
 		return GetOutput{Found: false, ID: in.ID}, nil
@@ -158,7 +165,7 @@ func (e *Engine) List(ctx context.Context, in ListInput) (ListOutput, error) {
 		IncludeSuperseded: in.IncludeSuperseded,
 	})
 	if err != nil {
-		return ListOutput{}, fmt.Errorf("list: %w", err)
+		return ListOutput{}, e.opError("list", err)
 	}
 	out := ListOutput{Notes: make([]ListEntry, len(summaries)), Count: len(summaries), Limit: limit, Offset: offset}
 	for i := range summaries {
@@ -195,7 +202,7 @@ func (e *Engine) Namespaces(ctx context.Context) (NamespacesOutput, error) {
 	}
 	counts, err := e.store.Namespaces(ctx, e.tenantID)
 	if err != nil {
-		return NamespacesOutput{}, fmt.Errorf("namespaces: %w", err)
+		return NamespacesOutput{}, e.opError("namespaces", err)
 	}
 	out := NamespacesOutput{Namespaces: make([]NamespaceEntry, len(counts))}
 	for i := range counts {
@@ -209,7 +216,7 @@ type BriefInput struct {
 	Seed       string `json:"seed,omitempty" jsonschema:"Retrieval seed for the Tail tier (e.g. the current project/topic). Empty returns Core only."`
 	Budget     int    `json:"budget,omitempty" jsonschema:"Total token budget. Default 6000."`
 	CoreBudget int    `json:"core_budget,omitempty" jsonschema:"Max tokens for the Core tier. Default 2000."`
-	TailLimit  int    `json:"tail_limit,omitempty" jsonschema:"Max Tail notes to consider. Default 12."`
+	TailLimit  int    `json:"tail_limit,omitempty" jsonschema:"Max Tail notes to consider. Default 12, capped at 500."`
 }
 
 // BriefOutput is the brief result shape.
@@ -235,9 +242,10 @@ func (e *Engine) Brief(ctx context.Context, in BriefInput) (BriefOutput, error) 
 	if opts.TailLimit <= 0 {
 		opts.TailLimit = 12
 	}
+	opts.TailLimit = min(opts.TailLimit, maxSearchLimit)
 	ws, err := index.AssembleWorkingSet(ctx, e.store, e.tenantID, in.Seed, opts)
 	if err != nil {
-		return BriefOutput{}, fmt.Errorf("brief: %w", err)
+		return BriefOutput{}, e.opError("brief", err)
 	}
 	return BriefOutput{
 		Markdown:    index.RenderMarkdown(&ws),

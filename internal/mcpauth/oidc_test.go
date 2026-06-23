@@ -76,6 +76,10 @@ func TestOIDCAuth_Verify(t *testing.T) {
 	wrongAud.Audience = jwt.ClaimStrings{"someone-else"}
 	noSub := validClaims()
 	noSub.Subject = ""
+	// A subject containing the tenant-derivation separator "|" is rejected so the
+	// issuer|subject join can't be made ambiguous (a cross-tenant collision).
+	sepSub := validClaims()
+	sepSub.Subject = "user|admin"
 	badSig := validClaims()
 	// alg confusion: an HS256 token (signed with any secret) must be rejected by
 	// WithValidMethods before the key function is ever consulted.
@@ -94,6 +98,7 @@ func TestOIDCAuth_Verify(t *testing.T) {
 		{"wrong audience", signRS256(t, key, &wrongAud)},
 		{"bad signature", signRS256(t, other, &badSig)},
 		{"no subject", signRS256(t, key, &noSub)},
+		{"subject with separator", signRS256(t, key, &sepSub)},
 		{"alg confusion", hs256},
 		{"garbage", "not.a.jwt"},
 	}
