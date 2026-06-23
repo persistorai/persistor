@@ -9,6 +9,7 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/auth"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+	"github.com/sirupsen/logrus"
 
 	"github.com/persistorai/persistor/internal/index"
 	"github.com/persistorai/persistor/internal/mcpauth"
@@ -75,7 +76,12 @@ func newMux(getServer func(*http.Request) *mcp.Server, verifier auth.TokenVerifi
 	// with a single huge memory_write: the per-tenant write limiter caps
 	// frequency, not size. 4 MiB comfortably fits a max-size note (the DB CHECK
 	// bounds the body at 1 MiB) plus JSON-RPC framing.
-	mux.Handle("/mcp", protection.Handler(limitBody(maxMCPBodyBytes, authed)))
+	// Coarse per-IP backstop OUTERMOST on /mcp, so a pre-auth flood is dropped
+	// before the cross-origin guard and JWT verification do any work. Generous
+	// limits (see mcpIPRate*) keep normal use clear; see the const for the
+	// behind-a-proxy caveat.
+	mcpIPLimiter := mcpengine.NewKeyLimiter(mcpIPRatePerSecond, mcpIPRateBurst)
+	mux.Handle("/mcp", perIPLimit(mcpIPLimiter, protection.Handler(limitBody(maxMCPBodyBytes, authed))))
 	// /healthz is pure liveness (the process is up); /readyz also checks the DB,
 	// the daemon's only hard dependency, so an orchestrator won't route to an
 	// instance whose Postgres is unreachable.
@@ -108,7 +114,7 @@ func newMux(getServer func(*http.Request) *mcp.Server, verifier auth.TokenVerifi
 // Writes are PG-native: Engine.Write goes straight to Postgres scoped to the
 // token's tenant, so memory_write is fully tenant-isolated by construction — no
 // shared write directory. Reads are tenant-isolated via RLS.
-func tenantServer(store *index.Store, writeLimiter, readLimiter *mcpengine.KeyLimiter, version string) func(*http.Request) *mcp.Server {
+func tenantServer(store *index.Store, writeLimiter, readLimiter *mcpengine.KeyLimiter, version string, log logrus.FieldLogger) func(*http.Request) *mcp.Server {
 	return func(r *http.Request) *mcp.Server {
 		tenantID := ""
 		readOnly := false
@@ -124,7 +130,8 @@ func tenantServer(store *index.Store, writeLimiter, readLimiter *mcpengine.KeyLi
 		}
 		engine := mcpengine.NewEngine(store, tenantID,
 			mcpengine.WithReadOnly(readOnly), mcpengine.WithSurface(surface),
-			mcpengine.WithWriteLimiter(writeLimiter), mcpengine.WithReadLimiter(readLimiter))
+			mcpengine.WithWriteLimiter(writeLimiter), mcpengine.WithReadLimiter(readLimiter),
+			mcpengine.WithLogger(log))
 		return mcpengine.NewServer(engine, version)
 	}
 }

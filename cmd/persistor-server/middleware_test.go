@@ -14,7 +14,7 @@ import (
 // TestSecurityHeaders verifies the hardening headers (clickjacking + sniffing)
 // are set on every response.
 func TestSecurityHeaders(t *testing.T) {
-	h := securityHeaders(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	h := securityHeaders(false, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}))
 	rec := httptest.NewRecorder()
@@ -30,6 +30,23 @@ func TestSecurityHeaders(t *testing.T) {
 		if got := rec.Header().Get(k); got != v {
 			t.Errorf("header %s = %q, want %q", k, got, v)
 		}
+	}
+	// HSTS is gated off for a non-HTTPS (tailnet) deployment.
+	if got := rec.Header().Get("Strict-Transport-Security"); got != "" {
+		t.Errorf("HSTS set with hsts=false: %q", got)
+	}
+}
+
+// TestSecurityHeadersHSTS verifies HSTS is set when the deployment is public
+// HTTPS (hsts=true).
+func TestSecurityHeadersHSTS(t *testing.T) {
+	h := securityHeaders(true, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/mcp", http.NoBody))
+	if got := rec.Header().Get("Strict-Transport-Security"); got != hstsValue {
+		t.Errorf("Strict-Transport-Security = %q, want %q", got, hstsValue)
 	}
 }
 

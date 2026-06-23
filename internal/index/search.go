@@ -19,6 +19,11 @@ type NoteHit struct {
 	Superseded bool
 }
 
+// maxSearchResults is a defensive upper bound on a search LIMIT. The MCP engine
+// caps the caller-supplied limit already; this bounds every other caller (CLI,
+// eval, future tools) so no single query can force an unbounded scan/sort.
+const maxSearchResults = 500
+
 // SearchOpts tunes a retrieval.
 type SearchOpts struct {
 	Limit             int
@@ -38,6 +43,7 @@ func (s *Store) SearchNotes(ctx context.Context, tenantID, query string, opts Se
 	if limit <= 0 {
 		limit = 5
 	}
+	limit = min(limit, maxSearchResults)
 
 	// OR the query terms rather than AND-ing them. websearch_to_tsquery defaults
 	// to AND, which makes recall brittle to a single extra/absent word; ORing the

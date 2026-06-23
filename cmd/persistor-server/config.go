@@ -82,6 +82,12 @@ func loadConfig() (serverConfig, error) {
 	return cfg, nil
 }
 
+// publicHTTPS reports whether the externally-visible URL is HTTPS, gating
+// HSTS (set only on public TLS deployments, not the http tailnet bind).
+func (c *serverConfig) publicHTTPS() bool {
+	return strings.HasPrefix(c.publicURL, "https://")
+}
+
 // parseTrustedOrigins resolves the comma-separated browser origins allowed to
 // make cross-origin /mcp requests, defaulting to the Claude web app when unset.
 // Whitespace around entries is trimmed and empties are dropped.

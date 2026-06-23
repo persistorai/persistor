@@ -26,6 +26,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/modelcontextprotocol/go-sdk/auth"
 	"github.com/sirupsen/logrus"
 
 	"github.com/persistorai/persistor/internal/config"
@@ -60,6 +61,17 @@ const maxMCPBodyBytes = 4 << 20
 const (
 	registerRatePerSecond = 1
 	registerRateBurst     = 5
+)
+
+// Coarse per-client-IP backstop on /mcp: a pre-auth flood limiter that drops
+// requests before the (cheap but non-zero) JWT verification. Generous so normal
+// interactive use never trips it. NOTE: behind a reverse proxy (Cloudflare / App
+// Platform) the connecting peer is the proxy, so this collapses toward a global
+// limit; authoritative per-client limiting belongs at the edge once the origin
+// is locked to it. For a direct-to-origin flood it keys on the real attacker IP.
+const (
+	mcpIPRatePerSecond = 100
+	mcpIPRateBurst     = 200
 )
 
 func main() {
@@ -153,7 +165,7 @@ func applySchema(ctx context.Context, cfg *serverConfig, pool *dbpool.Pool, log 
 func buildHTTPServer(cfg *serverConfig, store *index.Store, authn authBundle, log *logrus.Logger, ready func(context.Context) error, poolStat func() dbpool.Stat) (*http.Server, error) {
 	writeLimiter := mcpengine.NewKeyLimiter(writeRatePerSecond, writeRateBurst)
 	readLimiter := mcpengine.NewKeyLimiter(readRatePerSecond, readRateBurst)
-	getServer := tenantServer(store, writeLimiter, readLimiter, config.Version)
+	getServer := tenantServer(store, writeLimiter, readLimiter, config.Version, log)
 	// Cross-origin guard for /mcp, configured with the browser origins allowed to
 	// reach it cross-site (claude.ai web by default). Built here so AddTrustedOrigin
 	// errors on a malformed configured origin surface at startup.
@@ -165,7 +177,12 @@ func buildHTTPServer(cfg *serverConfig, store *index.Store, authn authBundle, lo
 	}
 	mux := newMux(getServer, authn.verify, authn.opts, authn.metadata, ready, protection)
 	m := newMetrics(poolStat)
-	mux.HandleFunc("/metrics", m.serveHTTP)
+	// /metrics is bearer-gated, not public: it exposes operational counters and DB
+	// pool saturation (max_conns / acquired_conns informs a connection-exhaustion
+	// attack). The daemon is reachable on a public ingress, so an unauthenticated
+	// /metrics would leak that to anyone — require a valid token like /mcp does.
+	metricsHandler := auth.RequireBearerToken(authn.verify, authn.opts)(http.HandlerFunc(m.serveHTTP))
+	mux.Handle("/metrics", metricsHandler)
 	if cfg.stytchPublicToken != "" {
 		consent, err := newConsentHandler(cfg.stytchPublicToken)
 		if err != nil {
@@ -187,15 +204,20 @@ func buildHTTPServer(cfg *serverConfig, store *index.Store, authn authBundle, lo
 		regLimiter := mcpengine.NewKeyLimiter(registerRatePerSecond, registerRateBurst)
 		mux.Handle("/register", perIPLimit(regLimiter, regProxy))
 	}
-	handler := observe(log, m, securityHeaders(cors(contentLengthBuffer(mux))))
+	handler := observe(log, m, securityHeaders(cfg.publicHTTPS(), cors(contentLengthBuffer(mux))))
 	return &http.Server{
 		Addr:              cfg.listenAddr,
 		Handler:           handler,
 		ReadHeaderTimeout: 10 * time.Second,
 		ReadTimeout:       30 * time.Second,
 		IdleTimeout:       120 * time.Second,
-		// No WriteTimeout: MCP Streamable HTTP responses can be long-lived
-		// (SSE-style streaming); a write deadline would truncate them.
+		// WriteTimeout bounds a slow-reading client holding a connection. It is
+		// safe because the transport runs in JSONResponse (non-streaming) mode —
+		// every response is a single, bounded JSON body, not a long-lived
+		// text/event-stream. It comfortably exceeds the 30s DB statement_timeout
+		// (the timeout covers handler execution too). Re-enabling SSE streaming
+		// would require revisiting this.
+		WriteTimeout: 120 * time.Second,
 	}, nil
 }
 

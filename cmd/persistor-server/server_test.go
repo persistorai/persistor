@@ -65,7 +65,7 @@ func newTestStack(t *testing.T) *testStack {
 	store := index.NewStore(pool, log)
 
 	verifier := mcpauth.NewOIDCAuth(keyFunc, testIssuer, testAudience)
-	getServer := tenantServer(store, nil, nil, "test")
+	getServer := tenantServer(store, nil, nil, "test", log)
 	authOpts := &auth.RequireBearerTokenOptions{ResourceMetadataURL: "http://example/.well-known/oauth-protected-resource"}
 	ts := httptest.NewServer(newMux(getServer, verifier.Verify, authOpts, nil, pool.Ping, http.NewCrossOriginProtection()))
 	t.Cleanup(ts.Close)
@@ -238,6 +238,57 @@ func TestProtectedResourceMetadata(t *testing.T) {
 	if got.Resource != meta.Resource || len(got.AuthorizationServers) != 1 ||
 		got.AuthorizationServers[0] != meta.AuthorizationServers[0] {
 		t.Fatalf("metadata = %+v, want %+v", got, meta)
+	}
+}
+
+// TestBuildHTTPServer_MetricsGatedAndHSTS exercises the real server wiring: on a
+// public HTTPS deployment /metrics requires a bearer token (no longer public)
+// and responses carry HSTS. No DB needed — the verifier rejects every token and
+// the routes under test don't touch the store.
+func TestBuildHTTPServer_MetricsGatedAndHSTS(t *testing.T) {
+	cfg := serverConfig{
+		listenAddr:     "127.0.0.1:0",
+		publicURL:      "https://mcp.test.example",
+		trustedOrigins: []string{"https://claude.ai"},
+	}
+	authn := authBundle{
+		verify: func(context.Context, string, *http.Request) (*auth.TokenInfo, error) {
+			return nil, auth.ErrInvalidToken
+		},
+		opts: &auth.RequireBearerTokenOptions{ResourceMetadataURL: cfg.publicURL + "/.well-known/oauth-protected-resource"},
+	}
+	log := logrus.New()
+	log.SetLevel(logrus.ErrorLevel)
+	srv, err := buildHTTPServer(&cfg, nil, authn, log, nil, func() dbpool.Stat { return dbpool.Stat{} })
+	if err != nil {
+		t.Fatalf("buildHTTPServer: %v", err)
+	}
+	ts := httptest.NewServer(srv.Handler)
+	defer ts.Close()
+
+	// /metrics without a token -> 401 (was unauthenticated before the fix).
+	mreq, _ := http.NewRequestWithContext(context.Background(), http.MethodGet, ts.URL+"/metrics", http.NoBody)
+	mresp, err := http.DefaultClient.Do(mreq)
+	if err != nil {
+		t.Fatalf("metrics: %v", err)
+	}
+	_ = mresp.Body.Close()
+	if mresp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("/metrics without token = %d, want 401", mresp.StatusCode)
+	}
+
+	// HSTS advertised for the public HTTPS deployment; /healthz stays open.
+	hreq, _ := http.NewRequestWithContext(context.Background(), http.MethodGet, ts.URL+"/healthz", http.NoBody)
+	hresp, err := http.DefaultClient.Do(hreq)
+	if err != nil {
+		t.Fatalf("healthz: %v", err)
+	}
+	_ = hresp.Body.Close()
+	if hresp.StatusCode != http.StatusOK {
+		t.Fatalf("/healthz = %d, want 200", hresp.StatusCode)
+	}
+	if got := hresp.Header.Get("Strict-Transport-Security"); got != hstsValue {
+		t.Fatalf("HSTS = %q, want %q", got, hstsValue)
 	}
 }
 

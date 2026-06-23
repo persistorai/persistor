@@ -72,7 +72,7 @@ func (e *Engine) Write(ctx context.Context, in *WriteInput) (WriteOutput, error)
 		Surface:    e.surface,
 	}, in.ExpectedVersion)
 	if err != nil {
-		return WriteOutput{}, err
+		return WriteOutput{}, e.opError("write", err)
 	}
 	return WriteOutput{ID: res.ID, Version: res.Version, Op: res.Op, Superseded: int(res.Superseded)}, nil
 }
@@ -104,7 +104,7 @@ func (e *Engine) Delete(ctx context.Context, in DeleteInput) (MutationOutput, er
 	}
 	res, err := e.store.DeleteNote(ctx, e.tenantID, in.ID, in.ExpectedVersion, e.surface)
 	if err != nil {
-		return MutationOutput{}, err
+		return MutationOutput{}, e.opError("delete", err)
 	}
 	return MutationOutput{ID: res.ID, Version: res.Version, Op: res.Op}, nil
 }
@@ -130,7 +130,7 @@ func (e *Engine) Restore(ctx context.Context, in RestoreInput) (MutationOutput, 
 	}
 	res, err := e.store.RestoreNote(ctx, e.tenantID, in.ID, in.TargetVersion, in.ExpectedVersion, e.surface)
 	if err != nil {
-		return MutationOutput{}, err
+		return MutationOutput{}, e.opError("restore", err)
 	}
 	return MutationOutput{ID: res.ID, Version: res.Version, Op: res.Op}, nil
 }

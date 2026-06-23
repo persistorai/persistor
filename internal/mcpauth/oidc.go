@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"strings"
 
 	"github.com/MicahParks/keyfunc/v3"
 	"github.com/golang-jwt/jwt/v5"
@@ -15,6 +16,12 @@ import (
 // OIDC subject. It must NEVER change: a different namespace would remap every
 // existing user to a new tenant and orphan their memory.
 var tenantNamespace = uuid.MustParse("9e6f1b2c-3d4a-5b6c-7d8e-9f0a1b2c3d4e")
+
+// tenantSeparator joins issuer and subject in the tenant derivation
+// (TenantForSubject). It must never change (it is part of the stable tenant id)
+// and neither component may contain it, or the join would be ambiguous — see
+// Verify, which rejects a subject containing it.
+const tenantSeparator = "|"
 
 // Identity roles (mirrors the identities.role CHECK) and the auth.TokenInfo.Extra
 // key they travel under. Only readonly is write-restricted; owner/member may
@@ -93,6 +100,15 @@ func (a *OIDCAuth) Verify(ctx context.Context, token string, _ *http.Request) (*
 	if claims.Subject == "" {
 		return nil, fmt.Errorf("%w: token has no subject", auth.ErrInvalidToken)
 	}
+	// Defense in depth for the tenant join (issuer + "|" + subject): reject a
+	// subject containing the separator so two distinct (issuer, subject) pairs
+	// can never collide onto one tenant. Real Stytch subjects never contain it;
+	// this only forecloses a future multi-issuer collision. The issuer is
+	// operator-pinned config (a URL), so only the token-supplied subject is
+	// checked here.
+	if strings.Contains(claims.Subject, tenantSeparator) {
+		return nil, fmt.Errorf("%w: subject contains reserved separator", auth.ErrInvalidToken)
+	}
 	exp, err := claims.GetExpirationTime()
 	if err != nil || exp == nil {
 		return nil, fmt.Errorf("%w: token has no expiration", auth.ErrInvalidToken)
@@ -121,8 +137,15 @@ func (a *OIDCAuth) Verify(ctx context.Context, token string, _ *http.Request) (*
 // pure function of (issuer, subject), so the same login always maps to the same
 // tenant with no stored mapping. Explicit identity mapping (work/personal
 // separation, admin assignment) is a later refinement layered on top.
+//
+// Callers MUST ensure neither component contains tenantSeparator so the join is
+// unambiguous: Verify rejects a subject containing it, and the issuer is the
+// operator-pinned config value (a URL). A future multi-issuer design that takes
+// the issuer from the token instead should switch to a length-prefixed/nested
+// derivation and migrate existing tenant ids — changing this byte string remaps
+// every tenant and orphans their memory, so it must not change for current data.
 func TenantForSubject(issuer, subject string) string {
-	return uuid.NewSHA1(tenantNamespace, []byte(issuer+"|"+subject)).String()
+	return uuid.NewSHA1(tenantNamespace, []byte(issuer+tenantSeparator+subject)).String()
 }
 
 // NewJWKSKeyFunc returns a jwt.Keyfunc that fetches and caches the IdP's signing
