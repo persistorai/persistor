@@ -34,7 +34,12 @@ was originally written for a tailnet-bound daemon.
   (gated on `PERSISTOR_PUBLIC_URL` being `https://`; the tailnet `http://` bind
   is exempt). No `preload` — that's a near-irreversible commitment, left opt-in.
 
-## Open decisions (config, not code) — for the operator
+## Decisions (config, not code)
+
+> **Disposition (2026-06-23):** #1 **ACCEPTED** — rely on OIDC as the gate (it
+> blocks direct-origin `/mcp`) plus the new app-layer limits; revisit if traffic
+> or abuse grows. #6 **LEFT OPEN** on the Stytch Test project — reconsider before
+> any public/Live launch. Both are conscious choices, not oversights.
 
 ### #1 — Cloudflare WAF bypass (MEDIUM-HIGH)
 
