@@ -94,19 +94,71 @@ func (s *Store) SearchNotes(ctx context.Context, tenantID, query string, opts Se
 			return fmt.Errorf("querying chunks: %w", err)
 		}
 		defer rows.Close()
-		for rows.Next() {
-			var h NoteHit
-			if err := rows.Scan(&h.ID, &h.Title, &h.Kind, &h.Tier, &h.Superseded, &h.CreatedAt, &h.UpdatedAt, &h.Rank); err != nil {
-				return fmt.Errorf("scanning hit: %w", err)
-			}
-			hits = append(hits, h)
+		hits, err = scanNoteHits(rows)
+		return err
+	})
+	if err != nil {
+		return nil, err
+	}
+	if len(hits) == 0 && strings.TrimSpace(query) != "" {
+		return s.searchFuzzy(ctx, tenantID, query, opts, limit)
+	}
+	return hits, nil
+}
+
+// searchFuzzy is the zero-hit fallback: trigram word-similarity over chunk
+// text, catching what exact FTS lexemes miss — typos and misspelled entity
+// names ("balast systm", "Meridain Acord"). It runs ONLY when FTS found
+// nothing, so its similarity scores never mix with ts_rank scores. The <%
+// operator's built-in word_similarity threshold (default 0.6) keeps this from
+// dredging up junk for genuinely off-corpus queries — the abstention eval
+// category guards that property.
+func (s *Store) searchFuzzy(ctx context.Context, tenantID, query string, opts SearchOpts, limit int) ([]NoteHit, error) {
+	const q = `
+		SELECT n.id, n.title, n.kind, n.tier, n.superseded, n.created_at, n.updated_at,
+		       max(word_similarity($1, c.text)) AS rank
+		FROM chunks c
+		JOIN notes n
+		  ON n.tenant_id = c.tenant_id AND n.id = c.note_id
+		WHERE c.tenant_id = current_setting('app.tenant_id')::uuid
+		  AND $1 <% c.text
+		  AND n.deleted = FALSE
+		  AND (n.superseded = FALSE OR $2)
+		  AND ($3 = '' OR n.tier = $3)
+		  AND ($4 = '' OR n.namespace = $4)
+		  AND ($5::timestamptz IS NULL OR n.updated_at >= $5)
+		  AND ($6::timestamptz IS NULL OR n.updated_at <= $6)
+		GROUP BY n.id, n.title, n.kind, n.tier, n.superseded, n.created_at, n.updated_at
+		ORDER BY rank DESC, n.updated_at DESC, n.id
+		LIMIT $7`
+
+	var hits []NoteHit
+	err := s.inReadTx(ctx, tenantID, func(tx pgx.Tx) error {
+		rows, err := tx.Query(ctx, q, query, opts.IncludeSuperseded, opts.Tier, opts.Namespace, opts.Since, opts.Until, limit)
+		if err != nil {
+			return fmt.Errorf("querying chunks (fuzzy): %w", err)
 		}
-		return rows.Err()
+		defer rows.Close()
+		hits, err = scanNoteHits(rows)
+		return err
 	})
 	if err != nil {
 		return nil, err
 	}
 	return hits, nil
+}
+
+// scanNoteHits reads NoteHit rows in the shared search column order.
+func scanNoteHits(rows pgx.Rows) ([]NoteHit, error) {
+	var hits []NoteHit
+	for rows.Next() {
+		var h NoteHit
+		if err := rows.Scan(&h.ID, &h.Title, &h.Kind, &h.Tier, &h.Superseded, &h.CreatedAt, &h.UpdatedAt, &h.Rank); err != nil {
+			return nil, fmt.Errorf("scanning hit: %w", err)
+		}
+		hits = append(hits, h)
+	}
+	return hits, rows.Err()
 }
 
 // toOrQuery turns a free-text query into a websearch "a OR b OR c" expression

@@ -46,7 +46,7 @@ skipping the guarantees that matter most. Run them against a disposable Postgres
 docker run -d --name pg -e POSTGRES_USER=persistor -e POSTGRES_PASSWORD=persistor \
   -e POSTGRES_DB=persistor_test -p 127.0.0.1:5467:5432 postgres:18
 docker exec pg psql -U persistor -d persistor_test -c \
-  "CREATE EXTENSION IF NOT EXISTS btree_gin; \
+  "CREATE EXTENSION IF NOT EXISTS btree_gin; CREATE EXTENSION IF NOT EXISTS pg_trgm; \
    CREATE ROLE persistor_app LOGIN PASSWORD 'persistor_app' NOSUPERUSER NOBYPASSRLS; \
    ALTER SCHEMA public OWNER TO persistor_app;"
 URL=postgres://persistor_app:persistor_app@127.0.0.1:5467/persistor_test?sslmode=disable
