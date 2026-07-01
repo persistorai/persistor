@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"net/http"
+	"slices"
 	"strconv"
 	"time"
 
@@ -63,32 +64,49 @@ const (
 // token (preflights never carry one — answering it with 401 is what breaks the
 // browser). This does not weaken auth: every non-preflight request still goes
 // through the token verifier. CORS only governs which browser ORIGINS may issue a
-// request, not who is authorized. The origin is reflected (with Vary: Origin) so
-// any web client works; possession of a valid token remains the access boundary.
-func cors(next http.Handler) http.Handler {
+// request, not who is authorized.
+//
+// Only origins on the allowed list (PERSISTOR_TRUSTED_ORIGINS — the same list
+// the CSRF guard trusts) receive Access-Control-Allow-Origin. Auth is
+// bearer-only (no cookies), so reflecting any origin was not a data leak, but
+// there is no reason to hand arbitrary web pages a green light either: an
+// unlisted origin's preflight is answered 204 with no allow headers, which the
+// browser treats as a denial. The request-headers echo is likewise granted only
+// to allowed origins.
+func cors(allowedOrigins []string, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if origin := r.Header.Get("Origin"); origin != "" {
+		origin := r.Header.Get("Origin")
+		allowed := origin != "" && slices.Contains(allowedOrigins, origin)
+		if allowed {
 			h := w.Header()
 			h.Set("Access-Control-Allow-Origin", origin)
 			h.Add("Vary", "Origin")
 			h.Set("Access-Control-Expose-Headers", corsExposeHeaders)
 		}
 		// A CORS preflight is an OPTIONS carrying Access-Control-Request-Method.
-		// Answer it here (204) before it reaches the auth-gated mux.
+		// Answer it here (204) before it reaches the auth-gated mux — with the
+		// allow headers only for a trusted origin.
 		if r.Method == http.MethodOptions && r.Header.Get("Access-Control-Request-Method") != "" {
-			h := w.Header()
-			h.Set("Access-Control-Allow-Methods", corsAllowMethods)
-			if reqHeaders := r.Header.Get("Access-Control-Request-Headers"); reqHeaders != "" {
-				h.Set("Access-Control-Allow-Headers", reqHeaders)
-			} else {
-				h.Set("Access-Control-Allow-Headers", corsAllowHeaders)
+			if allowed {
+				setPreflightHeaders(w.Header(), r.Header.Get("Access-Control-Request-Headers"))
 			}
-			h.Set("Access-Control-Max-Age", corsMaxAge)
 			w.WriteHeader(http.StatusNoContent)
 			return
 		}
 		next.ServeHTTP(w, r)
 	})
+}
+
+// setPreflightHeaders grants a trusted origin's preflight the methods/headers a
+// browser MCP client needs, echoing its requested headers when present.
+func setPreflightHeaders(h http.Header, requestedHeaders string) {
+	h.Set("Access-Control-Allow-Methods", corsAllowMethods)
+	if requestedHeaders != "" {
+		h.Set("Access-Control-Allow-Headers", requestedHeaders)
+	} else {
+		h.Set("Access-Control-Allow-Headers", corsAllowHeaders)
+	}
+	h.Set("Access-Control-Max-Age", corsMaxAge)
 }
 
 // maxResponseBuffer caps how much of a response contentLengthBuffer will hold in

@@ -127,7 +127,7 @@ func TestReadyz(t *testing.T) {
 // CORS headers a browser MCP client needs — without reaching the next handler.
 func TestCORSPreflight(t *testing.T) {
 	called := false
-	h := cors(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { called = true }))
+	h := cors([]string{"https://claude.ai"}, http.HandlerFunc(func(http.ResponseWriter, *http.Request) { called = true }))
 	req := httptest.NewRequest(http.MethodOptions, "/mcp", http.NoBody)
 	req.Header.Set("Origin", "https://claude.ai")
 	req.Header.Set("Access-Control-Request-Method", "POST")
@@ -156,7 +156,7 @@ func TestCORSPreflight(t *testing.T) {
 // still reaches the wrapped handler.
 func TestCORSActualRequest(t *testing.T) {
 	called := false
-	h := cors(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	h := cors([]string{"https://claude.ai"}, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		called = true
 		w.WriteHeader(http.StatusOK)
 	}))
@@ -174,4 +174,47 @@ func TestCORSActualRequest(t *testing.T) {
 	if got := rec.Header().Get("Access-Control-Expose-Headers"); got != corsExposeHeaders {
 		t.Errorf("Access-Control-Expose-Headers = %q, want %q", got, corsExposeHeaders)
 	}
+}
+
+// TestCORSUntrustedOrigin verifies an origin outside the trusted list gets no
+// CORS allow headers: the preflight is answered 204 bare (a browser denial) and
+// an actual request passes through without Access-Control-Allow-Origin.
+func TestCORSUntrustedOrigin(t *testing.T) {
+	t.Run("preflight gets no allow headers", func(t *testing.T) {
+		called := false
+		h := cors([]string{"https://claude.ai"}, http.HandlerFunc(func(http.ResponseWriter, *http.Request) { called = true }))
+		req := httptest.NewRequest(http.MethodOptions, "/mcp", http.NoBody)
+		req.Header.Set("Origin", "https://evil.example")
+		req.Header.Set("Access-Control-Request-Method", "POST")
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusNoContent {
+			t.Fatalf("preflight status = %d, want 204", rec.Code)
+		}
+		if called {
+			t.Error("preflight must not reach the next handler")
+		}
+		for _, header := range []string{"Access-Control-Allow-Origin", "Access-Control-Allow-Methods", "Access-Control-Allow-Headers"} {
+			if got := rec.Header().Get(header); got != "" {
+				t.Errorf("%s = %q, want unset for an untrusted origin", header, got)
+			}
+		}
+	})
+	t.Run("actual request passes through without allow-origin", func(t *testing.T) {
+		h := cors([]string{"https://claude.ai"}, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.WriteHeader(http.StatusOK)
+		}))
+		req := httptest.NewRequest(http.MethodPost, "/mcp", http.NoBody)
+		req.Header.Set("Origin", "https://evil.example")
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+
+		if got := rec.Header().Get("Access-Control-Allow-Origin"); got != "" {
+			t.Errorf("Access-Control-Allow-Origin = %q, want unset for an untrusted origin", got)
+		}
+		if rec.Code != http.StatusOK {
+			t.Errorf("status = %d, want 200 (auth remains the access boundary)", rec.Code)
+		}
+	})
 }
