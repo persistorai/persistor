@@ -78,6 +78,14 @@ services:
         value: "8"             # keep <= cluster max_connections headroom
       - key: PERSISTOR_LOG_LEVEL
         value: "info"
+      # Origin lock: set (as an encrypted secret) together with the Cloudflare
+      # Transform Rule that injects the same value in X-Origin-Secret on proxied
+      # traffic. Until both halves exist, leave unset — setting it app-side alone
+      # would 403 all real traffic. See deploy/do/security-hardening.md #1.
+      # - key: PERSISTOR_ORIGIN_SECRET
+      #   scope: RUN_TIME
+      #   type: SECRET
+      #   value: "SET-AT-DEPLOY"
       # --- OIDC: TEST project for the initial bring-up. Flip these four to the
       #     Stytch LIVE values when we go live (env-only change; tenant UUID will
       #     change because issuer+subject change — see README.md). ---

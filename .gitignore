@@ -37,3 +37,7 @@ data/backups/
 CODE_REVIEW_*.md
 CODE_REVIEW_*.json
 AGENT_TASK*.md
+
+# Bare `go build` output at the repo root
+/persistor-server
+/persistor

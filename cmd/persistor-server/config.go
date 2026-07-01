@@ -34,6 +34,11 @@ type serverConfig struct {
 	// origin is exempted. Non-browser clients (Claude Code) are unaffected either
 	// way. Defaults to the Claude web app.
 	trustedOrigins []string
+	// originSecret, when set, locks the origin to the Cloudflare edge: every
+	// route except /healthz requires a matching X-Origin-Secret header (injected
+	// by a CF Transform Rule on proxied traffic), and the per-IP limiters switch
+	// to keying on CF-Connecting-IP. Leave unset for self-host/tailnet binds.
+	originSecret string
 }
 
 // defaultDBMaxConns is the pool size when PERSISTOR_DB_MAX_CONNS is unset.
@@ -57,6 +62,7 @@ func loadConfig() (serverConfig, error) {
 		autoMigrate:    !strings.EqualFold(os.Getenv("PERSISTOR_AUTO_MIGRATE"), "false"),
 		logLevel:       os.Getenv("PERSISTOR_LOG_LEVEL"),
 		trustedOrigins: parseTrustedOrigins(os.Getenv("PERSISTOR_TRUSTED_ORIGINS")),
+		originSecret:   os.Getenv("PERSISTOR_ORIGIN_SECRET"),
 	}
 	if cfg.logLevel == "" {
 		cfg.logLevel = "info"

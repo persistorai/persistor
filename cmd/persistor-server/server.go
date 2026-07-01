@@ -45,7 +45,10 @@ func (m *protectedResourceMetadata) serveHTTP(w http.ResponseWriter, _ *http.Req
 // 401s missing/invalid tokens with a WWW-Authenticate header.
 // ready probes a dependency (the DB pool) for the /readyz handler; nil means the
 // daemon reports ready unconditionally (used in tests with no pool).
-func newMux(getServer func(*http.Request) *mcp.Server, verifier auth.TokenVerifier, authOpts *auth.RequireBearerTokenOptions, metadata *protectedResourceMetadata, ready func(context.Context) error, protection *http.CrossOriginProtection) *http.ServeMux {
+// trustCF keys the per-IP limiters on CF-Connecting-IP instead of the connecting
+// peer; pass true only when the origin lock guarantees requests came through
+// Cloudflare (see perIPLimit).
+func newMux(getServer func(*http.Request) *mcp.Server, verifier auth.TokenVerifier, authOpts *auth.RequireBearerTokenOptions, metadata *protectedResourceMetadata, ready func(context.Context) error, protection *http.CrossOriginProtection, trustCF bool) *http.ServeMux {
 	// Persistor is a pure request/response tool server: no server-initiated
 	// requests (sampling/elicitation/roots), no streaming results. Stateless +
 	// JSONResponse is the right transport posture for that, and crucially for a
@@ -81,7 +84,7 @@ func newMux(getServer func(*http.Request) *mcp.Server, verifier auth.TokenVerifi
 	// limits (see mcpIPRate*) keep normal use clear; see the const for the
 	// behind-a-proxy caveat.
 	mcpIPLimiter := mcpengine.NewKeyLimiter(mcpIPRatePerSecond, mcpIPRateBurst)
-	mux.Handle("/mcp", perIPLimit(mcpIPLimiter, protection.Handler(limitBody(maxMCPBodyBytes, authed))))
+	mux.Handle("/mcp", perIPLimit(mcpIPLimiter, trustCF, protection.Handler(limitBody(maxMCPBodyBytes, authed))))
 	// /healthz is pure liveness (the process is up); /readyz also checks the DB,
 	// the daemon's only hard dependency, so an orchestrator won't route to an
 	// instance whose Postgres is unreachable.
@@ -146,11 +149,20 @@ func limitBody(maxBytes int64, next http.Handler) http.Handler {
 }
 
 // perIPLimit rejects requests from a client IP over its rate, returning 429. Used
-// to bound the open, unauthenticated /register proxy. The key is the connecting
-// peer (RemoteAddr); X-Forwarded-For is deliberately ignored as it is spoofable.
-func perIPLimit(limiter *mcpengine.KeyLimiter, next http.Handler) http.Handler {
+// to bound the open, unauthenticated /register proxy and as the /mcp pre-auth
+// flood backstop.
+//
+// With trustCF false the key is the connecting peer (RemoteAddr); forwarding
+// headers are ignored as spoofable. With trustCF true the key is
+// CF-Connecting-IP: behind the Cloudflare proxy every connection arrives from
+// Cloudflare's address, which would collapse all clients into one shared bucket
+// — both DoS-able by a single actor and unfair to everyone else. trustCF must
+// be set ONLY when the origin lock (originLock) is enforced, because that is
+// what proves the request came through Cloudflare and the header is genuine
+// rather than attacker-supplied.
+func perIPLimit(limiter *mcpengine.KeyLimiter, trustCF bool, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if !limiter.Allow(clientIP(r)) {
+		if !limiter.Allow(clientIP(r, trustCF)) {
 			http.Error(w, "rate limit exceeded", http.StatusTooManyRequests)
 			return
 		}
@@ -158,9 +170,15 @@ func perIPLimit(limiter *mcpengine.KeyLimiter, next http.Handler) http.Handler {
 	})
 }
 
-// clientIP is the connecting peer's IP (host part of RemoteAddr), falling back to
-// the raw RemoteAddr if it has no port.
-func clientIP(r *http.Request) string {
+// clientIP is the client key for rate limiting: CF-Connecting-IP when the caller
+// may trust it (see perIPLimit), else the connecting peer's IP (host part of
+// RemoteAddr, falling back to the raw RemoteAddr if it has no port).
+func clientIP(r *http.Request, trustCF bool) string {
+	if trustCF {
+		if ip := r.Header.Get("CF-Connecting-IP"); ip != "" {
+			return ip
+		}
+	}
 	host, _, err := net.SplitHostPort(r.RemoteAddr)
 	if err != nil {
 		return r.RemoteAddr

@@ -67,7 +67,7 @@ func newTestStack(t *testing.T) *testStack {
 	verifier := mcpauth.NewOIDCAuth(keyFunc, testIssuer, testAudience)
 	getServer := tenantServer(store, nil, nil, "test", log)
 	authOpts := &auth.RequireBearerTokenOptions{ResourceMetadataURL: "http://example/.well-known/oauth-protected-resource"}
-	ts := httptest.NewServer(newMux(getServer, verifier.Verify, authOpts, nil, pool.Ping, http.NewCrossOriginProtection()))
+	ts := httptest.NewServer(newMux(getServer, verifier.Verify, authOpts, nil, pool.Ping, http.NewCrossOriginProtection(), false))
 	t.Cleanup(ts.Close)
 
 	return &testStack{ts: ts, store: store, pool: pool, signKey: signKey}
@@ -215,7 +215,7 @@ func TestProtectedResourceMetadata(t *testing.T) {
 		return nil, auth.ErrInvalidToken
 	}
 	getServer := func(*http.Request) *mcp.Server { return nil }
-	ts := httptest.NewServer(newMux(getServer, verifier, &auth.RequireBearerTokenOptions{}, meta, nil, http.NewCrossOriginProtection()))
+	ts := httptest.NewServer(newMux(getServer, verifier, &auth.RequireBearerTokenOptions{}, meta, nil, http.NewCrossOriginProtection(), false))
 	defer ts.Close()
 
 	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet,
