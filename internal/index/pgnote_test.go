@@ -289,33 +289,6 @@ func TestNoteVersions_AppendOnly(t *testing.T) {
 	}
 }
 
-func TestReindexPGNative_RebuildsChunks(t *testing.T) {
-	store, pool, tenant := newStoreTest(t)
-	ctx := context.Background()
-	const id = "test:reindex"
-
-	if _, err := store.WriteNote(ctx, tenant, &index.PGNoteInput{ID: id, Body: "rebuildable elk sign"}, 0); err != nil {
-		t.Fatalf("create: %v", err)
-	}
-
-	// Simulate index drift: drop the chunk projection out-of-band.
-	execTenant(t, pool, tenant, "DELETE FROM chunks WHERE tenant_id = current_setting('app.tenant_id')::uuid")
-	if contains(searchIDs(t, store, tenant, "elk"), id) {
-		t.Fatal("expected no FTS hit after chunks dropped")
-	}
-
-	n, err := store.ReindexPGNative(ctx, tenant)
-	if err != nil {
-		t.Fatalf("reindex: %v", err)
-	}
-	if n != 1 {
-		t.Fatalf("reindexed %d notes, want 1", n)
-	}
-	if !contains(searchIDs(t, store, tenant, "elk"), id) {
-		t.Fatal("FTS did not return the note after PG-to-PG reindex")
-	}
-}
-
 func TestNoteVersions_TenantIsolation(t *testing.T) {
 	store, pool, tenantA := newStoreTest(t)
 	tenantB := uuid.New().String()

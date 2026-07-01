@@ -131,53 +131,6 @@ func isUniqueViolation(err error) bool {
 	return errors.As(err, &pgErr) && pgErr.Code == "23505"
 }
 
-// ReindexPGNative rebuilds the chunk projection for every live note (not
-// tombstoned) from its current body. It returns the number of notes re-chunked.
-func (s *Store) ReindexPGNative(ctx context.Context, tenantID string) (int, error) {
-	ctx, cancel := context.WithTimeout(ctx, storeQueryTimeout)
-	defer cancel()
-
-	recs, err := s.pgNativeNotes(ctx, tenantID)
-	if err != nil {
-		return 0, err
-	}
-	err = s.inTx(ctx, tenantID, func(tx pgx.Tx) error {
-		for _, r := range recs {
-			if err := replaceChunks(ctx, tx, r.ID, Chunk(r.Title, r.Body, DefaultChunkWords)); err != nil {
-				return err
-			}
-		}
-		return nil
-	})
-	if err != nil {
-		return 0, err
-	}
-	return len(recs), nil
-}
-
-// pgNativeNotes reads the live notes (not deleted) for a tenant, ordered by id.
-func (s *Store) pgNativeNotes(ctx context.Context, tenantID string) ([]NoteRecord, error) {
-	var out []NoteRecord
-	err := s.inReadTx(ctx, tenantID, func(tx pgx.Tx) error {
-		rows, err := tx.Query(ctx,
-			`SELECT id, kind, tier, title, body
-			   FROM notes
-			  WHERE tenant_id = current_setting('app.tenant_id')::uuid
-			    AND deleted = FALSE
-			  ORDER BY id`)
-		if err != nil {
-			return fmt.Errorf("querying pg-native notes: %w", err)
-		}
-		defer rows.Close()
-		out, err = scanNoteRecords(rows)
-		return err
-	})
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
 // DeleteNote tombstones a live PG-native note: it sets deleted=true, appends a
 // delete version, and drops the note's chunks so live search cannot surface it.
 // The body snapshots in history remain, so the note is restorable. A missing or
