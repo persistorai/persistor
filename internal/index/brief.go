@@ -53,7 +53,7 @@ func AssembleWorkingSet(ctx context.Context, store *Store, tenantID, seed string
 
 	remaining := opts.Budget - ws.CoreTokens
 	if seed != "" && remaining > 0 {
-		hits, err := store.SearchNotes(ctx, tenantID, seed, SearchOpts{Limit: opts.TailLimit, Tier: tierTail})
+		hits, err := store.SearchNotes(ctx, tenantID, seed, &SearchOpts{Limit: opts.TailLimit, Tier: tierTail})
 		if err != nil {
 			return WorkingSet{}, err
 		}

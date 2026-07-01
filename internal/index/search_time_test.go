@@ -2,6 +2,7 @@ package index_test
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 
@@ -32,7 +33,7 @@ func TestSearchAndListTimeBounds(t *testing.T) {
 
 	search := func(since, until *time.Time) []index.NoteHit {
 		t.Helper()
-		hits, err := store.SearchNotes(ctx, tenant, "walrus", index.SearchOpts{Limit: 5, Since: since, Until: until})
+		hits, err := store.SearchNotes(ctx, tenant, "walrus", &index.SearchOpts{Limit: 5, Since: since, Until: until})
 		if err != nil {
 			t.Fatalf("search: %v", err)
 		}
@@ -79,7 +80,7 @@ func TestSearchRecencyTiebreak(t *testing.T) {
 		t.Fatalf("create b: %v", err)
 	}
 
-	hits, err := store.SearchNotes(ctx, tenant, "narwhal census", index.SearchOpts{Limit: 5})
+	hits, err := store.SearchNotes(ctx, tenant, "narwhal census", &index.SearchOpts{Limit: 5})
 	if err != nil {
 		t.Fatalf("search: %v", err)
 	}
@@ -111,7 +112,7 @@ func TestSearchRecencyTiebreak(t *testing.T) {
 			t.Fatalf("touch %s: %v", id, err)
 		}
 	}
-	hits, err = store.SearchNotes(ctx, tenant, "narwhal census", index.SearchOpts{Limit: 5})
+	hits, err = store.SearchNotes(ctx, tenant, "narwhal census", &index.SearchOpts{Limit: 5})
 	if err != nil {
 		t.Fatalf("search 2: %v", err)
 	}
@@ -121,5 +122,71 @@ func TestSearchRecencyTiebreak(t *testing.T) {
 			got = hits[0].ID
 		}
 		t.Errorf("first hit = %s, want the higher-relevance (but older) test:tie-strong", got)
+	}
+}
+
+// TestSearchSnippetsAndKindFilter: hits carry a matched-fragment snippet
+// (ts_headline on the FTS path, a plain prefix on the fuzzy path) and the kind
+// filter restricts both search and list.
+func TestSearchSnippetsAndKindFilter(t *testing.T) {
+	store, _, tenant := newStoreTest(t)
+	ctx := context.Background()
+
+	if _, err := store.WriteNote(ctx, tenant, &index.PGNoteInput{
+		ID: "test:snip-fact", Kind: "fact",
+		Body: "The wolverine enclosure gate code was changed after the escape incident last spring.",
+	}, 0); err != nil {
+		t.Fatalf("create fact: %v", err)
+	}
+	if _, err := store.WriteNote(ctx, tenant, &index.PGNoteInput{
+		ID: "test:snip-decision", Kind: "decision",
+		Body: "Decision: the wolverine enclosure will be rebuilt with double gates.",
+	}, 0); err != nil {
+		t.Fatalf("create decision: %v", err)
+	}
+
+	hits, err := store.SearchNotes(ctx, tenant, "wolverine enclosure gate", &index.SearchOpts{Limit: 5})
+	if err != nil {
+		t.Fatalf("search: %v", err)
+	}
+	if len(hits) != 2 {
+		t.Fatalf("hits = %d, want 2", len(hits))
+	}
+	for i := range hits {
+		if hits[i].Snippet == "" {
+			t.Errorf("hit %s has no snippet", hits[i].ID)
+		}
+		if !strings.Contains(hits[i].Snippet, "<b>") {
+			t.Errorf("hit %s snippet lacks ts_headline match markers: %q", hits[i].ID, hits[i].Snippet)
+		}
+	}
+
+	// Kind filter narrows the same query to the decision note only.
+	hits, err = store.SearchNotes(ctx, tenant, "wolverine enclosure gate", &index.SearchOpts{Limit: 5, Kind: "decision"})
+	if err != nil {
+		t.Fatalf("search kind: %v", err)
+	}
+	if len(hits) != 1 || hits[0].ID != "test:snip-decision" {
+		t.Fatalf("kind-filtered hits = %v, want just test:snip-decision", hits)
+	}
+
+	// Fuzzy fallback (typo query) also carries a snippet.
+	hits, err = store.SearchNotes(ctx, tenant, "wolveriene enclosur gate", &index.SearchOpts{Limit: 5})
+	if err != nil {
+		t.Fatalf("fuzzy search: %v", err)
+	}
+	if len(hits) == 0 || hits[0].Snippet == "" {
+		t.Fatalf("fuzzy hits = %d, want >0 with snippets", len(hits))
+	}
+
+	// List honors the kind filter.
+	sums, err := store.ListNotes(ctx, tenant, index.ListOpts{Kind: "decision"})
+	if err != nil {
+		t.Fatalf("list: %v", err)
+	}
+	for i := range sums {
+		if sums[i].Kind != "decision" {
+			t.Errorf("list leaked kind %q (id %s)", sums[i].Kind, sums[i].ID)
+		}
 	}
 }

@@ -135,7 +135,7 @@ func registerTools(server *mcp.Server, e *Engine) {
 		})
 	mcp.AddTool(server, &mcp.Tool{Name: "memory_list", Description: listDescription},
 		func(ctx context.Context, _ *mcp.CallToolRequest, in ListInput) (*mcp.CallToolResult, any, error) {
-			out, err := e.List(ctx, in)
+			out, err := e.List(ctx, &in)
 			if err != nil {
 				return nil, nil, err
 			}

@@ -132,7 +132,7 @@ func assertNoStaleHits(ctx context.Context, t *testing.T, store *index.Store, te
 	}
 	for i := range fixture.Questions {
 		q := &fixture.Questions[i]
-		hits, err := store.SearchNotes(ctx, tenantID, q.Prompt, index.SearchOpts{Limit: 5})
+		hits, err := store.SearchNotes(ctx, tenantID, q.Prompt, &index.SearchOpts{Limit: 5})
 		if err != nil {
 			t.Fatalf("search %q: %v", q.Prompt, err)
 		}

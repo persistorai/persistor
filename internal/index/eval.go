@@ -47,7 +47,7 @@ func (ns *NoteSearcher) FullText(ctx context.Context, query string, opts *eval.S
 	if opts != nil && opts.Limit > 0 {
 		searchOpts.Limit = opts.Limit
 	}
-	hits, err := ns.store.SearchNotes(ctx, ns.tenantID, query, searchOpts)
+	hits, err := ns.store.SearchNotes(ctx, ns.tenantID, query, &searchOpts)
 	if err != nil {
 		return nil, err
 	}
