@@ -184,7 +184,8 @@ func buildHTTPServer(cfg *serverConfig, store *index.Store, authn authBundle, lo
 	// pool saturation (max_conns / acquired_conns informs a connection-exhaustion
 	// attack). The daemon is reachable on a public ingress, so an unauthenticated
 	// /metrics would leak that to anyone — require a valid token like /mcp does.
-	metricsHandler := auth.RequireBearerToken(authn.verify, authn.opts)(http.HandlerFunc(m.serveHTTP))
+	metricsHandler := auth.RequireBearerToken(authn.verify, authn.opts)(
+		requireTenants(cfg.metricsTenants, http.HandlerFunc(m.serveHTTP)))
 	mux.Handle("/metrics", metricsHandler)
 	if cfg.stytchPublicToken != "" {
 		consent, err := newConsentHandler(cfg.stytchPublicToken)

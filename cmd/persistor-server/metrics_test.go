@@ -1,12 +1,15 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
+	"github.com/modelcontextprotocol/go-sdk/auth"
 	"github.com/sirupsen/logrus"
 
 	"github.com/briancolinger/persistor/internal/dbpool"
@@ -82,5 +85,46 @@ func TestObservePreservesIncomingRequestID(t *testing.T) {
 
 	if got := rr.Header().Get("X-Request-Id"); got != "caller-supplied-id" {
 		t.Errorf("X-Request-Id = %q, want the caller-supplied id echoed back", got)
+	}
+}
+
+// The tenant allowlist must 403 valid-token holders outside it — with open
+// provisioning, "any valid token" includes strangers, and /metrics leaks pool
+// saturation. Empty allowlist keeps the any-valid-token behavior. TokenInfo is
+// injected by the real RequireBearerToken middleware (the SDK context key is
+// unexported), with a stub verifier that maps the bearer string to the tenant.
+func TestRequireTenants(t *testing.T) {
+	ok := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+	verifier := func(_ context.Context, token string, _ *http.Request) (*auth.TokenInfo, error) {
+		return &auth.TokenInfo{UserID: token, Expiration: time.Now().Add(time.Hour)}, nil
+	}
+	serve := func(allowed []string, tenant string) int {
+		h := auth.RequireBearerToken(verifier, &auth.RequireBearerTokenOptions{})(requireTenants(allowed, ok))
+		req := httptest.NewRequest(http.MethodGet, "/metrics", http.NoBody)
+		req.Header.Set("Authorization", "Bearer "+tenant)
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+		return rec.Code
+	}
+
+	if got := serve(nil, "stranger"); got != http.StatusOK {
+		t.Errorf("empty allowlist: status = %d, want 200 (any valid token admitted)", got)
+	}
+	if got := serve([]string{"operator-tenant"}, "operator-tenant"); got != http.StatusOK {
+		t.Errorf("allowlisted tenant: status = %d, want 200", got)
+	}
+	if got := serve([]string{"operator-tenant"}, "stranger"); got != http.StatusForbidden {
+		t.Errorf("other tenant: status = %d, want 403", got)
+	}
+
+	// Defense in depth: reached with no TokenInfo in context at all (mux
+	// misassembly), a non-empty allowlist still refuses.
+	rec := httptest.NewRecorder()
+	requireTenants([]string{"operator-tenant"}, ok).ServeHTTP(rec,
+		httptest.NewRequest(http.MethodGet, "/metrics", http.NoBody))
+	if rec.Code != http.StatusForbidden {
+		t.Errorf("no token info: status = %d, want 403", rec.Code)
 	}
 }

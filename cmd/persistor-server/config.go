@@ -45,6 +45,11 @@ type serverConfig struct {
 	// PERSISTOR_DCR_ENABLED=false to shut the relay off if it is being abused;
 	// already-registered clients keep working, new connector setups fail.
 	dcrEnabled bool
+	// metricsTenants restricts /metrics to these tenant ids (403 for other valid
+	// tokens). Empty = any valid token, the single-user self-host posture. Set on
+	// public multi-tenant deployments where open provisioning means "valid token"
+	// is not "operator".
+	metricsTenants []string
 }
 
 // defaultDBMaxConns is the pool size when PERSISTOR_DB_MAX_CONNS is unset.
@@ -71,7 +76,8 @@ func loadConfig() (serverConfig, error) {
 		originSecret:   os.Getenv("PERSISTOR_ORIGIN_SECRET"),
 		// Default on: DCR is how browser MCP clients onboard. Only an explicit
 		// "false" turns the relay off (abuse response).
-		dcrEnabled: !strings.EqualFold(os.Getenv("PERSISTOR_DCR_ENABLED"), "false"),
+		dcrEnabled:     !strings.EqualFold(os.Getenv("PERSISTOR_DCR_ENABLED"), "false"),
+		metricsTenants: parseList(os.Getenv("PERSISTOR_METRICS_TENANTS")),
 	}
 	if cfg.logLevel == "" {
 		cfg.logLevel = "info"
@@ -103,18 +109,24 @@ func (c *serverConfig) publicHTTPS() bool {
 	return strings.HasPrefix(c.publicURL, "https://")
 }
 
+// parseList splits a comma-separated env value, trimming whitespace and
+// dropping empties. nil when the value is empty.
+func parseList(raw string) []string {
+	var items []string
+	for s := range strings.SplitSeq(raw, ",") {
+		if s = strings.TrimSpace(s); s != "" {
+			items = append(items, s)
+		}
+	}
+	return items
+}
+
 // parseTrustedOrigins resolves the comma-separated browser origins allowed to
 // make cross-origin /mcp requests, defaulting to the Claude web app when unset.
-// Whitespace around entries is trimmed and empties are dropped.
 func parseTrustedOrigins(raw string) []string {
-	if strings.TrimSpace(raw) == "" {
+	origins := parseList(raw)
+	if len(origins) == 0 {
 		return []string{defaultTrustedOrigin}
-	}
-	var origins []string
-	for o := range strings.SplitSeq(raw, ",") {
-		if o = strings.TrimSpace(o); o != "" {
-			origins = append(origins, o)
-		}
 	}
 	return origins
 }

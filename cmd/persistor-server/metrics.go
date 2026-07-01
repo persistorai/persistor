@@ -4,7 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"slices"
 	"sync/atomic"
+
+	"github.com/modelcontextprotocol/go-sdk/auth"
 
 	"github.com/briancolinger/persistor/internal/dbpool"
 )
@@ -50,11 +53,32 @@ func (m *metrics) record(status int, durationMs int64) {
 	}
 }
 
+// requireTenants restricts a bearer-gated handler to an allowlist of tenant ids
+// (403 otherwise). With provisioning open, "any valid token" includes any
+// self-provisioned stranger, and /metrics exposes global db_pool saturation —
+// exactly the connection-exhaustion recon the bearer gate was meant to deny. An
+// empty allowlist preserves the any-valid-token behavior (single-user
+// self-host, where every token is the operator's).
+func requireTenants(allowed []string, next http.Handler) http.Handler {
+	if len(allowed) == 0 {
+		return next
+	}
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ti := auth.TokenInfoFromContext(r.Context())
+		if ti == nil || !slices.Contains(allowed, ti.UserID) {
+			http.Error(w, "forbidden", http.StatusForbidden)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
 // serveHTTP writes the metrics snapshot as JSON: aggregate counters and DB pool
 // saturation, no tenant-identifying data. It is bearer-gated at the mux (see
 // buildHTTPServer) rather than public — on a public ingress, exposing pool
 // capacity (max_conns / acquired_conns) would aid a connection-exhaustion
-// attack, so a valid token is required to read it.
+// attack, so a valid token is required to read it (plus the optional
+// requireTenants operator allowlist).
 func (m *metrics) serveHTTP(w http.ResponseWriter, _ *http.Request) {
 	snap := map[string]any{
 		"requests_total":      m.requestsTotal.Load(),
