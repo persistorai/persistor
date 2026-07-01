@@ -11,8 +11,8 @@ import (
 )
 
 // NewServer builds the Persistor MCP server over the engine and registers the
-// memory tools. Both transports (stdio and Streamable HTTP) wrap the same
-// server, so the tool surface stays identical across them.
+// memory tools. persistor-server wraps it in the Streamable HTTP transport —
+// the only transport; there is no stdio binary.
 func NewServer(e *Engine, version string) *mcp.Server {
 	server := mcp.NewServer(
 		&mcp.Implementation{Name: "persistor", Title: "Persistor Memory", Version: version},
