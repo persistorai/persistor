@@ -88,14 +88,43 @@ func (a *OIDCAuth) WithTenantResolver(r TenantResolver) *OIDCAuth {
 	return a
 }
 
+// accessTokenClaims extends the registered claims with the markers that
+// distinguish an OIDC ID token from an access token. An ID token carries
+// at_hash (a hash OF the access token) and/or the login nonce; an access token
+// carries neither. Verify rejects tokens bearing either marker.
+type accessTokenClaims struct {
+	jwt.RegisteredClaims
+	ATHash string `json:"at_hash,omitempty"`
+	Nonce  string `json:"nonce,omitempty"`
+}
+
+// acceptedTokenTypes are the JOSE header typ values an access token may carry:
+// the generic "JWT" (what most IdPs stamp on every token) and the RFC 9068
+// at+jwt forms. Anything else self-identifies as not-an-access-token.
+var acceptedTokenTypes = map[string]bool{
+	"": true, "JWT": true, "at+jwt": true, "application/at+jwt": true,
+}
+
 // Verify matches auth.TokenVerifier. It validates the JWT's signature (via the
-// IdP's keys), issuer, audience, and expiry, then derives a stable tenant from
-// iss|sub. Any failure unwraps to auth.ErrInvalidToken, which the middleware
-// turns into a 401.
+// IdP's keys), issuer, audience, and expiry, asserts the token is an ACCESS
+// token (not an ID token sharing the same audience), then derives a stable
+// tenant from iss|sub. Any failure unwraps to auth.ErrInvalidToken, which the
+// middleware turns into a 401.
 func (a *OIDCAuth) Verify(ctx context.Context, token string, _ *http.Request) (*auth.TokenInfo, error) {
-	var claims jwt.RegisteredClaims
-	if _, err := a.parser.ParseWithClaims(token, &claims, a.keyFunc); err != nil {
+	var claims accessTokenClaims
+	parsed, err := a.parser.ParseWithClaims(token, &claims, a.keyFunc)
+	if err != nil {
 		return nil, fmt.Errorf("%w: %w", auth.ErrInvalidToken, err)
+	}
+	// Token-type separation, defense in depth alongside the audience check: a
+	// typ header that is neither generic-JWT nor at+jwt, or the presence of an
+	// ID-token marker claim (at_hash / nonce), means this is not an access
+	// token even if the signature and audience validate.
+	if typ, ok := parsed.Header["typ"].(string); ok && !acceptedTokenTypes[typ] {
+		return nil, fmt.Errorf("%w: token type %q is not an access token", auth.ErrInvalidToken, typ)
+	}
+	if claims.ATHash != "" || claims.Nonce != "" {
+		return nil, fmt.Errorf("%w: ID token presented where an access token is required", auth.ErrInvalidToken)
 	}
 	if claims.Subject == "" {
 		return nil, fmt.Errorf("%w: token has no subject", auth.ErrInvalidToken)
