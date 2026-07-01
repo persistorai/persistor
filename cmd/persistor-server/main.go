@@ -213,7 +213,7 @@ func buildHTTPServer(cfg *serverConfig, store *index.Store, authn authBundle, lo
 	}
 	// originLock sits inside observe so rejected direct-to-origin hits still land
 	// in the access log (they're signal: someone is probing the bare origin).
-	handler := observe(log, m, originLock(cfg.originSecret, securityHeaders(cfg.publicHTTPS(), cors(contentLengthBuffer(mux)))))
+	handler := observe(log, m, originLock(cfg.originSecret, securityHeaders(cfg.publicHTTPS(), cors(cfg.trustedOrigins, contentLengthBuffer(mux)))))
 	return &http.Server{
 		Addr:              cfg.listenAddr,
 		Handler:           handler,
