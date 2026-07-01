@@ -20,9 +20,11 @@
 
 -- Extensions are database-global and privileged (a managed provider restricts
 -- CREATE EXTENSION; a non-owner self-host role lacks it). btree_gin backs the
--- tenant-scoped composite FTS index in migration 010, so install it here, not in
+-- tenant-scoped composite FTS index in migration 010, and pg_trgm backs the
+-- zero-hit fuzzy-fallback index in migration 012 — install them here, not in
 -- a migration.
 CREATE EXTENSION IF NOT EXISTS btree_gin;
+CREATE EXTENSION IF NOT EXISTS pg_trgm;
 
 -- The migrator owns the schema and runs all DDL (migrations).
 CREATE ROLE persistor_migrator LOGIN PASSWORD 'CHANGEME_MIGRATOR' NOSUPERUSER NOBYPASSRLS;

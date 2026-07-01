@@ -57,8 +57,10 @@ jobs:
           psql "${{ env.CI_ADMIN_URL }}" -v ON_ERROR_STOP=1 <<'SQL'
           -- Extensions are database-global and superuser-only; install as the
           -- bootstrap role (mirrors production provisioning, not a migration).
-          -- btree_gin backs the tenant-scoped composite FTS index (migration 010).
+          -- btree_gin backs the tenant-scoped composite FTS index (migration 010);
+          -- pg_trgm backs the zero-hit fuzzy fallback index (migration 012).
           CREATE EXTENSION IF NOT EXISTS btree_gin;
+          CREATE EXTENSION IF NOT EXISTS pg_trgm;
           CREATE ROLE persistor_app LOGIN PASSWORD 'persistor_app' NOSUPERUSER NOBYPASSRLS;
           ALTER SCHEMA public OWNER TO persistor_app;
           SQL

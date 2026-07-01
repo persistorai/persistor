@@ -217,6 +217,28 @@
       "expected_note_ids": [
         "syn:aurora"
       ]
+    },
+    {
+      "prompt": "the balast systm and buoyancy",
+      "category": "typo",
+      "expected_note_ids": [
+        "syn:ballast"
+      ],
+      "notes": "misspellings FTS lexemes miss; served by the trigram fallback"
+    },
+    {
+      "prompt": "the Meridain Acord signing",
+      "category": "typo",
+      "expected_note_ids": [
+        "syn:summit"
+      ]
+    },
+    {
+      "prompt": "Capten Orion commands the Ravn",
+      "category": "typo",
+      "expected_note_ids": [
+        "syn:captain-2"
+      ]
     }
   ]
 }

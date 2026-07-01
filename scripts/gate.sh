@@ -31,15 +31,22 @@ ensure_db() {
       -e POSTGRES_USER=persistor -e POSTGRES_PASSWORD=persistor \
       -e POSTGRES_DB=persistor_test \
       -p "127.0.0.1:${PORT}:5432" postgres:18 >/dev/null || return 1
-    # Wait for Postgres to accept connections, then provision the CI role posture.
+    # Provision the CI role posture, retrying: the postgres image restarts the
+    # server once during first-boot init, so a single pg_isready pass can race
+    # the temporary bootstrap server.
+    provisioned=0
     for _ in $(seq 1 30); do
-      docker exec "$CONTAINER" pg_isready -U persistor -d persistor_test >/dev/null 2>&1 && break
+      if docker exec "$CONTAINER" psql -U persistor -d persistor_test -v ON_ERROR_STOP=1 -c \
+        "CREATE EXTENSION IF NOT EXISTS btree_gin;
+         CREATE EXTENSION IF NOT EXISTS pg_trgm;
+         CREATE ROLE persistor_app LOGIN PASSWORD 'persistor_app' NOSUPERUSER NOBYPASSRLS;
+         ALTER SCHEMA public OWNER TO persistor_app;" >/dev/null 2>&1; then
+        provisioned=1
+        break
+      fi
       sleep 1
     done
-    docker exec "$CONTAINER" psql -U persistor -d persistor_test -v ON_ERROR_STOP=1 -c \
-      "CREATE EXTENSION IF NOT EXISTS btree_gin;
-       CREATE ROLE persistor_app LOGIN PASSWORD 'persistor_app' NOSUPERUSER NOBYPASSRLS;
-       ALTER SCHEMA public OWNER TO persistor_app;" >/dev/null || return 1
+    [ "$provisioned" = 1 ] || return 1
   fi
   return 0
 }

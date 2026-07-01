@@ -58,6 +58,8 @@ var categoryTargets = map[string]float64{
 	// any future hybrid-retrieval debate — argue against DATA, not vibes.
 	// Ratchet upward when retrieval actually improves.
 	"paraphrase": 0.0,
+	// Misspellings are served by the pg_trgm zero-hit fallback (F3).
+	"typo": 1.00,
 }
 
 // TestEvalBeatsStaticBaseline is the CI gate: it seeds the synthetic corpus,
