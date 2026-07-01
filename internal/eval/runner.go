@@ -91,6 +91,27 @@ func (r *Runner) runQuestion(ctx context.Context, q *Question) QuestionEval {
 	}
 	returned := mapResults(notes)
 
+	// Abstention question: the only right answer is silence. Scored as one
+	// synthetic expectation ("nothing"), found iff zero results came back, so
+	// the recall/pass aggregation needs no special cases downstream.
+	if q.ExpectAbstain {
+		found := 0
+		if len(returned) == 0 {
+			found = 1
+		}
+		return QuestionEval{
+			Prompt:             q.Prompt,
+			Category:           normalizeCategory(q.Category),
+			Limit:              limit,
+			Passed:             found == 1,
+			LatencyMs:          latencyMs,
+			FoundExpectedCount: found,
+			ExpectedCount:      1,
+			ReturnedCount:      len(returned),
+			Returned:           returned,
+		}
+	}
+
 	matched, missed := scoreReturned(q, returned)
 	foundCount := len(matched)
 	expected := len(matched) + len(missed)

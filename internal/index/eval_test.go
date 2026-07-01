@@ -50,6 +50,14 @@ var categoryTargets = map[string]float64{
 	"association":   0.80,
 	"contradiction": 1.00, // current note always retrieved; stale excluded
 	"temporal":      0.80,
+	// Absent information must return NOTHING — abstention is what keeps memory
+	// from feeding an agent confident-looking noise.
+	"abstention": 1.00,
+	// Synonym-only queries are lexical FTS's measured blind spot. The floor is
+	// the honest current number, kept visible so F2/F3 (trgm, ranking) — and
+	// any future hybrid-retrieval debate — argue against DATA, not vibes.
+	// Ratchet upward when retrieval actually improves.
+	"paraphrase": 0.0,
 }
 
 // TestEvalBeatsStaticBaseline is the CI gate: it seeds the synthetic corpus,
@@ -74,17 +82,22 @@ func TestEvalBeatsStaticBaseline(t *testing.T) {
 
 	indexReport := runReport(ctx, t, fixture, index.AllNotesSearcher(store, tenantID))
 	static := runRecall(ctx, t, fixture, index.StaticMemorySearcher(store, tenantID))
-	none := runRecall(ctx, t, fixture, index.NoMemorySearcher())
+	noneReport := runReport(ctx, t, fixture, index.NoMemorySearcher())
 
 	t.Logf("recall@5 — persistor=%.3f  static(core)=%.3f  no-memory=%.3f",
-		indexReport.RecallAtK, static, none)
+		indexReport.RecallAtK, static, noneReport.RecallAtK)
 
 	// (a) beats the static MEMORY.md baseline — the whole point.
 	if indexReport.RecallAtK <= static {
 		t.Errorf("persistor (%.3f) must beat static MEMORY.md (%.3f)", indexReport.RecallAtK, static)
 	}
-	if none != 0 {
-		t.Errorf("no-memory baseline recall = %.3f, want 0", none)
+	// No-memory scores 0 on every substantive category. (It trivially aces
+	// abstention — an empty memory always returns nothing — which is exactly
+	// why abstention alone is not a quality signal.)
+	for _, cat := range noneReport.Categories {
+		if cat.Name != "abstention" && cat.RecallAtK != 0 {
+			t.Errorf("no-memory baseline recall for %q = %.3f, want 0", cat.Name, cat.RecallAtK)
+		}
 	}
 
 	// (b) every per-category target is met. Ratchet, don't relax.
