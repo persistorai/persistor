@@ -39,7 +39,7 @@ func TestReconcileSupersessions(t *testing.T) {
 
 	// Default search for "pounds weight" excludes the superseded old note but
 	// surfaces the current correction and the independent time-bound fact.
-	hits, err := store.SearchNotes(ctx, tenantID, "weighs pounds weight", index.SearchOpts{Limit: 10})
+	hits, err := store.SearchNotes(ctx, tenantID, "weighs pounds weight", &index.SearchOpts{Limit: 10})
 	if err != nil {
 		t.Fatalf("search: %v", err)
 	}
@@ -55,7 +55,7 @@ func TestReconcileSupersessions(t *testing.T) {
 
 	// With IncludeSuperseded the stale note is retained and reachable (history).
 	histHits, err := store.SearchNotes(ctx, tenantID, "weighs pounds weight",
-		index.SearchOpts{Limit: 10, IncludeSuperseded: true})
+		&index.SearchOpts{Limit: 10, IncludeSuperseded: true})
 	if err != nil {
 		t.Fatalf("history search: %v", err)
 	}
@@ -70,7 +70,7 @@ func TestReconcileSupersessions(t *testing.T) {
 	if _, err := store.ReconcileSupersessions(ctx, tenantID); err != nil {
 		t.Fatalf("reconcile after delete: %v", err)
 	}
-	hits, err = store.SearchNotes(ctx, tenantID, "weighs pounds weight", index.SearchOpts{Limit: 10})
+	hits, err = store.SearchNotes(ctx, tenantID, "weighs pounds weight", &index.SearchOpts{Limit: 10})
 	if err != nil {
 		t.Fatalf("search after delete: %v", err)
 	}

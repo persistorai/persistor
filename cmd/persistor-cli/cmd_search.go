@@ -68,7 +68,7 @@ func runSearch(ctx context.Context, o *searchOpts) error {
 	defer pool.Close()
 
 	store := index.NewStore(pool, log)
-	hits, err := store.SearchNotes(ctx, o.tenantID, o.query, index.SearchOpts{
+	hits, err := store.SearchNotes(ctx, o.tenantID, o.query, &index.SearchOpts{
 		Limit:             o.limit,
 		Tier:              o.tier,
 		IncludeSuperseded: o.includeSuperseded,

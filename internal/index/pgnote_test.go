@@ -325,7 +325,7 @@ func TestNoteVersions_TenantIsolation(t *testing.T) {
 // searchIDs runs a default search and returns the hit note ids.
 func searchIDs(t *testing.T, store *index.Store, tenant, query string) []string {
 	t.Helper()
-	hits, err := store.SearchNotes(context.Background(), tenant, query, index.SearchOpts{})
+	hits, err := store.SearchNotes(context.Background(), tenant, query, &index.SearchOpts{})
 	if err != nil {
 		t.Fatalf("search %q: %v", query, err)
 	}

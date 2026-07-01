@@ -329,7 +329,7 @@ func TestEngine_ListAndNamespaces(t *testing.T) {
 	}
 
 	// List the work namespace: three summaries, no bodies, ordered by id.
-	lr, err := e.List(ctx, mcpengine.ListInput{Namespace: "work"})
+	lr, err := e.List(ctx, &mcpengine.ListInput{Namespace: "work"})
 	if err != nil {
 		t.Fatalf("list work: %v", err)
 	}
@@ -344,11 +344,11 @@ func TestEngine_ListAndNamespaces(t *testing.T) {
 	}
 
 	// Pagination: limit 2 then offset 2.
-	p1, err := e.List(ctx, mcpengine.ListInput{Namespace: "work", Limit: 2})
+	p1, err := e.List(ctx, &mcpengine.ListInput{Namespace: "work", Limit: 2})
 	if err != nil {
 		t.Fatalf("page 1: %v", err)
 	}
-	p2, err := e.List(ctx, mcpengine.ListInput{Namespace: "work", Limit: 2, Offset: 2})
+	p2, err := e.List(ctx, &mcpengine.ListInput{Namespace: "work", Limit: 2, Offset: 2})
 	if err != nil {
 		t.Fatalf("page 2: %v", err)
 	}

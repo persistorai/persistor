@@ -16,11 +16,13 @@ type SearchInput struct {
 	Namespace         string `json:"namespace,omitempty" jsonschema:"Restrict results to one namespace (e.g. demo, claude, work). Omit to search all namespaces."`
 	Since             string `json:"since,omitempty" jsonschema:"Only notes updated at/after this time (RFC3339 or YYYY-MM-DD). Resolve relative phrases like 'last week' to a date before calling."`
 	Until             string `json:"until,omitempty" jsonschema:"Only notes updated at/before this time (RFC3339 or YYYY-MM-DD; a bare date means end of that day UTC)."`
+	Kind              string `json:"kind,omitempty" jsonschema:"Restrict to one note kind: fact, decision, episode, reference, or preference. Omit for all kinds."`
 }
 
 // SearchHit is one ranked note in a search result. CreatedAt/UpdatedAt are
 // RFC3339 — the temporal grounding that lets the caller answer "when did we
-// decide this" without spelunking version history.
+// decide this" without spelunking version history. Snippet is the matched
+// excerpt, so relevance can be judged without a memory_get per candidate.
 type SearchHit struct {
 	ID         string  `json:"id"`
 	Title      string  `json:"title"`
@@ -30,6 +32,7 @@ type SearchHit struct {
 	Superseded bool    `json:"superseded"`
 	CreatedAt  string  `json:"created_at"`
 	UpdatedAt  string  `json:"updated_at"`
+	Snippet    string  `json:"snippet,omitempty"`
 }
 
 // parseTimeBound parses a since/until tool argument: RFC3339, or a bare
@@ -73,6 +76,9 @@ func (e *Engine) Search(ctx context.Context, in *SearchInput) (SearchOutput, err
 	if in.Query == "" {
 		return SearchOutput{}, fmt.Errorf("query is required")
 	}
+	if in.Kind != "" && !index.ValidKind(in.Kind) {
+		return SearchOutput{}, fmt.Errorf("invalid kind %q", in.Kind)
+	}
 	limit := in.Limit
 	if limit <= 0 {
 		limit = defaultSearchLimit
@@ -86,12 +92,13 @@ func (e *Engine) Search(ctx context.Context, in *SearchInput) (SearchOutput, err
 	if err != nil {
 		return SearchOutput{}, err
 	}
-	hits, err := e.store.SearchNotes(ctx, e.tenantID, in.Query, index.SearchOpts{
+	hits, err := e.store.SearchNotes(ctx, e.tenantID, in.Query, &index.SearchOpts{
 		Limit:             limit,
 		IncludeSuperseded: in.IncludeSuperseded,
 		Namespace:         in.Namespace,
 		Since:             since,
 		Until:             until,
+		Kind:              in.Kind,
 	})
 	if err != nil {
 		return SearchOutput{}, e.opError("search", err)
@@ -103,6 +110,7 @@ func (e *Engine) Search(ctx context.Context, in *SearchInput) (SearchOutput, err
 			Tier: hits[i].Tier, Rank: hits[i].Rank, Superseded: hits[i].Superseded,
 			CreatedAt: hits[i].CreatedAt.UTC().Format(time.RFC3339),
 			UpdatedAt: hits[i].UpdatedAt.UTC().Format(time.RFC3339),
+			Snippet:   hits[i].Snippet,
 		}
 	}
 	return out, nil
@@ -162,6 +170,7 @@ type ListInput struct {
 	IncludeSuperseded bool   `json:"include_superseded,omitempty" jsonschema:"Include superseded (corrected/stale) notes. Default false."`
 	Since             string `json:"since,omitempty" jsonschema:"Only notes updated at/after this time (RFC3339 or YYYY-MM-DD) — e.g. to review what changed recently."`
 	Until             string `json:"until,omitempty" jsonschema:"Only notes updated at/before this time (RFC3339 or YYYY-MM-DD; a bare date means end of that day UTC)."`
+	Kind              string `json:"kind,omitempty" jsonschema:"Restrict to one note kind: fact, decision, episode, reference, or preference. Omit for all kinds."`
 }
 
 // ListEntry is one note summary in a memory_list result: metadata only, no body
@@ -196,7 +205,7 @@ const (
 // List enumerates the tenant's notes as summaries (no bodies), paginated and
 // optionally filtered to one namespace — the browse/page path memory_search
 // cannot serve, because search needs a query term. Bodies come from memory_get.
-func (e *Engine) List(ctx context.Context, in ListInput) (ListOutput, error) {
+func (e *Engine) List(ctx context.Context, in *ListInput) (ListOutput, error) {
 	if !e.readLimiter.Allow(e.tenantID) {
 		return ListOutput{}, ErrRateLimited
 	}
@@ -206,6 +215,9 @@ func (e *Engine) List(ctx context.Context, in ListInput) (ListOutput, error) {
 	}
 	limit = min(limit, maxListPageLimit)
 	offset := max(in.Offset, 0)
+	if in.Kind != "" && !index.ValidKind(in.Kind) {
+		return ListOutput{}, fmt.Errorf("invalid kind %q", in.Kind)
+	}
 	since, err := parseTimeBound("since", in.Since, false)
 	if err != nil {
 		return ListOutput{}, err
@@ -221,6 +233,7 @@ func (e *Engine) List(ctx context.Context, in ListInput) (ListOutput, error) {
 		IncludeSuperseded: in.IncludeSuperseded,
 		Since:             since,
 		Until:             until,
+		Kind:              in.Kind,
 	})
 	if err != nil {
 		return ListOutput{}, e.opError("list", err)

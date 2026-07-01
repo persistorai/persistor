@@ -42,6 +42,8 @@ type ListOpts struct {
 	IncludeSuperseded bool
 	Since             *time.Time
 	Until             *time.Time
+	// Kind restricts to one note kind; "" = any.
+	Kind string
 }
 
 // NamespaceCount is one namespace and how many live notes it holds.
@@ -76,12 +78,13 @@ func (s *Store) ListNotes(ctx context.Context, tenantID string, opts ListOpts) (
 		   AND (superseded = FALSE OR $2)
 		   AND ($3::timestamptz IS NULL OR updated_at >= $3)
 		   AND ($4::timestamptz IS NULL OR updated_at <= $4)
+		   AND ($5 = '' OR kind = $5)
 		 ORDER BY id
-		 LIMIT $5 OFFSET $6`
+		 LIMIT $6 OFFSET $7`
 
 	var out []NoteSummary
 	err := s.inReadTx(ctx, tenantID, func(tx pgx.Tx) error {
-		rows, err := tx.Query(ctx, q, opts.Namespace, opts.IncludeSuperseded, opts.Since, opts.Until, limit, offset)
+		rows, err := tx.Query(ctx, q, opts.Namespace, opts.IncludeSuperseded, opts.Since, opts.Until, opts.Kind, limit, offset)
 		if err != nil {
 			return fmt.Errorf("listing notes: %w", err)
 		}
