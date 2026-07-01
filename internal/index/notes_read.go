@@ -3,6 +3,7 @@ package index
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 )
@@ -11,11 +12,12 @@ import (
 // assemble the working-set. Distinct from NoteHit, which is a ranked
 // search result without the body.
 type NoteRecord struct {
-	ID    string
-	Kind  string
-	Tier  string
-	Title string
-	Body  string
+	ID        string
+	Kind      string
+	Tier      string
+	Title     string
+	Body      string
+	UpdatedAt time.Time
 }
 
 // maxCoreNotes caps how many Core-tier notes the always-loaded surface fetches.
@@ -35,7 +37,7 @@ func (s *Store) CoreNotes(ctx context.Context, tenantID string) ([]NoteRecord, e
 	var out []NoteRecord
 	err := s.inReadTx(ctx, tenantID, func(tx pgx.Tx) error {
 		rows, err := tx.Query(ctx,
-			`SELECT id, kind, tier, title, body
+			`SELECT id, kind, tier, title, body, updated_at
 			   FROM notes
 			  WHERE tenant_id = current_setting('app.tenant_id')::uuid
 			    AND tier = 'core' AND superseded = FALSE AND deleted = FALSE
@@ -70,7 +72,7 @@ func (s *Store) LoadNotes(ctx context.Context, tenantID string, ids []string) ([
 	byID := make(map[string]NoteRecord, len(ids))
 	err := s.inReadTx(ctx, tenantID, func(tx pgx.Tx) error {
 		rows, err := tx.Query(ctx,
-			`SELECT id, kind, tier, title, body
+			`SELECT id, kind, tier, title, body, updated_at
 			   FROM notes
 			  WHERE tenant_id = current_setting('app.tenant_id')::uuid
 			    AND id = ANY($1) AND deleted = FALSE`, ids)
@@ -104,7 +106,7 @@ func scanNoteRecords(rows pgx.Rows) ([]NoteRecord, error) {
 	var out []NoteRecord
 	for rows.Next() {
 		var r NoteRecord
-		if err := rows.Scan(&r.ID, &r.Kind, &r.Tier, &r.Title, &r.Body); err != nil {
+		if err := rows.Scan(&r.ID, &r.Kind, &r.Tier, &r.Title, &r.Body, &r.UpdatedAt); err != nil {
 			return nil, fmt.Errorf("scanning note: %w", err)
 		}
 		out = append(out, r)

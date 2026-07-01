@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 	"unicode"
 
 	"github.com/jackc/pgx/v5"
@@ -17,6 +18,8 @@ type NoteHit struct {
 	Tier       string
 	Rank       float64
 	Superseded bool
+	CreatedAt  time.Time
+	UpdatedAt  time.Time
 }
 
 // maxSearchResults is a defensive upper bound on a search LIMIT. The MCP engine
@@ -30,6 +33,11 @@ type SearchOpts struct {
 	IncludeSuperseded bool   // default retrieval excludes superseded notes
 	Tier              string // "" = any; "core"/"tail" restrict (models the static baseline)
 	Namespace         string // "" = all namespaces; otherwise restrict to one
+	// Since/Until bound results by updated_at (nil = unbounded), enabling
+	// temporal queries ("what did we decide last week") in SQL rather than
+	// making the caller page and filter.
+	Since *time.Time
+	Until *time.Time
 }
 
 // SearchNotes runs full-text search over chunk tsvectors, deduplicates to the
@@ -53,7 +61,8 @@ func (s *Store) SearchNotes(ctx context.Context, tenantID, query string, opts Se
 	orQuery := toOrQuery(query)
 
 	const q = `
-		SELECT n.id, n.title, n.kind, n.tier, n.superseded, max(ts_rank(c.search_tsv, wq)) AS rank
+		SELECT n.id, n.title, n.kind, n.tier, n.superseded, n.created_at, n.updated_at,
+		       max(ts_rank(c.search_tsv, wq)) AS rank
 		FROM chunks c
 		JOIN notes n
 		  ON n.tenant_id = c.tenant_id AND n.id = c.note_id,
@@ -64,20 +73,22 @@ func (s *Store) SearchNotes(ctx context.Context, tenantID, query string, opts Se
 		  AND (n.superseded = FALSE OR $2)
 		  AND ($3 = '' OR n.tier = $3)
 		  AND ($4 = '' OR n.namespace = $4)
-		GROUP BY n.id, n.title, n.kind, n.tier, n.superseded
+		  AND ($5::timestamptz IS NULL OR n.updated_at >= $5)
+		  AND ($6::timestamptz IS NULL OR n.updated_at <= $6)
+		GROUP BY n.id, n.title, n.kind, n.tier, n.superseded, n.created_at, n.updated_at
 		ORDER BY rank DESC, n.id
-		LIMIT $5`
+		LIMIT $7`
 
 	var hits []NoteHit
 	err := s.inReadTx(ctx, tenantID, func(tx pgx.Tx) error {
-		rows, err := tx.Query(ctx, q, orQuery, opts.IncludeSuperseded, opts.Tier, opts.Namespace, limit)
+		rows, err := tx.Query(ctx, q, orQuery, opts.IncludeSuperseded, opts.Tier, opts.Namespace, opts.Since, opts.Until, limit)
 		if err != nil {
 			return fmt.Errorf("querying chunks: %w", err)
 		}
 		defer rows.Close()
 		for rows.Next() {
 			var h NoteHit
-			if err := rows.Scan(&h.ID, &h.Title, &h.Kind, &h.Tier, &h.Superseded, &h.Rank); err != nil {
+			if err := rows.Scan(&h.ID, &h.Title, &h.Kind, &h.Tier, &h.Superseded, &h.CreatedAt, &h.UpdatedAt, &h.Rank); err != nil {
 				return fmt.Errorf("scanning hit: %w", err)
 			}
 			hits = append(hits, h)

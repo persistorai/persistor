@@ -3,6 +3,7 @@ package mcpengine
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/persistorai/persistor/internal/index"
 )
@@ -13,9 +14,13 @@ type SearchInput struct {
 	Limit             int    `json:"limit,omitempty" jsonschema:"Max notes to return. Default 8, capped at 500."`
 	IncludeSuperseded bool   `json:"include_superseded,omitempty" jsonschema:"Include superseded (corrected/stale) notes. Default false — retrieval returns current notes only."`
 	Namespace         string `json:"namespace,omitempty" jsonschema:"Restrict results to one namespace (e.g. scout, claude, work). Omit to search all namespaces."`
+	Since             string `json:"since,omitempty" jsonschema:"Only notes updated at/after this time (RFC3339 or YYYY-MM-DD). Resolve relative phrases like 'last week' to a date before calling."`
+	Until             string `json:"until,omitempty" jsonschema:"Only notes updated at/before this time (RFC3339 or YYYY-MM-DD; a bare date means end of that day UTC)."`
 }
 
-// SearchHit is one ranked note in a search result.
+// SearchHit is one ranked note in a search result. CreatedAt/UpdatedAt are
+// RFC3339 — the temporal grounding that lets the caller answer "when did we
+// decide this" without spelunking version history.
 type SearchHit struct {
 	ID         string  `json:"id"`
 	Title      string  `json:"title"`
@@ -23,6 +28,28 @@ type SearchHit struct {
 	Tier       string  `json:"tier"`
 	Rank       float64 `json:"rank"`
 	Superseded bool    `json:"superseded"`
+	CreatedAt  string  `json:"created_at"`
+	UpdatedAt  string  `json:"updated_at"`
+}
+
+// parseTimeBound parses a since/until tool argument: RFC3339, or a bare
+// YYYY-MM-DD date (interpreted as start of day UTC; endOfDay shifts it to
+// 23:59:59.999… so "until: 2026-07-01" includes that whole day). Empty = nil.
+func parseTimeBound(field, raw string, endOfDay bool) (*time.Time, error) {
+	if raw == "" {
+		return nil, nil //nolint:nilnil // nil time bound = unbounded, by contract
+	}
+	if t, err := time.Parse(time.RFC3339, raw); err == nil {
+		return &t, nil
+	}
+	t, err := time.Parse("2006-01-02", raw)
+	if err != nil {
+		return nil, fmt.Errorf("invalid %s %q (want RFC3339 or YYYY-MM-DD)", field, raw)
+	}
+	if endOfDay {
+		t = t.Add(24*time.Hour - time.Nanosecond)
+	}
+	return &t, nil
 }
 
 // SearchOutput is the memory_search result shape.
@@ -39,7 +66,7 @@ const (
 )
 
 // Search runs the full-text retrieval.
-func (e *Engine) Search(ctx context.Context, in SearchInput) (SearchOutput, error) {
+func (e *Engine) Search(ctx context.Context, in *SearchInput) (SearchOutput, error) {
 	if !e.readLimiter.Allow(e.tenantID) {
 		return SearchOutput{}, ErrRateLimited
 	}
@@ -51,10 +78,20 @@ func (e *Engine) Search(ctx context.Context, in SearchInput) (SearchOutput, erro
 		limit = defaultSearchLimit
 	}
 	limit = min(limit, maxSearchLimit)
+	since, err := parseTimeBound("since", in.Since, false)
+	if err != nil {
+		return SearchOutput{}, err
+	}
+	until, err := parseTimeBound("until", in.Until, true)
+	if err != nil {
+		return SearchOutput{}, err
+	}
 	hits, err := e.store.SearchNotes(ctx, e.tenantID, in.Query, index.SearchOpts{
 		Limit:             limit,
 		IncludeSuperseded: in.IncludeSuperseded,
 		Namespace:         in.Namespace,
+		Since:             since,
+		Until:             until,
 	})
 	if err != nil {
 		return SearchOutput{}, e.opError("search", err)
@@ -64,6 +101,8 @@ func (e *Engine) Search(ctx context.Context, in SearchInput) (SearchOutput, erro
 		out.Results[i] = SearchHit{
 			ID: hits[i].ID, Title: hits[i].Title, Kind: hits[i].Kind,
 			Tier: hits[i].Tier, Rank: hits[i].Rank, Superseded: hits[i].Superseded,
+			CreatedAt: hits[i].CreatedAt.UTC().Format(time.RFC3339),
+			UpdatedAt: hits[i].UpdatedAt.UTC().Format(time.RFC3339),
 		}
 	}
 	return out, nil
@@ -87,6 +126,8 @@ type GetOutput struct {
 	Title     string `json:"title"`
 	Body      string `json:"body"`
 	Version   int    `json:"version"`
+	CreatedAt string `json:"created_at,omitempty"`
+	UpdatedAt string `json:"updated_at,omitempty"`
 }
 
 // Get fetches one note's full record by id, including its current version. A
@@ -108,6 +149,8 @@ func (e *Engine) Get(ctx context.Context, in GetInput) (GetOutput, error) {
 	return GetOutput{
 		Found: true, ID: st.ID, Namespace: st.Namespace, Kind: st.Kind, Tier: st.Tier,
 		Title: st.Title, Body: st.Body, Version: st.Version,
+		CreatedAt: st.CreatedAt.UTC().Format(time.RFC3339),
+		UpdatedAt: st.UpdatedAt.UTC().Format(time.RFC3339),
 	}, nil
 }
 
@@ -117,10 +160,13 @@ type ListInput struct {
 	Limit             int    `json:"limit,omitempty" jsonschema:"Max notes to return (page size). Default 50, capped at 500."`
 	Offset            int    `json:"offset,omitempty" jsonschema:"Number of notes to skip, for paging through large namespaces. Default 0."`
 	IncludeSuperseded bool   `json:"include_superseded,omitempty" jsonschema:"Include superseded (corrected/stale) notes. Default false."`
+	Since             string `json:"since,omitempty" jsonschema:"Only notes updated at/after this time (RFC3339 or YYYY-MM-DD) — e.g. to review what changed recently."`
+	Until             string `json:"until,omitempty" jsonschema:"Only notes updated at/before this time (RFC3339 or YYYY-MM-DD; a bare date means end of that day UTC)."`
 }
 
 // ListEntry is one note summary in a memory_list result: metadata only, no body
-// (fetch the body with memory_get once you've chosen a note).
+// (fetch the body with memory_get once you've chosen a note). Timestamps are
+// RFC3339.
 type ListEntry struct {
 	ID         string `json:"id"`
 	Namespace  string `json:"namespace"`
@@ -129,6 +175,8 @@ type ListEntry struct {
 	Title      string `json:"title"`
 	Version    int    `json:"version"`
 	Superseded bool   `json:"superseded"`
+	CreatedAt  string `json:"created_at"`
+	UpdatedAt  string `json:"updated_at"`
 }
 
 // ListOutput is the memory_list result shape. Limit/Offset echo the effective
@@ -158,11 +206,21 @@ func (e *Engine) List(ctx context.Context, in ListInput) (ListOutput, error) {
 	}
 	limit = min(limit, maxListPageLimit)
 	offset := max(in.Offset, 0)
+	since, err := parseTimeBound("since", in.Since, false)
+	if err != nil {
+		return ListOutput{}, err
+	}
+	until, err := parseTimeBound("until", in.Until, true)
+	if err != nil {
+		return ListOutput{}, err
+	}
 	summaries, err := e.store.ListNotes(ctx, e.tenantID, index.ListOpts{
 		Namespace:         in.Namespace,
 		Limit:             limit,
 		Offset:            offset,
 		IncludeSuperseded: in.IncludeSuperseded,
+		Since:             since,
+		Until:             until,
 	})
 	if err != nil {
 		return ListOutput{}, e.opError("list", err)
@@ -173,6 +231,8 @@ func (e *Engine) List(ctx context.Context, in ListInput) (ListOutput, error) {
 			ID: summaries[i].ID, Namespace: summaries[i].Namespace, Kind: summaries[i].Kind,
 			Tier: summaries[i].Tier, Title: summaries[i].Title, Version: summaries[i].Version,
 			Superseded: summaries[i].Superseded,
+			CreatedAt:  summaries[i].CreatedAt.UTC().Format(time.RFC3339),
+			UpdatedAt:  summaries[i].UpdatedAt.UTC().Format(time.RFC3339),
 		}
 	}
 	return out, nil

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -60,6 +61,8 @@ type NoteState struct {
 	Supersedes string
 	Version    int
 	Deleted    bool
+	CreatedAt  time.Time
+	UpdatedAt  time.Time
 }
 
 // VersionConflictError is returned when an optimistic write's expected version
