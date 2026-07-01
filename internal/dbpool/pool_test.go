@@ -3,6 +3,7 @@ package dbpool_test
 import (
 	"context"
 	"errors"
+	"net/url"
 	"os"
 	"strings"
 	"testing"
@@ -60,5 +61,33 @@ func TestNewPoolErrorClassification(t *testing.T) {
 	}
 	if errors.Is(err, dbpool.ErrDBUnreachable) {
 		t.Errorf("malformed-URL error wrongly classified transient: %v", err)
+	}
+}
+
+// TestNewPool_RejectsRLSBypassingRole verifies the fail-closed boot assertion:
+// a SUPERUSER (or BYPASSRLS) connection silently ignores RLS — the only tenant
+// boundary — so NewPool must refuse it outright. The test derives the bootstrap
+// superuser's URL from TEST_DATABASE_URL (both the local gate and CI provision
+// the cluster with bootstrap persistor/persistor and app persistor_app).
+func TestNewPool_RejectsRLSBypassingRole(t *testing.T) {
+	dbURL := os.Getenv("TEST_DATABASE_URL")
+	if dbURL == "" {
+		t.Skip("TEST_DATABASE_URL not set")
+	}
+	u, err := url.Parse(dbURL)
+	if err != nil {
+		t.Fatalf("parsing TEST_DATABASE_URL: %v", err)
+	}
+	u.User = url.UserPassword("persistor", "persistor")
+
+	_, err = dbpool.NewPool(context.Background(), u.String(), 2)
+	if err == nil {
+		t.Fatal("NewPool accepted a superuser connection; RLS would be silently voided")
+	}
+	if !strings.Contains(err.Error(), "bypasses row-level security") {
+		t.Errorf("unexpected error: %v", err)
+	}
+	if errors.Is(err, dbpool.ErrDBUnreachable) {
+		t.Errorf("posture error wrongly classified transient: %v", err)
 	}
 }
