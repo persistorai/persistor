@@ -39,6 +39,12 @@ type serverConfig struct {
 	// by a CF Transform Rule on proxied traffic), and the per-IP limiters switch
 	// to keying on CF-Connecting-IP. Leave unset for self-host/tailnet binds.
 	originSecret string
+	// dcrEnabled mounts the unauthenticated /register DCR relay and advertises
+	// registration_endpoint in the AS metadata facade (default true — claude.ai
+	// web connectors register their OAuth client through it). Set
+	// PERSISTOR_DCR_ENABLED=false to shut the relay off if it is being abused;
+	// already-registered clients keep working, new connector setups fail.
+	dcrEnabled bool
 }
 
 // defaultDBMaxConns is the pool size when PERSISTOR_DB_MAX_CONNS is unset.
@@ -63,6 +69,9 @@ func loadConfig() (serverConfig, error) {
 		logLevel:       os.Getenv("PERSISTOR_LOG_LEVEL"),
 		trustedOrigins: parseTrustedOrigins(os.Getenv("PERSISTOR_TRUSTED_ORIGINS")),
 		originSecret:   os.Getenv("PERSISTOR_ORIGIN_SECRET"),
+		// Default on: DCR is how browser MCP clients onboard. Only an explicit
+		// "false" turns the relay off (abuse response).
+		dcrEnabled: !strings.EqualFold(os.Getenv("PERSISTOR_DCR_ENABLED"), "false"),
 	}
 	if cfg.logLevel == "" {
 		cfg.logLevel = "info"

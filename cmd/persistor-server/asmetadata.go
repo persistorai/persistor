@@ -6,6 +6,8 @@ import (
 	"io"
 	"net/http"
 	"strings"
+
+	"github.com/sirupsen/logrus"
 )
 
 // authServerMetadata is the RFC 8414 OAuth 2.0 Authorization Server Metadata
@@ -23,7 +25,7 @@ type authServerMetadata struct {
 	Issuer                            string   `json:"issuer"`
 	AuthorizationEndpoint             string   `json:"authorization_endpoint"`
 	TokenEndpoint                     string   `json:"token_endpoint"`
-	RegistrationEndpoint              string   `json:"registration_endpoint"`
+	RegistrationEndpoint              string   `json:"registration_endpoint,omitempty"`
 	UserinfoEndpoint                  string   `json:"userinfo_endpoint"`
 	JWKSURI                           string   `json:"jwks_uri"`
 	ResponseTypesSupported            []string `json:"response_types_supported"`
@@ -46,13 +48,19 @@ func stytchEndpoint(issuer, path string) string {
 // upstream IdP base used to derive the token/userinfo endpoints; jwksURL is the
 // upstream signing-key set. registration_endpoint points back at this server's
 // same-origin /register proxy so clients that insist on same-origin DCR still
-// work; the proxy relays to the IdP.
-func newAuthServerMetadata(publicURL, stytchIssuer, jwksURL string) *authServerMetadata {
+// work; the proxy relays to the IdP. With dcr false the endpoint is omitted from
+// the document (and the route is not mounted), so clients fail at discovery with
+// a clear "no registration" rather than a 404 at POST time.
+func newAuthServerMetadata(publicURL, stytchIssuer, jwksURL string, dcr bool) *authServerMetadata {
+	registration := ""
+	if dcr {
+		registration = publicURL + "/register"
+	}
 	return &authServerMetadata{
 		Issuer:                            publicURL,
 		AuthorizationEndpoint:             publicURL + "/authorize",
 		TokenEndpoint:                     stytchEndpoint(stytchIssuer, "/v1/oauth2/token"),
-		RegistrationEndpoint:              publicURL + "/register",
+		RegistrationEndpoint:              registration,
 		UserinfoEndpoint:                  stytchEndpoint(stytchIssuer, "/v1/oauth2/userinfo"),
 		JWKSURI:                           jwksURL,
 		ResponseTypesSupported:            []string{"code"},
@@ -89,7 +97,12 @@ const maxRegisterBody = 64 << 10
 // posts DCR to the resource origin (/register) instead of following the
 // registration_endpoint cross-origin, so this same-origin proxy bridges to the
 // IdP. Only POST is accepted and the body is size-capped.
-func newRegisterProxy(client *http.Client, upstream string) http.HandlerFunc {
+//
+// Every registration attempt is logged (client_name best-effort from the DCR
+// body, upstream status, client IP): this endpoint is unauthenticated by
+// protocol necessity, so the log is the visibility into who is minting OAuth
+// clients against the IdP project.
+func newRegisterProxy(client *http.Client, upstream string, log logrus.FieldLogger) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			w.Header().Set("Allow", http.MethodPost)
@@ -110,14 +123,31 @@ func newRegisterProxy(client *http.Client, upstream string) http.HandlerFunc {
 		req.Header.Set("Accept", "application/json")
 		resp, err := client.Do(req)
 		if err != nil {
+			log.WithField("client_name", dcrClientName(body)).Warn("dcr registration: upstream unreachable")
 			http.Error(w, "upstream unreachable", http.StatusBadGateway)
 			return
 		}
 		defer func() { _ = resp.Body.Close() }()
+		log.WithFields(logrus.Fields{
+			"client_name": dcrClientName(body),
+			"status":      resp.StatusCode,
+		}).Info("dcr registration relayed")
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(resp.StatusCode)
 		if _, err := io.Copy(w, io.LimitReader(resp.Body, maxRegisterBody)); err != nil {
 			return
 		}
 	}
+}
+
+// dcrClientName extracts client_name from a DCR request body, best-effort, for
+// the registration log line. Never fails: unparseable bodies log as "".
+func dcrClientName(body []byte) string {
+	var req struct {
+		ClientName string `json:"client_name"`
+	}
+	if err := json.Unmarshal(body, &req); err != nil {
+		return ""
+	}
+	return req.ClientName
 }
