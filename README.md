@@ -48,7 +48,8 @@ Streamable HTTP, authenticated by OIDC. It serves eight tools:
 - `memory_namespaces` — list namespaces and their counts.
 - `memory_write` — create or update a note (with optional supersession);
   searchable with no indexing lag.
-- `memory_delete` / `memory_restore` — soft-delete and restore a note.
+- `memory_delete` / `memory_restore` — tombstone a note out of retrieval and
+  undo that (history preserved; hard removal is the operator-level `purge`).
 - `brief` — assemble the working-set: every pinned Core note plus the Tail notes
   most relevant to a seed, under a token budget.
 

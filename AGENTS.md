@@ -181,7 +181,7 @@ The multi-tenant / public-MCP hardening is in place:
 ## Architecture
 
 ```text
-cmd/persistor-cli/     # the `persistor` operator CLI: brief, search, eval, admin, export, import, delete-tenant
+cmd/persistor-cli/     # the `persistor` operator CLI: migrate, brief, search, list, namespaces, eval, admin, export, import, purge, delete-tenant
 cmd/persistor-server/  # the MCP daemon (OIDC): memory_search/get/write/delete/restore + brief over Streamable HTTP
 internal/
   index/               # memory engine: PG-native versioned notes, chunking, FTS search, brief, import/export
