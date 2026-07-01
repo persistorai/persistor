@@ -95,6 +95,26 @@ jobs:
           # matching the local install.
           install-mode: goinstall
 
+  vulncheck:
+    name: Vulnerability scan
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+
+      # Gates dependency pulls on the Go vulnerability database: symbol-level
+      # analysis, so only vulnerabilities in code paths we actually reach fail
+      # the build. This store will hold sensitive personal data — a vulnerable
+      # dep must not ship silently.
+      - name: govulncheck
+        run: |
+          go install golang.org/x/vuln/cmd/govulncheck@latest
+          govulncheck ./...
+
 # Retrieval eval is wired into the test job above via TestProseFirstEval_BeatsStaticBaseline
 # (internal/index): it seeds a synthetic prose corpus and gates on text-mode FTS
 # recall@k per category — no embedding backend required. The real PII-bearing

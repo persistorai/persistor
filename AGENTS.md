@@ -158,6 +158,15 @@ The multi-tenant / public-MCP hardening is in place:
   trigger blocks UPDATE/DELETE/TRUNCATE except an explicit operator purge
   (`app.purge` GUC, used only by tenant hard-delete). A supersede of a
   non-existent id is rejected at the engine boundary.
+  **Grant invariant (do not widen):** the `app.purge` escape hatch is a plain
+  session GUC any connection can set — in the split-role production posture,
+  immutability actually holds because `persistor_app` is granted only
+  `SELECT, INSERT` on `note_versions` (`deploy/sql/provision-roles.sql`), so a
+  DELETE fails on privilege even with the flag set and no MCP tool exposes
+  purge. Granting the app role UPDATE/DELETE on `note_versions` would silently
+  void the audit trail. (In the single-role self-host posture —
+  `PERSISTOR_AUTO_MIGRATE=true`, serving role owns the tables — the trigger is
+  the only guard; that is accepted for a single-user box.)
 - **Per-tenant write rate limit** at the MCP handler (token bucket) blunts a
   runaway or prompt-injected writer.
 - **Tenant export + hard-delete** (`persistor export` / `persistor delete-tenant`)
