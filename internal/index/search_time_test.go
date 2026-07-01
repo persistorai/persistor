@@ -190,3 +190,51 @@ func TestSearchSnippetsAndKindFilter(t *testing.T) {
 		}
 	}
 }
+
+// TestBumpAccess: telemetry upserts increment access_count without touching
+// the note row (updated_at must NOT move — it feeds the F2 recency tiebreak).
+func TestBumpAccess(t *testing.T) {
+	store, pool, tenant := newStoreTest(t)
+	ctx := context.Background()
+	const id = "test:access"
+
+	if _, err := store.WriteNote(ctx, tenant, &index.PGNoteInput{ID: id, Body: "telemetry ocelot"}, 0); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	before, _, err := store.NoteState(ctx, tenant, id)
+	if err != nil {
+		t.Fatalf("state: %v", err)
+	}
+
+	if err := store.BumpAccess(ctx, tenant, []string{id}); err != nil {
+		t.Fatalf("bump 1: %v", err)
+	}
+	if err := store.BumpAccess(ctx, tenant, []string{id}); err != nil {
+		t.Fatalf("bump 2: %v", err)
+	}
+
+	var count int64
+	tx, err := pool.Begin(ctx)
+	if err != nil {
+		t.Fatalf("begin: %v", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	if _, err := tx.Exec(ctx, "SELECT set_config('app.tenant_id', $1, true)", tenant); err != nil {
+		t.Fatalf("set tenant: %v", err)
+	}
+	if err := tx.QueryRow(ctx,
+		"SELECT access_count FROM note_access WHERE note_id = $1", id).Scan(&count); err != nil {
+		t.Fatalf("read count: %v", err)
+	}
+	if count != 2 {
+		t.Errorf("access_count = %d, want 2", count)
+	}
+
+	after, _, err := store.NoteState(ctx, tenant, id)
+	if err != nil {
+		t.Fatalf("state after: %v", err)
+	}
+	if !after.UpdatedAt.Equal(before.UpdatedAt) {
+		t.Errorf("updated_at moved (%v -> %v); telemetry must not touch the note row", before.UpdatedAt, after.UpdatedAt)
+	}
+}

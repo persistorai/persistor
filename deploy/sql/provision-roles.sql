@@ -46,7 +46,7 @@ GRANT USAGE ON SCHEMA public TO persistor_app;
 -- (SELECT + INSERT only); its trigger blocks UPDATE/DELETE/TRUNCATE and the
 -- operator purge path runs as the owner. goose_db_version is read so the daemon
 -- can verify the schema is current at boot.
-GRANT SELECT, INSERT, UPDATE, DELETE ON notes, chunks, tenants, identities TO persistor_app;
+GRANT SELECT, INSERT, UPDATE, DELETE ON notes, chunks, tenants, identities, note_access TO persistor_app;
 GRANT SELECT, INSERT ON note_versions TO persistor_app;
 GRANT SELECT ON goose_db_version TO persistor_app;
 
