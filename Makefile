@@ -16,7 +16,7 @@ LDFLAGS := -s -w \
 	-X main.commit=$(COMMIT) \
 	-X main.buildDate=$(BUILD_DATE)
 
-.PHONY: build build-cli build-server clean test test-race test-coverage lint lint-fix lint-md format vet ci deps tidy setup-hooks install install-cli install-server
+.PHONY: build build-cli build-server clean test test-race test-coverage lint lint-fix lint-md format vet ci gate deploy deps tidy setup-hooks install install-cli install-server
 
 ## Build all binaries.
 build: build-cli build-server
@@ -86,6 +86,14 @@ lint-md:
 ## Run full CI checks.
 ci: format vet lint lint-md test-coverage
 	@echo "CI checks passed!"
+
+## Run the full build gate (self-provisions the test DB; includes the RLS tests).
+gate:
+	scripts/gate.sh
+
+## Build, push, and roll out to production (gate -> DOCR -> App Platform -> verify).
+deploy:
+	scripts/deploy.sh
 
 ## Install git hooks.
 setup-hooks:
