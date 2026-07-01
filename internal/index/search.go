@@ -43,6 +43,14 @@ type SearchOpts struct {
 // SearchNotes runs full-text search over chunk tsvectors, deduplicates to the
 // owning notes, and ranks each note by its best chunk. This is the primary
 // retrieval path: deterministic, debuggable, no embeddings.
+//
+// Ranking is relevance first, recency as the TIEBREAKER (equal-rank notes
+// surface newest-first — short personal-memory notes tie on ts_rank often, and
+// newest-first is the right prior there, e.g. the latest status note for a
+// project). Deliberately NOT a time-decay multiplier: in long-term memory age
+// is not irrelevance — a strong match from years ago (the founding decision,
+// the canonical fact) must outrank a weak fresh one, and STALENESS is already
+// handled explicitly by supersession rather than guessed at by decay.
 func (s *Store) SearchNotes(ctx context.Context, tenantID, query string, opts SearchOpts) ([]NoteHit, error) {
 	ctx, cancel := context.WithTimeout(ctx, storeQueryTimeout)
 	defer cancel()
@@ -76,7 +84,7 @@ func (s *Store) SearchNotes(ctx context.Context, tenantID, query string, opts Se
 		  AND ($5::timestamptz IS NULL OR n.updated_at >= $5)
 		  AND ($6::timestamptz IS NULL OR n.updated_at <= $6)
 		GROUP BY n.id, n.title, n.kind, n.tier, n.superseded, n.created_at, n.updated_at
-		ORDER BY rank DESC, n.id
+		ORDER BY rank DESC, n.updated_at DESC, n.id
 		LIMIT $7`
 
 	var hits []NoteHit
