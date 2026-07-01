@@ -5,6 +5,39 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.10.0] — 2026-07-01
+
+Security-hardening phase 1 of the production-readiness plan, gating the
+sensitive-data import (`planning-docs/persistor/PRODUCTION-READINESS.md`).
+
+### Added
+
+- **Origin lock** (`PERSISTOR_ORIGIN_SECRET`): when set, every route except
+  `/healthz` requires the matching `X-Origin-Secret` header (injected by a
+  Cloudflare Transform Rule on proxied traffic), making the edge WAF mandatory
+  instead of bypassable via the bare origin host. With the lock enforced, the
+  per-IP limiters key on `CF-Connecting-IP` instead of the proxy address —
+  previously they collapsed into one global bucket behind Cloudflare.
+- **DCR relay controls**: `PERSISTOR_DCR_ENABLED=false` shuts off the
+  unauthenticated `/register` relay (and drops `registration_endpoint` from the
+  AS metadata) as an abuse response; every registration attempt is logged.
+- **`/metrics` tenant allowlist** (`PERSISTOR_METRICS_TENANTS`): restricts the
+  endpoint beyond "any valid token", which under open auto-provisioning
+  includes self-provisioned strangers.
+- **Access-token type assertion** in OIDC verify: rejects ID-token markers
+  (`at_hash`/`nonce` claims) and non-access `typ` headers, so token-type
+  separation no longer rests solely on the Stytch audience invariant.
+- **Namespace validation** at the write boundary (lowercase slug, no `:`) and
+  the same note-id charset check on CLI `import` frontmatter ids.
+- **govulncheck** CI job + `make vulncheck`; `make gate` / `make deploy`
+  one-command build gate and production deploy (`scripts/gate.sh`,
+  `scripts/deploy.sh`).
+
+### Changed
+
+- CORS allow headers are granted only to `PERSISTOR_TRUSTED_ORIGINS` (default
+  claude.ai) instead of reflecting any Origin.
+
 ## [0.9.0] — 2026-06-22
 
 Pre-production hardening pass (from a multi-dimension code review), ahead of
