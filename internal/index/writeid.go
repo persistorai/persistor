@@ -55,6 +55,38 @@ func validateNoteID(id string) error {
 	return nil
 }
 
+// ValidateNoteID is the exported form of the note-id check, for write paths that
+// carry a pre-derived id (the CLI importer's frontmatter ids) so they enforce
+// the same charset/length rules as DeriveNoteID.
+func ValidateNoteID(id string) error {
+	return validateNoteID(id)
+}
+
+// maxNamespaceLen mirrors the chk_note_namespace_len DB constraint.
+const maxNamespaceLen = 128
+
+// namespacePattern constrains a namespace to a lowercase slug WITHOUT ':' —
+// the colon is the namespace/slug separator inside note ids, so a namespace
+// containing one would make "demo:memory-x" style ids ambiguous.
+var namespacePattern = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]*$`)
+
+// ValidateNamespace enforces the namespace slug shape at the write boundary
+// (empty means "default" and is allowed). Data hygiene within a tenant: queries
+// are parameterized and RLS-scoped regardless, but a free-form namespace would
+// fragment listings and collide with the id derivation above.
+func ValidateNamespace(ns string) error {
+	if ns == "" {
+		return nil
+	}
+	if len(ns) > maxNamespaceLen {
+		return fmt.Errorf("namespace too long: %d > %d", len(ns), maxNamespaceLen)
+	}
+	if !namespacePattern.MatchString(ns) {
+		return fmt.Errorf("invalid namespace %q (want a lowercase slug of a-z, 0-9, and ._- ; no ':')", ns)
+	}
+	return nil
+}
+
 // cleanRelPath rejects absolute paths and traversal, returning a slash-normalized
 // relative .md path. A note id is derived from it, so it must stay inside a clean
 // relative namespace.
