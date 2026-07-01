@@ -111,6 +111,73 @@ func TestOIDCAuth_Verify(t *testing.T) {
 	}
 }
 
+// TestOIDCAuth_TokenTypeSeparation covers the access-token assertion: ID-token
+// marker claims (at_hash, nonce) and non-access typ headers are rejected even
+// when the signature, issuer, and audience all validate; access-token typ
+// headers (JWT / at+jwt) pass.
+func TestOIDCAuth_TokenTypeSeparation(t *testing.T) {
+	key, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatalf("genkey: %v", err)
+	}
+	ctx := context.Background()
+	a := mcpauth.NewOIDCAuth(staticKeyFunc(&key.PublicKey), testIssuer, testAudience)
+
+	sign := func(extra map[string]any, typ string) string {
+		claims := jwt.MapClaims{
+			"iss": testIssuer,
+			"sub": "user-abc",
+			"aud": testAudience,
+			"exp": time.Now().Add(time.Hour).Unix(),
+			"iat": time.Now().Unix(),
+		}
+		for k, v := range extra {
+			claims[k] = v
+		}
+		tok := jwt.NewWithClaims(jwt.SigningMethodRS256, claims)
+		if typ != "" {
+			tok.Header["typ"] = typ
+		}
+		s, err := tok.SignedString(key)
+		if err != nil {
+			t.Fatalf("sign: %v", err)
+		}
+		return s
+	}
+
+	rejected := []struct {
+		name  string
+		token string
+	}{
+		{"id token via at_hash", sign(map[string]any{"at_hash": "abc123"}, "JWT")},
+		{"id token via nonce", sign(map[string]any{"nonce": "n-0S6_WzA2Mj"}, "JWT")},
+		{"foreign typ header", sign(nil, "secevent+jwt")},
+	}
+	for _, tc := range rejected {
+		t.Run(tc.name, func(t *testing.T) {
+			if _, err := a.Verify(ctx, tc.token, nil); !errors.Is(err, auth.ErrInvalidToken) {
+				t.Fatalf("want auth.ErrInvalidToken, got %v", err)
+			}
+		})
+	}
+
+	accepted := []struct {
+		name  string
+		token string
+	}{
+		{"generic JWT typ", sign(nil, "JWT")},
+		{"rfc9068 at+jwt", sign(nil, "at+jwt")},
+		{"rfc9068 full mediatype", sign(nil, "application/at+jwt")},
+	}
+	for _, tc := range accepted {
+		t.Run(tc.name, func(t *testing.T) {
+			if _, err := a.Verify(ctx, tc.token, nil); err != nil {
+				t.Fatalf("access token rejected: %v", err)
+			}
+		})
+	}
+}
+
 // fakeTenantResolver stands in for the identities-backed tenant resolver.
 type fakeTenantResolver struct {
 	tenant     string
