@@ -62,7 +62,7 @@ func TestCrossOriginProtection(t *testing.T) {
 	if err := protection.AddTrustedOrigin("https://claude.ai"); err != nil {
 		t.Fatalf("AddTrustedOrigin: %v", err)
 	}
-	mux := newMux(getServer, verifier, &auth.RequireBearerTokenOptions{}, nil, nil, protection)
+	mux := newMux(getServer, verifier, &auth.RequireBearerTokenOptions{}, nil, nil, protection, false)
 
 	// Untrusted browser cross-origin request -> 403 from the cross-origin guard.
 	cross := httptest.NewRequest(http.MethodPost, "/mcp", http.NoBody)
@@ -113,7 +113,7 @@ func TestReadyz(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			mux := newMux(getServer, verifier, &auth.RequireBearerTokenOptions{}, nil, tt.ready, http.NewCrossOriginProtection())
+			mux := newMux(getServer, verifier, &auth.RequireBearerTokenOptions{}, nil, tt.ready, http.NewCrossOriginProtection(), false)
 			rec := httptest.NewRecorder()
 			mux.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/readyz", http.NoBody))
 			if rec.Code != tt.want {

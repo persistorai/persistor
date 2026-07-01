@@ -175,7 +175,10 @@ func buildHTTPServer(cfg *serverConfig, store *index.Store, authn authBundle, lo
 			return nil, fmt.Errorf("registering trusted origin %q: %w", origin, err)
 		}
 	}
-	mux := newMux(getServer, authn.verify, authn.opts, authn.metadata, ready, protection)
+	// The origin lock is what makes CF-Connecting-IP trustworthy: only enable
+	// header-based client IPs for the per-IP limiters when it is enforced.
+	trustCF := cfg.originSecret != ""
+	mux := newMux(getServer, authn.verify, authn.opts, authn.metadata, ready, protection, trustCF)
 	m := newMetrics(poolStat)
 	// /metrics is bearer-gated, not public: it exposes operational counters and DB
 	// pool saturation (max_conns / acquired_conns informs a connection-exhaustion
@@ -202,9 +205,11 @@ func buildHTTPServer(cfg *serverConfig, store *index.Store, authn authBundle, lo
 			stytchEndpoint(cfg.oidcIssuer, "/v1/oauth2/register"),
 		)
 		regLimiter := mcpengine.NewKeyLimiter(registerRatePerSecond, registerRateBurst)
-		mux.Handle("/register", perIPLimit(regLimiter, regProxy))
+		mux.Handle("/register", perIPLimit(regLimiter, trustCF, regProxy))
 	}
-	handler := observe(log, m, securityHeaders(cfg.publicHTTPS(), cors(contentLengthBuffer(mux))))
+	// originLock sits inside observe so rejected direct-to-origin hits still land
+	// in the access log (they're signal: someone is probing the bare origin).
+	handler := observe(log, m, originLock(cfg.originSecret, securityHeaders(cfg.publicHTTPS(), cors(contentLengthBuffer(mux)))))
 	return &http.Server{
 		Addr:              cfg.listenAddr,
 		Handler:           handler,

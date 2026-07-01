@@ -40,6 +40,16 @@ was originally written for a tailnet-bound daemon.
 > blocks direct-origin `/mcp`) plus the new app-layer limits; revisit if traffic
 > or abuse grows. #6 **LEFT OPEN** on the Stytch Test project — reconsider before
 > any public/Live launch. Both are conscious choices, not oversights.
+>
+> **Update (2026-07-01):** #1 re-opened for the sensitive-data import
+> (PRODUCTION-READINESS plan, item S1). The app half is now SHIPPED:
+> `PERSISTOR_ORIGIN_SECRET` enables the origin-lock middleware (403 without the
+> matching `X-Origin-Secret` on every route but `/healthz`) and switches the
+> per-IP limiters to `CF-Connecting-IP` — behind the proxy they otherwise
+> collapse into one global bucket keyed on Cloudflare's own address. Remaining
+> half (S1b, the operator): create the Cloudflare Transform Rule injecting the header
+> on proxied traffic, then set the same value as an encrypted app secret and
+> verify direct-to-origin requests 403.
 
 ### #1 — Cloudflare WAF bypass (MEDIUM-HIGH)
 
