@@ -5,6 +5,30 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.11.0] — 2026-07-01
+
+Retrieval upgrades (production-readiness Phase 4), all eval-gated. Synthetic
+eval: overall recall@5 0.871 → 0.882; new abstention/typo categories at 1.000;
+paraphrase floor 0.000 recorded as the honest lexical-gap number.
+
+### Added
+
+- **Timestamps on the tool surface**: `created_at`/`updated_at` (RFC3339) in
+  search/list/get results; `since`/`until` filters on search + list (RFC3339
+  or bare dates); `brief` stamps each note's last-updated date. "What did we
+  decide last week" is now answerable.
+- **Recency tiebreaker**: equal-relevance notes surface newest-first.
+  Deliberately not time-decay — staleness is supersession's job.
+- **pg_trgm zero-hit fallback**: typo'd/misspelled queries retry with trigram
+  word-similarity when FTS finds nothing (new pg_trgm extension prerequisite,
+  provisioned like btree_gin; migration 012 adds the index).
+- **Snippets**: every search hit carries a matched-fragment excerpt
+  (ts_headline, computed only for the returned page).
+- **`kind` filter** on memory_search / memory_list.
+- **Access telemetry** (note_access table): reads bump access_count /
+  last_accessed_at, best-effort — observational only, never a ranking input.
+- Eval harness: abstention (`expect_abstain`) and paraphrase/typo categories.
+
 ## [0.10.1] — 2026-07-01
 
 Reliability & disaster recovery (production-readiness Phase 2).
