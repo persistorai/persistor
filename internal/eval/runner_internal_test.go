@@ -177,3 +177,44 @@ func TestRunnerRunCapturesSearchErrors(t *testing.T) {
 		t.Fatal("expected question error to be captured")
 	}
 }
+
+// stubSearch returns a fixed result set for any query.
+type stubSearch struct{ notes []NoteResult }
+
+func (s *stubSearch) FullText(context.Context, string, *SearchOptions) ([]NoteResult, error) {
+	return s.notes, nil
+}
+
+// TestRunAbstainQuestions locks the abstention semantics: zero results = pass,
+// any result = fail, scored as one synthetic expectation so aggregation works.
+func TestRunAbstainQuestions(t *testing.T) {
+	fixture := &Fixture{Name: "abstain", Questions: []Question{
+		{Prompt: "nothing about this exists", Category: "abstention", ExpectAbstain: true},
+	}}
+
+	silent, err := NewRunner(&stubSearch{}).Run(context.Background(), fixture)
+	if err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	if silent.Passed != 1 || silent.RecallAtK != 1.0 {
+		t.Errorf("silence should pass an abstain question: passed=%d recall=%.2f", silent.Passed, silent.RecallAtK)
+	}
+
+	noisy, err := NewRunner(&stubSearch{notes: []NoteResult{{ID: "x", Title: "Noise"}}}).
+		Run(context.Background(), fixture)
+	if err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	if noisy.Passed != 0 || noisy.RecallAtK != 0 {
+		t.Errorf("noise must fail an abstain question: passed=%d recall=%.2f", noisy.Passed, noisy.RecallAtK)
+	}
+}
+
+// TestFixtureRejectsAbstainWithExpectations locks the validation rule.
+func TestFixtureRejectsAbstainWithExpectations(t *testing.T) {
+	_, err := parseFixture([]byte(`{"name":"bad","questions":[
+		{"prompt":"p","expect_abstain":true,"expected_note_ids":["x"]}]}`))
+	if err == nil {
+		t.Fatal("fixture combining expect_abstain with expected ids must be rejected")
+	}
+}

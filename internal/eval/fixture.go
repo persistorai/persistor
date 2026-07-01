@@ -21,7 +21,12 @@ type Question struct {
 	ExpectedLabels       []string `json:"expected_labels,omitempty"`
 	PreferredFirstNoteID string   `json:"preferred_first_note_id,omitempty"`
 	PreferredFirstLabel  string   `json:"preferred_first_label,omitempty"`
-	Notes                string   `json:"notes,omitempty"`
+	// ExpectAbstain inverts the expectation: the corpus holds NO answer, so the
+	// question passes only when retrieval returns ZERO results. Guards the
+	// abstention property (LongMemEval's fifth ability): memory must say
+	// "nothing" for absent information, not surface confident-looking noise.
+	ExpectAbstain bool   `json:"expect_abstain,omitempty"`
+	Notes         string `json:"notes,omitempty"`
 }
 
 // LoadFixture reads and validates a fixture from disk.
@@ -61,6 +66,12 @@ func validateQuestion(i int, q *Question) error {
 		return fmt.Errorf("question %d: prompt is required", i)
 	}
 	expected := buildExpectedSet(q)
+	if q.ExpectAbstain {
+		if len(expected) != 0 || q.PreferredFirstNoteID != "" || q.PreferredFirstLabel != "" {
+			return fmt.Errorf("question %d: expect_abstain cannot be combined with expected ids/labels", i)
+		}
+		return nil
+	}
 	if len(expected) == 0 {
 		return fmt.Errorf("question %d: at least one expected note id or label is required", i)
 	}
