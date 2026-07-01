@@ -330,8 +330,8 @@ func searchIDs(t *testing.T, store *index.Store, tenant, query string) []string 
 		t.Fatalf("search %q: %v", query, err)
 	}
 	ids := make([]string, len(hits))
-	for i, h := range hits {
-		ids[i] = h.ID
+	for i := range hits {
+		ids[i] = hits[i].ID
 	}
 	return ids
 }

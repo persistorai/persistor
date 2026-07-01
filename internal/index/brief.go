@@ -149,7 +149,13 @@ func RenderMarkdown(ws *WorkingSet) string {
 func writeNotes(b *strings.Builder, notes []NoteRecord) {
 	for i := range notes {
 		n := &notes[i]
-		fmt.Fprintf(b, "### %s\n\n", n.Title)
+		// Stamp the note's last-updated date so the reader can weigh freshness
+		// ("what did we decide last week") without a follow-up lookup.
+		if n.UpdatedAt.IsZero() {
+			fmt.Fprintf(b, "### %s\n\n", n.Title)
+		} else {
+			fmt.Fprintf(b, "### %s (updated %s)\n\n", n.Title, n.UpdatedAt.UTC().Format("2006-01-02"))
+		}
 		body := strings.TrimRight(n.Body, "\n")
 		if body != "" {
 			b.WriteString(body)

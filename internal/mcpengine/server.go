@@ -33,8 +33,11 @@ const serverInstructions = "This is the user's long-term memory (Persistor): dur
 const (
 	searchDescription = "Search the user's long-term prose memory (full-text over the agent's own notes). " +
 		"Use this FIRST whenever the user references people, projects, decisions, or past events you lack " +
-		"context for. Returns ranked note summaries; superseded notes are excluded unless you ask for them. " +
-		"Do NOT use it for information already in this conversation or for general world knowledge."
+		"context for. Returns ranked note summaries with created_at/updated_at; superseded notes are excluded " +
+		"unless you ask for them. For time-scoped questions ('what did we decide last week') resolve the phrase " +
+		"to a date and pass since/until. If a search misses, retry once with different wording — synonyms, " +
+		"the entity's name, or a broader phrase. Do NOT use it for information already in this conversation " +
+		"or for general world knowledge."
 	getDescription = "Fetch one note's full prose body by id (as returned by memory_search). Returns the " +
 		"note's current `version` — pass it back as `expected_version` to safely update or delete the note."
 	listDescription = "List the user's stored notes as summaries (id, namespace, title, kind, tier, version) " +
@@ -116,7 +119,7 @@ func asciiSafeJSON(b []byte) string {
 func registerTools(server *mcp.Server, e *Engine) {
 	mcp.AddTool(server, &mcp.Tool{Name: "memory_search", Description: searchDescription},
 		func(ctx context.Context, _ *mcp.CallToolRequest, in SearchInput) (*mcp.CallToolResult, any, error) {
-			out, err := e.Search(ctx, in)
+			out, err := e.Search(ctx, &in)
 			if err != nil {
 				return nil, nil, err
 			}

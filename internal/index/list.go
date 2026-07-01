@@ -3,6 +3,7 @@ package index
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 )
@@ -26,16 +27,21 @@ type NoteSummary struct {
 	Title      string
 	Version    int
 	Superseded bool
+	CreatedAt  time.Time
+	UpdatedAt  time.Time
 }
 
 // ListOpts tunes an enumeration. Namespace "" lists every namespace; a
 // non-empty Limit/Offset paginate; IncludeSuperseded adds corrected/stale notes
-// (excluded by default, matching search).
+// (excluded by default, matching search). Since/Until bound by updated_at
+// (nil = unbounded), matching SearchOpts.
 type ListOpts struct {
 	Namespace         string
 	Limit             int
 	Offset            int
 	IncludeSuperseded bool
+	Since             *time.Time
+	Until             *time.Time
 }
 
 // NamespaceCount is one namespace and how many live notes it holds.
@@ -62,25 +68,27 @@ func (s *Store) ListNotes(ctx context.Context, tenantID string, opts ListOpts) (
 	offset := max(opts.Offset, 0)
 
 	const q = `
-		SELECT id, namespace, kind, tier, title, version, superseded
+		SELECT id, namespace, kind, tier, title, version, superseded, created_at, updated_at
 		  FROM notes
 		 WHERE tenant_id = current_setting('app.tenant_id')::uuid
 		   AND deleted = FALSE
 		   AND ($1 = '' OR namespace = $1)
 		   AND (superseded = FALSE OR $2)
+		   AND ($3::timestamptz IS NULL OR updated_at >= $3)
+		   AND ($4::timestamptz IS NULL OR updated_at <= $4)
 		 ORDER BY id
-		 LIMIT $3 OFFSET $4`
+		 LIMIT $5 OFFSET $6`
 
 	var out []NoteSummary
 	err := s.inReadTx(ctx, tenantID, func(tx pgx.Tx) error {
-		rows, err := tx.Query(ctx, q, opts.Namespace, opts.IncludeSuperseded, limit, offset)
+		rows, err := tx.Query(ctx, q, opts.Namespace, opts.IncludeSuperseded, opts.Since, opts.Until, limit, offset)
 		if err != nil {
 			return fmt.Errorf("listing notes: %w", err)
 		}
 		defer rows.Close()
 		for rows.Next() {
 			var n NoteSummary
-			if err := rows.Scan(&n.ID, &n.Namespace, &n.Kind, &n.Tier, &n.Title, &n.Version, &n.Superseded); err != nil {
+			if err := rows.Scan(&n.ID, &n.Namespace, &n.Kind, &n.Tier, &n.Title, &n.Version, &n.Superseded, &n.CreatedAt, &n.UpdatedAt); err != nil {
 				return fmt.Errorf("scanning summary: %w", err)
 			}
 			out = append(out, n)

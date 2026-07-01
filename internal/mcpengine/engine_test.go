@@ -92,7 +92,7 @@ func TestEngine_RoundTrip(t *testing.T) {
 	ctx := context.Background()
 
 	// search: finds the Aurora note.
-	sr, err := e.Search(ctx, mcpengine.SearchInput{Query: "polar storm protocol"})
+	sr, err := e.Search(ctx, &mcpengine.SearchInput{Query: "polar storm protocol"})
 	if err != nil {
 		t.Fatalf("search: %v", err)
 	}
@@ -122,7 +122,7 @@ func TestEngine_RoundTrip(t *testing.T) {
 	}
 
 	// search again: stale note hidden, correction surfaces.
-	sr, err = e.Search(ctx, mcpengine.SearchInput{Query: "polar storm protocol"})
+	sr, err = e.Search(ctx, &mcpengine.SearchInput{Query: "polar storm protocol"})
 	if err != nil {
 		t.Fatalf("search 2: %v", err)
 	}
@@ -172,7 +172,7 @@ func TestEngine_NamespaceFilter(t *testing.T) {
 	}
 
 	// Search restricted to the demo namespace returns only its note.
-	sr, err := e.Search(ctx, mcpengine.SearchInput{Query: "shared keyword alpha", Namespace: "demo"})
+	sr, err := e.Search(ctx, &mcpengine.SearchInput{Query: "shared keyword alpha", Namespace: "demo"})
 	if err != nil {
 		t.Fatalf("search: %v", err)
 	}
@@ -498,7 +498,7 @@ func TestEngine_ReadRateLimited(t *testing.T) {
 	// Burst 0 → the very first read is denied. A nil store is never reached.
 	e := mcpengine.NewEngine(nil, "tenant", mcpengine.WithReadLimiter(mcpengine.NewKeyLimiter(5, 0)))
 	ctx := context.Background()
-	if _, err := e.Search(ctx, mcpengine.SearchInput{Query: "q"}); !errors.Is(err, mcpengine.ErrRateLimited) {
+	if _, err := e.Search(ctx, &mcpengine.SearchInput{Query: "q"}); !errors.Is(err, mcpengine.ErrRateLimited) {
 		t.Fatalf("search: got %v, want ErrRateLimited", err)
 	}
 	if _, err := e.Brief(ctx, mcpengine.BriefInput{}); !errors.Is(err, mcpengine.ErrRateLimited) {
