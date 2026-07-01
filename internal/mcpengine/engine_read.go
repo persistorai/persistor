@@ -104,7 +104,9 @@ func (e *Engine) Search(ctx context.Context, in *SearchInput) (SearchOutput, err
 		return SearchOutput{}, e.opError("search", err)
 	}
 	out := SearchOutput{Results: make([]SearchHit, len(hits))}
+	surfaced := make([]string, len(hits))
 	for i := range hits {
+		surfaced[i] = hits[i].ID
 		out.Results[i] = SearchHit{
 			ID: hits[i].ID, Title: hits[i].Title, Kind: hits[i].Kind,
 			Tier: hits[i].Tier, Rank: hits[i].Rank, Superseded: hits[i].Superseded,
@@ -113,7 +115,19 @@ func (e *Engine) Search(ctx context.Context, in *SearchInput) (SearchOutput, err
 			Snippet:   hits[i].Snippet,
 		}
 	}
+	e.bumpAccess(ctx, surfaced)
 	return out, nil
+}
+
+// bumpAccess records read telemetry, best-effort: losing a tick must never
+// fail the read that triggered it, so errors are logged and swallowed.
+func (e *Engine) bumpAccess(ctx context.Context, ids []string) {
+	if len(ids) == 0 {
+		return
+	}
+	if err := e.store.BumpAccess(ctx, e.tenantID, ids); err != nil && e.log != nil {
+		e.log.WithError(err).Warn("access telemetry update failed")
+	}
 }
 
 // GetInput is the memory_get argument shape.
@@ -154,6 +168,7 @@ func (e *Engine) Get(ctx context.Context, in GetInput) (GetOutput, error) {
 	if !found || st.Deleted || (in.Namespace != "" && st.Namespace != in.Namespace) {
 		return GetOutput{Found: false, ID: in.ID}, nil
 	}
+	e.bumpAccess(ctx, []string{st.ID})
 	return GetOutput{
 		Found: true, ID: st.ID, Namespace: st.Namespace, Kind: st.Kind, Tier: st.Tier,
 		Title: st.Title, Body: st.Body, Version: st.Version,
