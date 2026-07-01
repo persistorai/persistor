@@ -19,7 +19,14 @@ Repo: `github.com/briancolinger/persistor`
 
 ## Build Gate
 
-Before committing, ALL of these must pass:
+**The one command: `make gate`** (`scripts/gate.sh`). It self-provisions the
+disposable test Postgres (docker container `persistor-test-pg` on `:5467`, CI
+role posture) and runs build + vet + lint + the full test suite INCLUDING the
+DB integration tests. Production deploys are also one command: `make deploy`
+(`scripts/deploy.sh` — gate → image → DOCR push → App Platform rollout →
+health verify). Don't hand-roll these steps.
+
+Equivalently, before committing, ALL of these must pass:
 
 ```bash
 go build ./...
