@@ -1,6 +1,7 @@
 package index_test
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/persistorai/persistor/internal/index"
@@ -41,5 +42,36 @@ func TestDeriveNoteID_Rejects(t *testing.T) {
 	// An explicit id with illegal characters is rejected.
 	if _, err := index.DeriveNoteID("", "", "Bad ID!"); err == nil {
 		t.Error("want error for invalid explicit id")
+	}
+}
+
+// TestValidateNamespace covers the write-boundary namespace slug check: ':' is
+// reserved as the namespace/slug separator in note ids, and the charset mirrors
+// note-id slugs.
+func TestValidateNamespace(t *testing.T) {
+	valid := []string{"", "default", "scout", "work-2026", "a.b_c-d", "n0"}
+	for _, ns := range valid {
+		if err := index.ValidateNamespace(ns); err != nil {
+			t.Errorf("ValidateNamespace(%q) = %v, want nil", ns, err)
+		}
+	}
+	invalid := []string{"Scout", "sc out", "scout:sub", "-lead", ".lead", "ns/slash", "ns|pipe", strings.Repeat("a", 129)}
+	for _, ns := range invalid {
+		if err := index.ValidateNamespace(ns); err == nil {
+			t.Errorf("ValidateNamespace(%q) = nil, want error", ns)
+		}
+	}
+}
+
+// TestValidateNoteID_Exported keeps the exported wrapper aligned with the
+// internal check used by DeriveNoteID (the CLI importer depends on it).
+func TestValidateNoteID_Exported(t *testing.T) {
+	if err := index.ValidateNoteID("scout:memory-foo"); err != nil {
+		t.Errorf("valid id rejected: %v", err)
+	}
+	for _, id := range []string{"Has Upper", "path/sep", "", "sp ace"} {
+		if err := index.ValidateNoteID(id); err == nil {
+			t.Errorf("ValidateNoteID(%q) = nil, want error", id)
+		}
 	}
 }

@@ -52,6 +52,9 @@ func runImport(ctx context.Context, o *importOpts, path string) error {
 	if o.namespace == "" {
 		o.namespace = "default"
 	}
+	if err := index.ValidateNamespace(o.namespace); err != nil {
+		return err
+	}
 	databaseURL := o.databaseURL
 	if databaseURL == "" {
 		databaseURL = os.Getenv("DATABASE_URL")
@@ -104,6 +107,11 @@ func importAll(ctx context.Context, store *index.Store, tenantID, namespace stri
 		// ParseNote derives the id (frontmatter id, else <namespace>:<slug(rel)>),
 		// kind/tier, title, and supersedes — the same parse the file indexer used.
 		n := index.ParseNote(namespace, f.rel, string(content), false)
+		// A frontmatter id: bypasses DeriveNoteID, so enforce the same charset/
+		// length rules here that the MCP write path applies.
+		if err := index.ValidateNoteID(n.ID); err != nil {
+			return 0, 0, fmt.Errorf("importing %q: %w", f.rel, err)
+		}
 
 		expected := 0
 		st, found, err := store.NoteState(ctx, tenantID, n.ID)

@@ -48,6 +48,9 @@ func (e *Engine) Write(ctx context.Context, in *WriteInput) (WriteOutput, error)
 	if !index.ValidTier(in.Tier) {
 		return WriteOutput{}, fmt.Errorf("invalid tier %q (want core|tail)", in.Tier)
 	}
+	if err := index.ValidateNamespace(in.Namespace); err != nil {
+		return WriteOutput{}, err
+	}
 	id, err := index.DeriveNoteID(in.Namespace, in.Path, in.ID)
 	if err != nil {
 		return WriteOutput{}, err
