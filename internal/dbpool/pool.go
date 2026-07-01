@@ -3,6 +3,7 @@ package dbpool
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -10,6 +11,12 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
+
+// ErrDBUnreachable marks a NewPool failure as transient (the database did not
+// answer the ping) as opposed to permanent config/posture errors (bad URL, an
+// RLS-bypassing role), so a caller can retry the former and fail fast on the
+// latter. The daemon's boot retry keys on it with errors.Is.
+var ErrDBUnreachable = errors.New("database unreachable")
 
 // Pool wraps a pgxpool.Pool. The underlying pool is unexported so callers go
 // through Begin/BeginReadOnly and the per-operation timeout pattern in
@@ -42,7 +49,7 @@ func NewPool(ctx context.Context, databaseURL string, maxConns int32) (*Pool, er
 	if err := pool.Ping(ctx); err != nil {
 		pool.Close()
 
-		return nil, fmt.Errorf("pinging database: %w", err)
+		return nil, fmt.Errorf("%w: pinging database: %w", ErrDBUnreachable, err)
 	}
 
 	if err := assertRLSEnforceable(ctx, pool); err != nil {

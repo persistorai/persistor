@@ -98,7 +98,7 @@ func run(ctx context.Context) error {
 	}
 	log.SetLevel(level)
 
-	pool, err := dbpool.NewPool(ctx, cfg.databaseURL, cfg.dbMaxConns)
+	pool, err := connectPool(ctx, cfg.databaseURL, cfg.dbMaxConns, log)
 	if err != nil {
 		return fmt.Errorf("connecting to database: %w", err)
 	}
@@ -122,6 +122,36 @@ func run(ctx context.Context) error {
 	log.WithFields(logrus.Fields{"addr": cfg.listenAddr, "auth": "oidc"}).
 		Warn("persistor-server listening (tailnet-bound)")
 	return serve(ctx, httpServer, log)
+}
+
+// connectPool builds the DB pool with bounded retry on transient
+// unreachability: at container start Postgres may briefly not answer (managed
+// DB failover, cold boot ordering), and dying immediately made the platform
+// restart loop the only recovery. Permanent errors — bad URL, an RLS-bypassing
+// or table-owning role — fail fast: retrying a misconfiguration only delays the
+// operator seeing it. Backoff 1,2,4,8,16,30,30s (~90s total), abandoned early
+// on SIGINT/SIGTERM via ctx.
+func connectPool(ctx context.Context, databaseURL string, maxConns int32, log *logrus.Logger) (*dbpool.Pool, error) {
+	backoff := []time.Duration{time.Second, 2 * time.Second, 4 * time.Second,
+		8 * time.Second, 16 * time.Second, 30 * time.Second, 30 * time.Second}
+	var lastErr error
+	for attempt := 0; ; attempt++ {
+		pool, err := dbpool.NewPool(ctx, databaseURL, maxConns)
+		if err == nil {
+			return pool, nil
+		}
+		if !errors.Is(err, dbpool.ErrDBUnreachable) || attempt >= len(backoff) {
+			return nil, err
+		}
+		lastErr = err
+		log.WithFields(logrus.Fields{"attempt": attempt + 1, "retry_in": backoff[attempt].String()}).
+			WithError(err).Warn("database unreachable, retrying")
+		select {
+		case <-ctx.Done():
+			return nil, fmt.Errorf("shutdown while waiting for database: %w", lastErr)
+		case <-time.After(backoff[attempt]):
+		}
+	}
 }
 
 // applySchema brings the database schema into the state the daemon needs.
