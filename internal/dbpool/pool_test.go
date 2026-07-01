@@ -2,9 +2,11 @@ package dbpool_test
 
 import (
 	"context"
+	"errors"
 	"os"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/persistorai/persistor/internal/dbpool"
 )
@@ -34,5 +36,29 @@ func TestAssertNonOwner_RejectsOwnerConnection(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "owns the notes table") {
 		t.Errorf("unexpected error message: %v", err)
+	}
+}
+
+// A ping failure must be classified transient (ErrDBUnreachable) so the daemon
+// boot retry engages; a malformed URL must not be (retrying config is useless).
+func TestNewPoolErrorClassification(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	// A routable-but-closed local port: connection refused = unreachable.
+	_, err := dbpool.NewPool(ctx, "postgres://u:p@127.0.0.1:1/db?sslmode=disable", 2)
+	if err == nil {
+		t.Fatal("expected error connecting to a closed port")
+	}
+	if !errors.Is(err, dbpool.ErrDBUnreachable) {
+		t.Errorf("closed-port error = %v, want ErrDBUnreachable", err)
+	}
+
+	_, err = dbpool.NewPool(ctx, "not a url \x00", 2)
+	if err == nil {
+		t.Fatal("expected error for malformed URL")
+	}
+	if errors.Is(err, dbpool.ErrDBUnreachable) {
+		t.Errorf("malformed-URL error wrongly classified transient: %v", err)
 	}
 }
