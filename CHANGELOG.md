@@ -5,6 +5,23 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.10.1] — 2026-07-01
+
+Reliability & disaster recovery (production-readiness Phase 2).
+
+### Added
+
+- Bounded DB retry/backoff at daemon boot (~90s, SIGTERM-aware) on the new
+  `dbpool.ErrDBUnreachable` — a transient DB blip at container start no longer
+  kills the process; config/posture errors (bad URL, RLS-bypassing role) still
+  fail fast.
+- Nightly encrypted off-site backup (`scripts/backup-prod.sh` + systemd user
+  timer in `deploy/backup/`): per-tenant `persistor export` pulled off
+  DigitalOcean, age-encrypted, 14 kept; restore runbook in
+  `deploy/do/README.md`. Live-verified with a prod canary round-trip.
+- Tests: `buildAuth` wiring, new config flags, and the SUPERUSER/BYPASSRLS
+  boot-refusal path.
+
 ## [0.10.0] — 2026-07-01
 
 Security-hardening phase 1 of the production-readiness plan, gating the
