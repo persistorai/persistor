@@ -38,6 +38,35 @@ sensitive-data import (`planning-docs/persistor/PRODUCTION-READINESS.md`).
 - CORS allow headers are granted only to `PERSISTOR_TRUSTED_ORIGINS` (default
   claude.ai) instead of reflecting any Origin.
 
+## [0.9.2] — 2026-06-23
+
+Production security hardening from the post-deploy review of `mcp.persistor.ai`
+(written retroactively 2026-07-01; shipped as commit 665b68e, tag v0.9.2).
+
+### Changed
+
+- `/metrics` is bearer-gated (was public — it exposed DB pool capacity on a
+  public ingress).
+- `memory_search` / `brief` result limits capped at 500, mirroring
+  `memory_list`; closes a one-request DoS via `LIMIT 1e9`.
+- `/mcp` gains a coarse pre-auth per-IP backstop and a 120s `WriteTimeout`.
+- Tenant derivation rejects a token subject containing the `|` join separator
+  (forecloses a future multi-issuer tenant collision; existing ids unchanged).
+- Store/DB errors are replaced with a generic message at the tool boundary;
+  actionable domain errors still pass through.
+- HSTS on public HTTPS deployments.
+
+## [0.9.1] — 2026-06-22
+
+Browser MCP client support (retroactive entry; commit 25758e8, tag v0.9.1 was
+never pushed — the image tag existed on DOCR only).
+
+### Fixed
+
+- claude.ai web connectors: CORS preflight handling + trusted browser origins
+  on the CSRF guard (`PERSISTOR_TRUSTED_ORIGINS`, default `https://claude.ai`).
+  Pre-fix, the preflight got 401 and the POST 403 — "Couldn't connect".
+
 ## [0.9.0] — 2026-06-22
 
 Pre-production hardening pass (from a multi-dimension code review), ahead of
