@@ -197,15 +197,18 @@ func buildHTTPServer(cfg *serverConfig, store *index.Store, authn authBundle, lo
 		// authorization_servers pointer (claude.ai web). Only meaningful alongside
 		// the consent page, which is the facade's authorization_endpoint. The
 		// same-origin /register proxy bridges DCR to the IdP.
-		asMeta := newAuthServerMetadata(cfg.publicURL, cfg.oidcIssuer, cfg.oidcJWKSURL)
+		asMeta := newAuthServerMetadata(cfg.publicURL, cfg.oidcIssuer, cfg.oidcJWKSURL, cfg.dcrEnabled)
 		mux.HandleFunc("/.well-known/oauth-authorization-server", asMeta.serveHTTP)
 		mux.HandleFunc("/.well-known/openid-configuration", asMeta.serveHTTP)
-		regProxy := newRegisterProxy(
-			&http.Client{Timeout: 10 * time.Second},
-			stytchEndpoint(cfg.oidcIssuer, "/v1/oauth2/register"),
-		)
-		regLimiter := mcpengine.NewKeyLimiter(registerRatePerSecond, registerRateBurst)
-		mux.Handle("/register", perIPLimit(regLimiter, trustCF, regProxy))
+		if cfg.dcrEnabled {
+			regProxy := newRegisterProxy(
+				&http.Client{Timeout: 10 * time.Second},
+				stytchEndpoint(cfg.oidcIssuer, "/v1/oauth2/register"),
+				log,
+			)
+			regLimiter := mcpengine.NewKeyLimiter(registerRatePerSecond, registerRateBurst)
+			mux.Handle("/register", perIPLimit(regLimiter, trustCF, regProxy))
+		}
 	}
 	// originLock sits inside observe so rejected direct-to-origin hits still land
 	// in the access log (they're signal: someone is probing the bare origin).

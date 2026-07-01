@@ -7,6 +7,8 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/sirupsen/logrus"
 )
 
 const (
@@ -16,7 +18,7 @@ const (
 )
 
 func TestNewAuthServerMetadata(t *testing.T) {
-	m := newAuthServerMetadata(testPublicURL, testStytchIssuer, testFacadeJWKSURL)
+	m := newAuthServerMetadata(testPublicURL, testStytchIssuer, testFacadeJWKSURL, true)
 
 	// RFC 8414: the issuer MUST equal the base the doc is fetched from (this
 	// server), and the authorization endpoint is this server's consent page.
@@ -52,7 +54,7 @@ func TestStytchEndpointTrimsSlash(t *testing.T) {
 }
 
 func TestAuthServerMetadataServeHTTP(t *testing.T) {
-	m := newAuthServerMetadata(testPublicURL, testStytchIssuer, testFacadeJWKSURL)
+	m := newAuthServerMetadata(testPublicURL, testStytchIssuer, testFacadeJWKSURL, true)
 	rec := httptest.NewRecorder()
 	m.serveHTTP(rec, httptest.NewRequest(http.MethodGet, "/.well-known/oauth-authorization-server", http.NoBody))
 
@@ -71,6 +73,30 @@ func TestAuthServerMetadataServeHTTP(t *testing.T) {
 	}
 }
 
+// testLogger is a logrus logger that discards output (proxy log lines are not
+// under test).
+func testLogger() *logrus.Logger {
+	log := logrus.New()
+	log.SetOutput(io.Discard)
+	return log
+}
+
+// With DCR disabled the facade must omit registration_endpoint entirely so
+// clients fail at discovery, not with a 404 at POST time.
+func TestNewAuthServerMetadataDCRDisabled(t *testing.T) {
+	m := newAuthServerMetadata(testPublicURL, testStytchIssuer, testFacadeJWKSURL, false)
+	if m.RegistrationEndpoint != "" {
+		t.Errorf("registration_endpoint = %q, want empty", m.RegistrationEndpoint)
+	}
+	body, err := json.Marshal(m)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	if strings.Contains(string(body), "registration_endpoint") {
+		t.Errorf("serialized metadata still advertises registration_endpoint: %s", body)
+	}
+}
+
 func TestRegisterProxyRelaysPOST(t *testing.T) {
 	const wantClientID = "connected-app-test-123"
 	var gotBody string
@@ -86,7 +112,7 @@ func TestRegisterProxyRelaysPOST(t *testing.T) {
 	}))
 	defer upstream.Close()
 
-	proxy := newRegisterProxy(upstream.Client(), upstream.URL)
+	proxy := newRegisterProxy(upstream.Client(), upstream.URL, testLogger())
 	rec := httptest.NewRecorder()
 	reqBody := `{"redirect_uris":["https://claude.ai/api/mcp/auth_callback"]}`
 	proxy(rec, httptest.NewRequest(http.MethodPost, "/register", strings.NewReader(reqBody)))
@@ -103,7 +129,7 @@ func TestRegisterProxyRelaysPOST(t *testing.T) {
 }
 
 func TestRegisterProxyRejectsNonPOST(t *testing.T) {
-	proxy := newRegisterProxy(http.DefaultClient, "https://unused.example/register")
+	proxy := newRegisterProxy(http.DefaultClient, "https://unused.example/register", testLogger())
 	rec := httptest.NewRecorder()
 	proxy(rec, httptest.NewRequest(http.MethodGet, "/register", http.NoBody))
 
