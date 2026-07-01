@@ -1,0 +1,15 @@
+# Nightly encrypted off-site backup of the production Persistor DB.
+# Install (user units, no root):
+#   mkdir -p ~/.config/systemd/user
+#   cp deploy/backup/persistor-backup.{service,timer} ~/.config/systemd/user/
+#   systemctl --user daemon-reload
+#   systemctl --user enable --now persistor-backup.timer
+#   loginctl enable-linger user   # so the timer fires without an open session
+[Unit]
+Description=Persistor production backup (encrypted, off-DO)
+
+[Service]
+Type=oneshot
+ExecStart=%h/code/persistor/scripts/backup-prod.sh
+# The script sources Vault creds itself; nothing secret in the unit.
+TimeoutStartSec=15min

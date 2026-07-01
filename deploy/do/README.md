@@ -93,3 +93,33 @@ curl -sf https://mcp.persistor.ai/healthz        # liveness
 curl -sf https://mcp.persistor.ai/readyz         # DB-checked readiness
 # then an authenticated MCP round-trip from a real client (memory_write/search).
 ```
+
+## Backups + restore
+
+Nightly at 03:30 America/Chicago, `scripts/backup-prod.sh` (systemd user timer
+`persistor-backup.timer` on devbox; units in `deploy/backup/`) pulls every
+tenant's notes OFF DigitalOcean — DO's own backups live inside the account and
+die with it. Each run: short DB-firewall window for devbox's IP (removed on
+exit) → `persistor export` per tenant (tenant-scoped, RLS-satisfied — do NOT
+substitute a plain pg_dump: a non-BYPASSRLS role silently dumps zero rows from
+every RLS table) → tenants/identities CSVs → tar → age-encrypt to
+`/mnt/storage/backups/persistor/` (newest 14 kept). Encryption key:
+`~/.persistor/secrets/backup-pubkey.txt`; private key `backup.age` (DR copy in
+1Password).
+
+### Restore from backup
+
+1. Provision infra + schema as in this README (roles, `persistor migrate`).
+2. Decrypt + unpack:
+   `age -d -i ~/.persistor/secrets/backup.age <backup>.tar.age | tar -x`
+3. Recreate tenants/identities routing from the CSVs (`\copy ... FROM` as the
+   migrator), or let OIDC re-provision and map identities via `persistor admin`.
+4. Per tenant: `persistor import --tenant <id> --namespace <ns> <dir>` for each
+   namespace subdirectory of `tenant-<id>/` (frontmatter ids are preserved, so
+   ids and supersedes chains survive; version history does not — the backup
+   captures current notes, not the audit log).
+5. Verify: `persistor namespaces --tenant <id>` counts match the export, and a
+   live `memory_search` through `/mcp` returns a known note.
+
+Verified 2026-07-01: full round-trip (prod write → backup → decrypt →
+frontmatter-intact .md) with a canary note.
