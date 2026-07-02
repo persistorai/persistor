@@ -5,6 +5,25 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.12.0] — 2026-07-02
+
+Production trust-root hardening (Phase 5 prep).
+
+### Added
+
+- **Subject allowlist** (`PERSISTOR_ALLOWED_SUBJECTS`): when set, only these IdP
+  subjects authenticate — an unlisted subject is rejected at the auth chokepoint
+  before any tenant is resolved or provisioned. Empty = open (backward-compatible
+  single-user default). Closes the open-auto-provisioning finding (#6) app-side.
+
+### Operational
+
+- Origin lock live end-to-end (Cloudflare Transform Rule + `PERSISTOR_ORIGIN_SECRET`);
+  the bare App Platform origin now 403s everything but `/healthz`.
+- Deployed with the Stytch **Live** project as the OIDC trust root (was TEST):
+  issuer `aged-barracuda-1535.customers.stytch.com`, audience
+  `project-live-7ab9a60d-…`. Tenant UUIDs change with the issuer.
+
 ## [0.11.0] — 2026-07-01
 
 Retrieval upgrades (production-readiness Phase 4), all eval-gated. Synthetic
