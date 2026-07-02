@@ -50,6 +50,9 @@ type serverConfig struct {
 	// public multi-tenant deployments where open provisioning means "valid token"
 	// is not "operator".
 	metricsTenants []string
+	// allowedSubjects, when non-empty, is the closed set of IdP subjects allowed
+	// to authenticate (locks open auto-provisioning). Empty = open.
+	allowedSubjects []string
 }
 
 // defaultDBMaxConns is the pool size when PERSISTOR_DB_MAX_CONNS is unset.
@@ -76,8 +79,9 @@ func loadConfig() (serverConfig, error) {
 		originSecret:   os.Getenv("PERSISTOR_ORIGIN_SECRET"),
 		// Default on: DCR is how browser MCP clients onboard. Only an explicit
 		// "false" turns the relay off (abuse response).
-		dcrEnabled:     !strings.EqualFold(os.Getenv("PERSISTOR_DCR_ENABLED"), "false"),
-		metricsTenants: parseList(os.Getenv("PERSISTOR_METRICS_TENANTS")),
+		dcrEnabled:      !strings.EqualFold(os.Getenv("PERSISTOR_DCR_ENABLED"), "false"),
+		metricsTenants:  parseList(os.Getenv("PERSISTOR_METRICS_TENANTS")),
+		allowedSubjects: parseList(os.Getenv("PERSISTOR_ALLOWED_SUBJECTS")),
 	}
 	if cfg.logLevel == "" {
 		cfg.logLevel = "info"

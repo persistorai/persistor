@@ -66,6 +66,12 @@ type OIDCAuth struct {
 	audience string
 	parser   *jwt.Parser
 	resolver TenantResolver
+	// allowedSubjects, when non-empty, is the closed set of IdP subjects
+	// permitted to authenticate — the app-side lock on open auto-provisioning.
+	// Empty = open (any valid token from the pinned issuer is accepted, the
+	// single-user default). A verified token whose subject is absent from a
+	// non-empty set is rejected before any tenant is resolved or provisioned.
+	allowedSubjects map[string]struct{}
 }
 
 // NewOIDCAuth builds a verifier. keyFunc supplies the IdP's signing keys (a JWKS
@@ -85,6 +91,25 @@ func NewOIDCAuth(keyFunc jwt.Keyfunc, issuer, audience string) *OIDCAuth {
 // onboarding). Without it, Verify uses the claim-derived tenant directly.
 func (a *OIDCAuth) WithTenantResolver(r TenantResolver) *OIDCAuth {
 	a.resolver = r
+	return a
+}
+
+// WithAllowedSubjects restricts authentication to a closed set of IdP subjects
+// (the anti-abuse lock on open auto-provisioning). An empty/nil list leaves the
+// server open — any valid token from the pinned issuer is accepted. Whitespace
+// is trimmed and blanks dropped.
+func (a *OIDCAuth) WithAllowedSubjects(subjects []string) *OIDCAuth {
+	if len(subjects) == 0 {
+		a.allowedSubjects = nil
+		return a
+	}
+	set := make(map[string]struct{}, len(subjects))
+	for _, s := range subjects {
+		if s = strings.TrimSpace(s); s != "" {
+			set[s] = struct{}{}
+		}
+	}
+	a.allowedSubjects = set
 	return a
 }
 
@@ -137,6 +162,14 @@ func (a *OIDCAuth) Verify(ctx context.Context, token string, _ *http.Request) (*
 	// checked here.
 	if strings.Contains(claims.Subject, tenantSeparator) {
 		return nil, fmt.Errorf("%w: subject contains reserved separator", auth.ErrInvalidToken)
+	}
+	// Subject allowlist (when configured): reject an unlisted subject before any
+	// tenant is resolved or provisioned, so a stranger with a valid token from
+	// the pinned issuer cannot mint a tenant. Open when the set is empty.
+	if len(a.allowedSubjects) > 0 {
+		if _, ok := a.allowedSubjects[claims.Subject]; !ok {
+			return nil, fmt.Errorf("%w: subject not permitted", auth.ErrInvalidToken)
+		}
 	}
 	exp, err := claims.GetExpirationTime()
 	if err != nil || exp == nil {

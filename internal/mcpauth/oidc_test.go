@@ -178,6 +178,38 @@ func TestOIDCAuth_TokenTypeSeparation(t *testing.T) {
 	}
 }
 
+// TestOIDCAuth_AllowedSubjects covers the provisioning lock: with a non-empty
+// allowlist only listed subjects verify; an empty allowlist stays open.
+func TestOIDCAuth_AllowedSubjects(t *testing.T) {
+	key, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatalf("genkey: %v", err)
+	}
+	ctx := context.Background()
+	sign := func(sub string) string {
+		c := validClaims()
+		c.Subject = sub
+		return signRS256(t, key, &c)
+	}
+
+	// Open (nil / empty allowlist): any valid subject passes.
+	open := mcpauth.NewOIDCAuth(staticKeyFunc(&key.PublicKey), testIssuer, testAudience).
+		WithAllowedSubjects(nil)
+	if _, err := open.Verify(ctx, sign("anyone"), nil); err != nil {
+		t.Errorf("open allowlist rejected a valid token: %v", err)
+	}
+
+	// Closed: only the listed subject passes; others are rejected as invalid.
+	closed := mcpauth.NewOIDCAuth(staticKeyFunc(&key.PublicKey), testIssuer, testAudience).
+		WithAllowedSubjects([]string{" user-live-brian ", ""}) // trimmed + blanks dropped
+	if _, err := closed.Verify(ctx, sign("user-live-brian"), nil); err != nil {
+		t.Errorf("allowlisted subject rejected: %v", err)
+	}
+	if _, err := closed.Verify(ctx, sign("user-live-stranger"), nil); !errors.Is(err, auth.ErrInvalidToken) {
+		t.Errorf("unlisted subject: want auth.ErrInvalidToken, got %v", err)
+	}
+}
+
 // fakeTenantResolver stands in for the identities-backed tenant resolver.
 type fakeTenantResolver struct {
 	tenant     string
