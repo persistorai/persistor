@@ -41,6 +41,13 @@ was originally written for a tailnet-bound daemon.
 > or abuse grows. #6 **LEFT OPEN** on the Stytch Test project — reconsider before
 > any public/Live launch. Both are conscious choices, not oversights.
 >
+> **Update (2026-07-02):** #1 **CLOSED.** Cloudflare Transform Rule injects
+> `X-Origin-Secret` on all proxied traffic (created via the `scout-persistorai-ops`
+> API token, Vault `secret/cloudflare/ops-token`); `PERSISTOR_ORIGIN_SECRET` is set
+> as an encrypted app env. Verified live: edge behavior unchanged (200/401),
+> direct-to-origin `/mcp`,`/metrics`,`/.well-known/*` all 403, `/healthz` exempt for
+> the platform liveness probe. The per-IP limiters now key on CF-Connecting-IP.
+>
 > **Update (2026-07-01):** #1 re-opened for the sensitive-data import
 > (PRODUCTION-READINESS plan, item S1). The app half is now SHIPPED:
 > `PERSISTOR_ORIGIN_SECRET` enables the origin-lock middleware (403 without the
