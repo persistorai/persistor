@@ -1,0 +1,108 @@
+# Persistor local dev stack — on-demand, ephemeral, prod-faithful.
+#
+#   make dev-up      # bring it up (build + migrate + serve), wait for healthy
+#   make dev-logs    # tail the server
+#   make dev-down    # stop (keeps the DB volume)
+#   make dev-reset   # stop AND wipe the DB volume (fresh schema next up)
+#
+# WHY THIS EXISTS: the day-to-day dev loop is `make gate` (throwaway Postgres,
+# full test suite) and needs none of this. This stack is only for the rarer case
+# of poking a *running* server — reproducing a client bug, eyeballing an
+# endpoint. There is deliberately NO systemd unit and NOTHING starts on boot:
+# your real memory lives in production (mcp.persistor.ai); local is always a
+# throwaway.
+#
+# PROD PARITY (the point): the server runs the SAME Dockerfile DO builds from,
+# with the SAME split-role posture — a schema-owning `persistor_migrator` runs
+# migrations, and the daemon serves as a separate non-owner `persistor_app`
+# (NOSUPERUSER NOBYPASSRLS) with PERSISTOR_AUTO_MIGRATE=false. So local exercises
+# the exact boot path, RLS enforcement, and least-privilege grants that ship —
+# not a permissive single-role shortcut that would hide deploy-shaped bugs.
+#
+# AUTH: OIDC is mandatory (no bypass in the daemon), so local points at the
+# Stytch TEST project. Login is the same browser OAuth flow as prod, just against
+# throwaway test tenants — Live is never touched. Test values live in .env.local
+# (gitignored); see .env.local.example and README.md.
+
+name: persistor-dev
+
+services:
+  db:
+    image: postgres:18
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: persistor
+    # initdb runs once (empty data dir): installs the extensions the migrations
+    # need and creates the migrator/app roles with prod's least-privilege posture.
+    volumes:
+      - ./initdb:/docker-entrypoint-initdb.d:ro
+      # postgres:18+ stores data in a major-version subdir; the image wants a
+      # SINGLE mount at /var/lib/postgresql (not .../data) — mounting the old
+      # path makes the entrypoint bail. See docker-library/postgres#1259.
+      - pgdata:/var/lib/postgresql
+    # Exposed on a non-standard port so it can't collide with DeerPrint (:5433),
+    # the retired LUKS cluster (:5434), or the gate container (:5467) — and so the
+    # operator CLI can reach it if you ever want DATABASE_URL against local.
+    ports:
+      - "127.0.0.1:5468:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d persistor"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  # Schema owner. Runs migrations, then exits — exactly like DO's PRE_DEPLOY job.
+  migrate:
+    build:
+      context: ../..
+      dockerfile: deploy/do/Dockerfile
+      args:
+        VERSION: dev-local
+    # The image ENTRYPOINT is persistor-server; override it to run the CLI's
+    # migrate (DO does the equivalent with App Platform's run_command).
+    entrypoint: ["/usr/local/bin/persistor"]
+    command: ["migrate"]
+    environment:
+      DATABASE_URL: postgres://persistor_migrator:persistor_migrator@db:5432/persistor?sslmode=disable
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: "no"
+
+  # The daemon. Non-owner app role, no auto-migrate — same as prod.
+  server:
+    build:
+      context: ../..
+      dockerfile: deploy/do/Dockerfile
+      args:
+        VERSION: dev-local
+    env_file:
+      - .env.local          # Stytch TEST OIDC + public token (gitignored)
+    environment:
+      PERSISTOR_LISTEN_ADDR: "0.0.0.0:8080"
+      PERSISTOR_PUBLIC_URL: "http://localhost:8087"
+      PERSISTOR_AUTO_MIGRATE: "false"
+      PERSISTOR_DB_MAX_CONNS: "8"
+      PERSISTOR_LOG_LEVEL: "debug"
+      PERSISTOR_DCR_ENABLED: "true"   # let a local Claude Code self-register
+      # NO PERSISTOR_ORIGIN_SECRET: there is no Cloudflare in front locally, so an
+      # origin lock would 403 every request. Origin lock is a prod-edge concern.
+      DATABASE_URL: postgres://persistor_app:persistor_app@db:5432/persistor?sslmode=disable
+    depends_on:
+      db:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    # Host 8087 (container 8080): 8080 is DeerPrint's local API. PUBLIC_URL above
+    # must match this host port so OAuth discovery/redirects resolve.
+    ports:
+      - "127.0.0.1:8087:8080"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8080/healthz >/dev/null 2>&1 || exit 1"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+volumes:
+  pgdata:

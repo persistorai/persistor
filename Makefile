@@ -16,7 +16,7 @@ LDFLAGS := -s -w \
 	-X main.commit=$(COMMIT) \
 	-X main.buildDate=$(BUILD_DATE)
 
-.PHONY: build build-cli build-server clean test test-race test-coverage lint lint-fix lint-md format vet ci gate deploy vulncheck deps tidy setup-hooks install install-cli install-server
+.PHONY: build build-cli build-server clean test test-race test-coverage lint lint-fix lint-md format vet ci gate deploy dev-up dev-logs dev-down dev-reset vulncheck deps tidy setup-hooks install install-cli install-server
 
 ## Build all binaries.
 build: build-cli build-server
@@ -98,6 +98,26 @@ vulncheck:
 ## Build, push, and roll out to production (gate -> DOCR -> App Platform -> verify).
 deploy:
 	scripts/deploy.sh
+
+DEV_COMPOSE := docker compose -f deploy/local/compose.yaml
+
+## Bring up the local dev stack (build + migrate + serve, wait for healthy). On-demand only.
+dev-up:
+	@test -f deploy/local/.env.local || { echo "missing deploy/local/.env.local — cp deploy/local/.env.local.example deploy/local/.env.local and fill the Stytch test token"; exit 1; }
+	$(DEV_COMPOSE) up -d --build --wait
+	@echo "persistor local: http://localhost:8087  (healthz/readyz; MCP at /mcp)"
+
+## Tail the local dev server logs.
+dev-logs:
+	$(DEV_COMPOSE) logs -f server
+
+## Stop the local dev stack (keeps the DB volume).
+dev-down:
+	$(DEV_COMPOSE) down
+
+## Stop the local dev stack AND wipe the DB volume (fresh schema next up).
+dev-reset:
+	$(DEV_COMPOSE) down -v
 
 ## Install git hooks.
 setup-hooks:
