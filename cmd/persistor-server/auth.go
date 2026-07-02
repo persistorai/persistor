@@ -34,7 +34,8 @@ func buildAuth(ctx context.Context, cfg *serverConfig, pool *dbpool.Pool) (authB
 		return authBundle{}, err
 	}
 	v := mcpauth.NewOIDCAuth(keyFunc, cfg.oidcIssuer, cfg.oidcAudience).
-		WithTenantResolver(identity.NewStore(pool))
+		WithTenantResolver(identity.NewStore(pool)).
+		WithAllowedSubjects(cfg.allowedSubjects)
 	return authBundle{
 		verify: v.Verify,
 		opts:   opts,
