@@ -5,6 +5,16 @@ them. The note row in Postgres is the source of truth — versioned, with
 append-only history. Index everything; decide relevance at query time. No entity
 extraction, no graph, no vectors — notes in, ranked notes out.
 
+## Status
+
+Built and run in production during 2026, in two topologies: hosted (DigitalOcean
+App Platform behind Cloudflare) and local (a workstation Postgres cluster served
+to MCP clients over a Tailscale tailnet via `tailscale serve`). The hosted
+service was retired in July 2026 after a market assessment; the codebase is
+published as a reference implementation of a multi-tenant, identity-aware MCP
+memory server. It builds, the test suite runs (`make gate`), and the design
+decisions are documented throughout `deploy/`.
+
 ## How it works
 
 An agent already writes correct prose it authored and reads natively. Persistor
@@ -115,6 +125,23 @@ tenant is known:
 - `tenants(id, …)` — one row per tenant.
 - `identities(issuer, subject, tenant_id, role, last_seen_at)` — login → tenant
   routing.
+
+## Security model
+
+The part this codebase cares most about: tenancy that survives an
+application-layer bug.
+
+- Tenant isolation is enforced by PostgreSQL row-level security (`ENABLE` +
+  `FORCE`), not by application code. The daemon connects as a `NOSUPERUSER
+  NOBYPASSRLS` role that does not own the schema, and the connection pool
+  asserts this at boot and refuses to start otherwise.
+- The tenant is derived from the verified OIDC token (`uuidv5(issuer |
+  subject)`), never from client input.
+- `note_versions` is append-only, with a database trigger blocking
+  UPDATE/DELETE/TRUNCATE outside an explicit operator purge.
+- Per-tenant write rate limiting in the MCP engine.
+- `make gate` runs the full self-provisioned test suite, including the RLS
+  boundary tests and a deterministic retrieval eval gated against baselines.
 
 ## License
 
